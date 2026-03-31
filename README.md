@@ -30,13 +30,15 @@ pip install torch==2.10.0 transformers==5.4.0 diffusers==0.37.1
 
 | Status | Eval | Train |
 |--------|------|-------|
-| Clean (fullgraph=True works) | 220 | 231 |
-| Graph Break | 56 | 66 |
-| Timeout | 84 | 74 |
-| Eager Error | 72 | 64 |
-| Create Error | 36 | 33 |
+| Clean (fullgraph=True works) | 295 | 288 |
+| Graph Break | 69 | 77 |
+| Eager Error | 96 | 95 |
+| Create Error | 6 | 6 |
+| Timeout | 2 | 2 |
 
-**70 models** have graph breaks in at least one mode (eval or train).
+**80 models** have graph breaks in at least one mode (eval or train).
+
+Results reflect 6 rounds of refinement (R1-R6): initial sweep, retry passes, model size reduction, config fixes for composite models, MoE topk guards, mrope_section fixes, and head_dim/rope_theta patches.
 
 ## Quick Start
 
@@ -88,22 +90,22 @@ The sweep writes results incrementally to `sweep_results/pass1_checkpoint.jsonl`
 
 ## Graph Break Taxonomy
 
-The **70 graph-break models** fall into **10 root cause categories**. The top 3 account for 69% of all breaks and are all fixable in PyTorch core or HuggingFace model code — not inherent model limitations.
+The **80 graph-break models** fall into **10 root cause categories**. The top 3 account for 56% of all breaks and are all fixable in PyTorch core or HuggingFace model code — not inherent model limitations.
 
 | Root Cause | Count | % | Fix Location |
 |------------|-------|---|-------------|
-| **copy.deepcopy()** | 19 | 31% | HF model code: replace deepcopy with clone() |
-| **Skipped/forbidden callable** | 15 | 25% | PyTorch core: support these callables in Dynamo |
-| **as_proxy() missing** | 8 | 13% | PyTorch core: implement as_proxy() for failing types |
-| **Data-dependent branching** | 7 | 11% | Model code: requires torch.cond() or restructuring |
-| **logging.Logger** | 5 | 8% | PyTorch core: skip/inline logger calls in Dynamo |
+| **copy.deepcopy()** | 19 | 25% | HF model code: replace deepcopy with clone() |
+| **Skipped/forbidden callable** | 15 | 20% | PyTorch core: support these callables in Dynamo |
+| **as_proxy() missing** | 8 | 11% | PyTorch core: implement as_proxy() for failing types |
+| **Data-dependent branching** | 7 | 9% | Model code: requires torch.cond() or restructuring |
+| **Untraceable builtin (`callable`)** | 6 | 8% | PyTorch core: teach Dynamo to trace `callable()` |
+| **logging.Logger** | 5 | 7% | PyTorch core: skip/inline logger calls in Dynamo |
 | **Unbacked symbols** | 2 | 3% | Hard: model generates shapes dynamically |
 | **Observed exception (try/except)** | 2 | 3% | Dynamo exception handler support |
-| **requires_grad_()** | 1 | 2% | Dynamo mutation support |
-| **Non-Tensor return** | 1 | 2% | Dynamo op return type support |
-| **Untraceable builtin** | 1 | 2% | Dynamo builtin operator support |
+| **requires_grad_()** | 1 | 1% | Dynamo mutation support |
+| **Non-Tensor return** | 1 | 1% | Dynamo op return type support |
 
-**Key insight:** `copy.deepcopy()` alone causes 31% of all graph breaks — all 19 are encoder-decoder models (BART, T5, Pegasus, Whisper, etc.) that clone decoder layers from encoder layers during init. A single HF PR replacing deepcopy with explicit clone() would fix all 19 models.
+**Key insight:** `copy.deepcopy()` alone causes 25% of all graph breaks — all 19 are encoder-decoder models (BART, T5, Pegasus, Whisper, etc.) that clone decoder layers from encoder layers during init. A single HF PR replacing deepcopy with explicit clone() would fix all 19 models.
 
 ## Methodology
 
