@@ -30,15 +30,15 @@ pip install torch==2.10.0 transformers==5.4.0 diffusers==0.37.1
 
 | Status | Eval | Train |
 |--------|------|-------|
-| Clean (fullgraph=True works) | 295 | 288 |
+| Clean (fullgraph=True works) | 296 | 288 |
 | Graph Break | 69 | 77 |
-| Eager Error | 96 | 95 |
+| Eager Error | 95 | 95 |
 | Create Error | 6 | 6 |
 | Timeout | 2 | 2 |
 
 **80 models** have graph breaks in at least one mode (eval or train).
 
-Results reflect 6 rounds of refinement (R1-R6): initial sweep, retry passes, model size reduction, config fixes for composite models, MoE topk guards, mrope_section fixes, and head_dim/rope_theta patches.
+Results reflect 7 rounds of refinement (R1-R7): initial sweep, retry passes, model size reduction, config fixes for composite models, MoE topk guards, mrope_section fixes, and head_dim/rope_theta patches.
 
 ## Quick Start
 

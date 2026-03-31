@@ -3278,11 +3278,13 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 17.674,
-        "eager_time_s": 0.579,
-        "error": "selected index k out of range",
-        "retry_v2": true
+        "status": "clean",
+        "create_time_s": 19.158,
+        "eager_time_s": 0.722,
+        "compile_time_s": 2.328,
+        "gpu_mem_mb": 3632.3,
+        "fullgraph_ok": true,
+        "retry_v3": true
       },
       "train": {
         "status": "clean",
