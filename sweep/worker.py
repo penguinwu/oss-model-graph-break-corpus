@@ -1,0 +1,1201 @@
+#!/usr/bin/env python3
+"""Single-model worker — subprocess entry point for the two-pass sweep.
+
+Called by the orchestrator as:
+  python worker.py --model-json '{"name":"resnet50","source":"timm",...}' \
+                   --pass 1 --device cuda --mode eval
+
+Pass 1: fullgraph=True compile → binary pass/fail
+Pass 2: explain() + optional TORCH_TRACE → detailed graph break analysis
+
+Outputs a single JSON line to stdout. All logs go to stderr.
+"""
+import argparse
+import json
+import os
+import sys
+import time
+import traceback
+import warnings
+
+
+# ─── Chaos mode fast path ────────────────────────────────────────────────────
+# Handle chaos mode BEFORE importing torch (saves 3-5s startup).
+# This makes stress tests fast and prevents chaos workers from being
+# killed by timeout before they even reach the chaos handler.
+
+def _handle_chaos():
+    """Fast exit for chaos mode — no heavy imports needed."""
+    # Parse model-json from argv without full argparse
+    for i, arg in enumerate(sys.argv):
+        if arg == "--model-json" and i + 1 < len(sys.argv):
+            try:
+                spec = json.loads(sys.argv[i + 1])
+            except (json.JSONDecodeError, IndexError):
+                return  # Not parseable, continue normal path
+            chaos = spec.get("_chaos")
+            if not chaos:
+                return  # Normal model, continue to torch imports
+
+            # Parse mode and pass-num from argv
+            mode, pass_num = "eval", 1
+            for j, a in enumerate(sys.argv):
+                if a == "--mode" and j + 1 < len(sys.argv):
+                    mode = sys.argv[j + 1]
+                elif a == "--pass-num" and j + 1 < len(sys.argv):
+                    pass_num = int(sys.argv[j + 1])
+
+            print(f"PHASE:chaos_{chaos}", file=sys.stderr)
+            name = spec["name"]
+            source = spec.get("source", "chaos")
+
+            if chaos == "clean":
+                time.sleep(1)
+                result = {"name": name, "source": source, "mode": mode,
+                          "pass": pass_num, "status": "clean", "wall_time_s": 1.0}
+            elif chaos == "crash":
+                import signal as _sig
+                os.kill(os.getpid(), _sig.SIGSEGV)
+            elif chaos == "hang":
+                time.sleep(999999)
+            elif chaos == "slow":
+                sleep_time = int(spec.get("_chaos_sleep", 200))
+                time.sleep(sleep_time)
+                result = {"name": name, "source": source, "mode": mode,
+                          "pass": pass_num, "status": "clean",
+                          "wall_time_s": float(sleep_time)}
+            elif chaos == "oom":
+                # Import torch only for OOM test
+                import torch
+                torch.randn(1024, 1024, 1024, 1024, device="cuda")
+            elif chaos == "exit1":
+                sys.exit(1)
+            elif chaos == "bad_json":
+                print("THIS IS NOT VALID JSON")
+                sys.exit(0)
+            elif chaos == "gpu_leak":
+                import torch
+                _leaked = torch.randn(2048, 2048, 512, device="cuda")  # ~8GB
+                result = {"name": name, "source": source, "mode": mode,
+                          "pass": pass_num, "status": "clean", "wall_time_s": 1.0}
+            else:
+                result = {"name": name, "source": source, "mode": mode,
+                          "pass": pass_num, "status": "worker_error",
+                          "error": f"Unknown chaos mode: {chaos}"}
+            print(json.dumps(result))
+            sys.exit(0)
+
+
+if __name__ == "__main__":
+    _handle_chaos()
+
+# ─── Heavy imports (only reached for real models) ────────────────────────────
+
+warnings.filterwarnings("ignore")
+
+import torch
+import torch._dynamo
+
+
+# ─── Model creation ──────────────────────────────────────────────────────────
+
+# Default batch size — avoid 0 and 1 (PyTorch specializes on these)
+DEFAULT_BATCH = 2
+
+
+def create_timm_model(spec, device, batch_size=DEFAULT_BATCH):
+    import timm
+
+    model = timm.create_model(spec["name"], pretrained=False)
+    cfg = model.default_cfg
+    input_size = cfg.get("input_size", (3, 224, 224))
+    x = torch.randn(batch_size, *input_size, device=device)
+    model = model.to(device)
+    return model, None, (x,)
+
+
+def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
+    import transformers
+
+    config_name = spec.get("hf_config") or spec["name"].replace("Model", "Config")
+    model_name = spec.get("hf_class") or spec["name"]
+
+    config_cls = getattr(transformers, config_name)
+    model_cls = getattr(transformers, model_name)
+
+    config = config_cls()
+    model = model_cls(config).to(device)
+
+    # Always auto-detect from config — spec's name-based hint can be wrong
+    # (e.g., GroundingDino classified as vision but needs text input_ids too)
+    input_type = _detect_hf_input_type(model_name, config)
+
+    vocab_size = getattr(config, "vocab_size", None) or 1000
+    vocab_size = min(vocab_size, 1000)
+    B = batch_size
+
+    if input_type == "multimodal":
+        # Vision + text multimodal models
+        img_size = 224
+        vision_cfg = getattr(config, "vision_config", getattr(config, "image_config", None))
+        if vision_cfg:
+            img_size = getattr(vision_cfg, "image_size", 224)
+            if isinstance(img_size, (list, tuple)):
+                img_size = img_size[0]
+        num_channels = 3
+        if vision_cfg:
+            num_channels = getattr(vision_cfg, "num_channels", 3)
+        # Check if this is a video-multimodal model (needs 5D pixel_values)
+        num_frames = getattr(vision_cfg, "num_frames", None) if vision_cfg else None
+        if num_frames:
+            pixel_values = torch.randn(B, num_frames, num_channels, img_size, img_size, device=device)
+        else:
+            pixel_values = torch.randn(B, num_channels, img_size, img_size, device=device)
+        inputs = {
+            "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
+            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
+            "pixel_values": pixel_values,
+        }
+    elif input_type == "seq2seq":
+        inputs = {
+            "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
+            "decoder_input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
+        }
+    elif input_type == "vision":
+        img_size = getattr(config, "image_size", None)
+        if img_size is None:
+            # Check vision sub-config (e.g., Sam, Sam2)
+            vision_cfg = getattr(config, "vision_config", None)
+            img_size = getattr(vision_cfg, "image_size", None) if vision_cfg else None
+            if img_size is None and vision_cfg:
+                # Infer from backbone_feature_sizes (e.g. Sam2: [[256,256],...] → 1024)
+                bfs = getattr(vision_cfg, "backbone_feature_sizes", None)
+                if bfs and len(bfs) > 0:
+                    img_size = bfs[0][0] * 4  # first feature map * stride
+            if img_size is None:
+                img_size = 224
+        if isinstance(img_size, (list, tuple)):
+            img_h = img_size[0]
+            img_w = img_size[1] if len(img_size) > 1 else img_size[0]
+        else:
+            img_h = img_w = img_size
+        num_channels = getattr(config, "num_channels", 3)
+        inputs = {"pixel_values": torch.randn(B, num_channels, img_h, img_w, device=device)}
+    elif input_type == "video":
+        # Video models expect 5D input: (B, num_frames, C, H, W)
+        img_size = getattr(config, "image_size", None) or getattr(config, "crop_size", 224)
+        if isinstance(img_size, (list, tuple)):
+            img_size = img_size[0]
+        num_channels = getattr(config, "num_channels", None) or getattr(config, "in_chans", 3)
+        num_frames = getattr(config, "num_frames", None) or getattr(config, "frames_per_clip", 8)
+        pixel_key = "pixel_values"
+        # VJEPA2 uses pixel_values_videos
+        name_lower = (spec.get("hf_class") or spec["name"]).lower()
+        if "vjepa2" in name_lower:
+            pixel_key = "pixel_values_videos"
+        inputs = {pixel_key: torch.randn(B, num_frames, num_channels, img_size, img_size, device=device)}
+    elif input_type == "image_pair":
+        # Image pair matching models (e.g., EfficientLoFTR)
+        # Input: (B, 2, C, H, W) — two images stacked
+        img_size = getattr(config, "image_size", 224)
+        if isinstance(img_size, (list, tuple)):
+            img_size = img_size[0]
+        num_channels = getattr(config, "num_channels", 3)
+        inputs = {"pixel_values": torch.randn(B, 2, num_channels, img_size, img_size, device=device)}
+    elif input_type == "video_multimodal":
+        # Video-text multimodal (e.g., PeVideo) — needs pixel_values_videos + input_ids
+        img_size = 224
+        num_channels = 3
+        num_frames = 8
+        vision_cfg = getattr(config, "vision_config", None)
+        if vision_cfg:
+            img_size = getattr(vision_cfg, "image_size", 224)
+            if isinstance(img_size, (list, tuple)):
+                img_size = img_size[0]
+            num_channels = getattr(vision_cfg, "num_channels", 3)
+            num_frames = getattr(vision_cfg, "num_frames", 8)
+        # Probe model for actual expected image size (e.g., timm-backed encoders)
+        for mod in model.modules():
+            pe = getattr(mod, "patch_embed", None)
+            if pe and hasattr(pe, "img_size"):
+                probed = pe.img_size
+                img_size = probed[0] if isinstance(probed, (tuple, list)) else probed
+                break
+        inputs = {
+            "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
+            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
+            "pixel_values_videos": torch.randn(B, num_frames, num_channels, img_size, img_size, device=device),
+        }
+    elif input_type == "time_series":
+        # Time series models expect past_values
+        num_input_channels = getattr(config, "num_input_channels", None)
+        context_length = getattr(config, "context_length", 32)
+        seq_len = context_length
+        name_lower = (spec.get("hf_class") or spec["name"]).lower()
+        # PatchTSMixer/PatchTST always need 3D: (batch, seq_len, channels)
+        if "patchtsmixer" in name_lower or "patchtst" in name_lower:
+            channels = num_input_channels or 1
+            inputs = {"past_values": torch.randn(B, seq_len, channels, device=device)}
+        elif "timesfm" in name_lower and "2_5" not in name_lower:
+            # TimesFmModel: 2D + extra args
+            inputs = {
+                "past_values": torch.randn(B, seq_len, device=device),
+                "past_values_padding": torch.ones(B, seq_len, device=device),
+                "freq": torch.zeros(B, dtype=torch.long, device=device),
+            }
+        else:
+            # Default: 2D (batch, seq_len)
+            inputs = {"past_values": torch.randn(B, seq_len, device=device)}
+    elif input_type == "audio_codec":
+        # Audio codec models (Encodec, DAC, Xcodec, Mimi) — raw waveform
+        inputs = {"input_values": torch.randn(B, 1, 16000, device=device)}
+    elif input_type == "audio":
+        # Audio models have varied input formats
+        model_type = getattr(config, "model_type", "")
+        name_lower = (spec.get("hf_class") or spec["name"]).lower()
+        if "whisper" in model_type:
+            decoder_start = getattr(config, "decoder_start_token_id", 1) or 1
+            inputs = {
+                "input_features": torch.randn(B, 80, 3000, device=device),
+                "decoder_input_ids": torch.tensor([[decoder_start]] * B, device=device),
+            }
+        elif "speech_to_text" in model_type or "speech2text" in name_lower:
+            # Speech2Text: audio encoder-decoder, needs input_features + decoder_input_ids
+            num_mel_bins = getattr(config, "num_mel_bins", getattr(config, "input_feat_per_channel", 80))
+            vocab_size = getattr(config, "vocab_size", 1000)
+            inputs = {
+                "input_features": torch.randn(B, 100, num_mel_bins, device=device),
+                "decoder_input_ids": torch.randint(0, min(vocab_size, 1000), (B, 32), device=device),
+            }
+        elif "speecht5" in model_type or "speecht5" in name_lower:
+            # SpeechT5 base: no prenet, expects pre-processed (B, T, hidden_size) for both sides
+            hidden = getattr(config, "hidden_size", 768)
+            inputs = {
+                "input_values": torch.randn(B, 100, hidden, device=device),
+                "decoder_input_values": torch.randn(B, 50, hidden, device=device),
+            }
+        elif "fastspeech2" in name_lower:
+            # FastSpeech2: TTS, needs phoneme input_ids (not audio features)
+            vocab_size = getattr(config, "vocab_size", 78)
+            inputs = {"input_ids": torch.randint(0, vocab_size, (B, 32), device=device)}
+        elif "wav2vec2" in model_type and "bert" in model_type:
+            # Wav2Vec2Bert uses input_features (not input_values)
+            inputs = {"input_features": torch.randn(B, 100, 160, device=device)}
+        elif "clap" in model_type or "clap" in name_lower:
+            # CLAP: treats spectrogram as image → 4D (B, 1, spec_size, num_mel_bins)
+            audio_cfg = getattr(config, "audio_config", config)
+            num_mel_bins = getattr(audio_cfg, "num_mel_bins", 64)
+            spec_size = getattr(audio_cfg, "spec_size", 256)
+            inputs = {"input_features": torch.randn(B, 1, spec_size, num_mel_bins, device=device)}
+            # Full ClapModel also needs text inputs (contrastive audio-text)
+            text_cfg = getattr(config, "text_config", None)
+            if text_cfg:
+                voc = min(getattr(text_cfg, "vocab_size", 1000), 1000)
+                inputs["input_ids"] = torch.randint(0, voc, (B, 32), device=device)
+                inputs["attention_mask"] = torch.ones(B, 32, dtype=torch.long, device=device)
+        elif "univnet" in model_type or "univnet" in name_lower:
+            # UnivNet vocoder: needs mel spectrogram as input_features
+            num_mel_bins = getattr(config, "num_mel_channels", getattr(config, "num_mel_bins", 100))
+            inputs = {"input_features": torch.randn(B, num_mel_bins, 100, device=device)}
+        elif "moonshine" in model_type or "moonshine" in name_lower:
+            # Moonshine: speech encoder-decoder, needs input_values + decoder_input_ids
+            inputs = {
+                "input_values": torch.randn(B, 16000, device=device),
+                "decoder_input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
+            }
+        elif "spectrogram" in model_type or hasattr(config, "num_mel_bins"):
+            # AST and similar spectrogram models
+            num_mel_bins = getattr(config, "num_mel_bins", 128)
+            max_length = getattr(config, "max_length", 1024)
+            inputs = {"input_values": torch.randn(B, max_length, num_mel_bins, device=device)}
+        else:
+            # Most audio models use input_values (raw waveform)
+            inputs = {"input_values": torch.randn(B, 16000, device=device)}
+    else:  # text
+        inputs = {
+            "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
+            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
+        }
+
+    # ── Post-processing: add model-specific required inputs ──
+    name_lower = (spec.get("hf_class") or spec["name"]).lower()
+    model_type = getattr(config, "model_type", "")
+
+    # Sub-models that need hidden_states instead of/in addition to pixel_values
+    # These are internal vision encoders (Glm4v, GlmOcr, PaddleOCR, etc.)
+    hidden_states_models = {
+        "glm4vmoevisionmodel", "glm4vvisionmodel", "glmocrvisionmodel",
+        "flavamultimodalmodel", "phi4multimodalaudiomodel",
+        "vibevoiceacoustictokenizerencodermodel", "vibevoiceacoustictokenizerdecodermodel",
+        "ppocrv5mobiledetmodel", "videollama3visionmodel",
+    }
+    if name_lower in hidden_states_models:
+        hidden_size = getattr(config, "hidden_size", 768)
+        inputs = {"hidden_states": torch.randn(B, 32, hidden_size, device=device)}
+        # Glm-style vision models also need grid_thw
+        if "glm" in name_lower and "vision" in name_lower:
+            # grid_thw: (num_images, temporal, height_patches, width_patches)
+            inputs["grid_thw"] = torch.tensor([[1, 4, 8]] * B, dtype=torch.long, device=device)
+
+    # GlmImageVisionModel needs grid_thw with pixel_values
+    if name_lower == "glmimagevisionmodel":
+        inputs["grid_thw"] = torch.tensor([[1, 4, 8]] * B, dtype=torch.long, device=device)
+
+    # VideoLlama3VisionModel needs pixel_values + grid_thw + merge_sizes
+    if name_lower == "videollama3visionmodel":
+        img_size = getattr(config, "image_size", 224)
+        if isinstance(img_size, (list, tuple)):
+            img_size = img_size[0]
+        num_channels = getattr(config, "num_channels", 3)
+        inputs = {
+            "pixel_values": torch.randn(B, num_channels, img_size, img_size, device=device),
+            "grid_thw": torch.tensor([[1, 4, 8]] * B, dtype=torch.long, device=device),
+            "merge_sizes": torch.tensor([[2, 2]] * B, dtype=torch.long, device=device),
+        }
+
+    # Siglip2VisionModel needs pixel_attention_mask + spatial_shapes
+    if name_lower == "siglip2visionmodel":
+        img_size = getattr(config, "image_size", 384)
+        if isinstance(img_size, (list, tuple)):
+            img_size = img_size[0]
+        patch_size = getattr(config, "patch_size", 16)
+        num_patches_h = img_size // patch_size
+        num_patches_w = num_patches_h
+        num_channels = getattr(config, "num_channels", 3)
+        inputs = {
+            "pixel_values": torch.randn(B, num_channels, img_size, img_size, device=device),
+            "pixel_attention_mask": torch.ones(B, img_size, img_size, dtype=torch.long, device=device),
+            "spatial_shapes": torch.tensor([[num_patches_h, num_patches_w]] * B, dtype=torch.long, device=device),
+        }
+
+    # Video inference session models — need inference_session (stateful, not compilable)
+    # Skip: EdgeTamVideoModel, Sam2VideoModel, Sam3TrackerVideoModel, Sam3VideoModel
+
+    # InstructBlip needs qformer_input_ids
+    if "instructblip" in name_lower and "qformer_input_ids" not in inputs:
+        qformer_vocab = getattr(getattr(config, "qformer_config", None), "vocab_size", 1000) if hasattr(config, "qformer_config") else 1000
+        inputs["qformer_input_ids"] = torch.randint(0, min(qformer_vocab, 1000), (B, 32), device=device)
+
+    # BarkFineModel needs codebook_idx
+    if name_lower == "barkfinemodel":
+        inputs = {
+            "codebook_idx": 1,
+            "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
+            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
+        }
+
+    # PerceiverModel needs 'inputs' key (not input_ids)
+    if name_lower == "perceivermodel":
+        num_self_attends = getattr(config, "num_self_attends_per_block", 6)
+        inputs = {"inputs": torch.randn(B, 32, getattr(config, "d_model", 768), device=device)}
+
+    # SegGptModel needs prompt_pixel_values + prompt_masks
+    if name_lower == "seggptmodel":
+        img_size = getattr(config, "image_size", 480)
+        if isinstance(img_size, (list, tuple)):
+            img_size = img_size[0]
+        num_channels = getattr(config, "num_channels", 3)
+        inputs = {
+            "pixel_values": torch.randn(B, num_channels, img_size, img_size, device=device),
+            "prompt_pixel_values": torch.randn(B, num_channels, img_size, img_size, device=device),
+            "prompt_masks": torch.randn(B, 1, img_size, img_size, device=device),
+        }
+
+    # PeAudioModel needs input_ids (text-audio multimodal)
+    if name_lower == "peaudiomodel":
+        inputs = {
+            "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
+            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
+            "input_values": torch.randn(B, 16000, device=device),
+        }
+
+    # PeAudioVideoModel needs at least 2 of: input_ids, pixel_values_videos, input_values
+    if name_lower == "peaudiovideomodel":
+        img_size = 224
+        vision_cfg = getattr(config, "vision_config", None)
+        if vision_cfg:
+            img_size = getattr(vision_cfg, "image_size", 224)
+            if isinstance(img_size, (list, tuple)):
+                img_size = img_size[0]
+        # Probe for actual image size
+        for mod in model.modules():
+            pe = getattr(mod, "patch_embed", None)
+            if pe and hasattr(pe, "img_size"):
+                probed = pe.img_size
+                img_size = probed[0] if isinstance(probed, (tuple, list)) else probed
+                break
+        inputs = {
+            "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
+            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
+            "pixel_values_videos": torch.randn(B, 8, 3, img_size, img_size, device=device),
+        }
+
+    # VibeVoiceAcousticTokenizerModel needs input_values (raw audio)
+    if name_lower == "vibevoiceacoustictokenizermodel":
+        inputs = {"input_values": torch.randn(B, 16000, device=device)}
+
+    # Qwen2_5OmniToken2WavModel needs code + conditioning + reference_mel
+    if name_lower == "qwen2_5omnitoken2wavmodel":
+        hidden = getattr(config, "hidden_size", 768)
+        inputs = {
+            "code": torch.randint(0, 100, (B, 32), device=device),
+            "conditioning": torch.randn(B, 32, hidden, device=device),
+            "reference_mel": torch.randn(B, 80, 100, device=device),
+        }
+
+    # PI0Model needs action_embeds
+    if name_lower == "pi0model":
+        hidden = getattr(config, "hidden_size", 768)
+        inputs["action_embeds"] = torch.randn(B, 16, hidden, device=device)
+
+    # ── needs_special_input fixes ──
+
+    # BrosModel needs bbox
+    if name_lower == "brosmodel":
+        inputs["bbox"] = torch.randint(0, 1000, (B, 32, 8), device=device)
+
+    # UdopModel needs bbox
+    if name_lower == "udopmodel":
+        inputs["bbox"] = torch.randint(0, 1000, (B, 32, 4), device=device)
+
+    # Pix2StructVisionModel needs flattened_patches
+    if name_lower == "pix2structvisionmodel":
+        hidden = getattr(config, "hidden_size", 768)
+        patch_embed_dim = getattr(config, "patch_embed_hidden_size", None)
+        num_channels = getattr(config, "num_channels", 3)
+        patch_size = getattr(config, "patch_size", 16)
+        # flattened_patches: (B, seq_len, patch_size*patch_size*channels + 2)
+        flat_dim = patch_size * patch_size * num_channels + 2
+        inputs = {
+            "flattened_patches": torch.randn(B, 32, flat_dim, device=device),
+            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
+        }
+
+    # ViltModel needs pixel_values (multimodal but detected differently)
+    if name_lower == "viltmodel":
+        img_size = getattr(config, "image_size", 384)
+        if isinstance(img_size, (list, tuple)):
+            img_size = img_size[0]
+        inputs["pixel_values"] = torch.randn(B, 3, img_size, img_size, device=device)
+
+    # LxmertModel needs visual_feats
+    if name_lower == "lxmertmodel":
+        num_visual = 36
+        visual_feat_dim = getattr(config, "visual_feat_dim", 2048)
+        visual_pos_dim = getattr(config, "visual_pos_dim", 4)
+        inputs["visual_feats"] = torch.randn(B, num_visual, visual_feat_dim, device=device)
+        inputs["visual_pos"] = torch.randn(B, num_visual, visual_pos_dim, device=device)
+
+    # HiggsAudioV2Model — needs audio_input_ids or input_ids
+    if name_lower == "higgsaudiov2model":
+        inputs = {
+            "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
+            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
+        }
+
+    # Phi4MultimodalModel needs input_ids explicitly
+    if name_lower == "phi4multimodalmodel":
+        inputs = {
+            "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
+            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
+        }
+
+    # XmodModel needs set_default_language
+    if name_lower == "xmodmodel":
+        try:
+            model.set_default_language("en_XX")
+        except Exception:
+            pass
+
+    # ── image_token_mismatch fixes ──
+    # Models that check image_token_id in input_ids and count them to match pixel_values features
+    image_token_models = {
+        "fastvlmmodel", "florence2model", "gemma3nmodel", "gotocr2model",
+        "janusmodel", "paligemmamodel", "vipllavamodel",
+    }
+    if name_lower in image_token_models and "input_ids" in inputs:
+        # Find the image_token_id from config
+        image_token_id = getattr(config, "image_token_id", None)
+        if image_token_id is None:
+            image_token_id = getattr(config, "image_token_index", None)
+        if image_token_id is not None:
+            # Replace first N tokens with image_token_id
+            # Number of image tokens depends on vision encoder output
+            vision_cfg = getattr(config, "vision_config", None)
+            if vision_cfg:
+                v_img_size = getattr(vision_cfg, "image_size", 224)
+                if isinstance(v_img_size, (list, tuple)):
+                    v_img_size = v_img_size[0]
+                v_patch_size = getattr(vision_cfg, "patch_size", 16)
+                num_image_tokens = (v_img_size // v_patch_size) ** 2
+            else:
+                num_image_tokens = 196  # default 224/16 = 14^2
+            # Extend input_ids to fit image tokens + some text
+            total_len = num_image_tokens + 8
+            new_input_ids = torch.randint(0, vocab_size, (B, total_len), device=device)
+            new_input_ids[:, :num_image_tokens] = image_token_id
+            inputs["input_ids"] = new_input_ids
+            inputs["attention_mask"] = torch.ones(B, total_len, dtype=torch.long, device=device)
+
+    # ── shape_mismatch fixes ──
+
+    # OwlViT/Owlv2 text models — seq_len must equal max_position_embeddings
+    if name_lower in ("owlvittextmodel", "owlv2textmodel"):
+        max_pos = getattr(config, "max_position_embeddings", 16)
+        inputs = {
+            "input_ids": torch.randint(0, vocab_size, (B, max_pos), device=device),
+            "attention_mask": torch.ones(B, max_pos, dtype=torch.long, device=device),
+        }
+
+    # OwlViTModel/Owlv2Model — text seq_len must match max_position_embeddings
+    if name_lower in ("owlvitmodel", "owlv2model"):
+        text_cfg = getattr(config, "text_config", None)
+        if text_cfg:
+            max_pos = getattr(text_cfg, "max_position_embeddings", 16)
+            inputs["input_ids"] = torch.randint(0, vocab_size, (B, max_pos), device=device)
+            inputs["attention_mask"] = torch.ones(B, max_pos, dtype=torch.long, device=device)
+
+    # Siglip2Model — need hidden_size matching image_size
+    if name_lower == "siglip2model":
+        vision_cfg = getattr(config, "vision_config", None)
+        if vision_cfg:
+            img_size = getattr(vision_cfg, "image_size", 384)
+            if isinstance(img_size, (list, tuple)):
+                img_size = img_size[0]
+            patch_size = getattr(vision_cfg, "patch_size", 16)
+            num_channels = getattr(vision_cfg, "num_channels", 3)
+            num_patches_h = img_size // patch_size
+            num_patches_w = num_patches_h
+            inputs["pixel_values"] = torch.randn(B, num_channels, img_size, img_size, device=device)
+            inputs["pixel_attention_mask"] = torch.ones(B, img_size, img_size, dtype=torch.long, device=device)
+
+    # DepthProModel — image_size must be >= patch_size * 4 (scaled_images_ratios)
+    if name_lower == "depthpromodel":
+        patch_size = getattr(config, "patch_size", 384)
+        if isinstance(patch_size, (list, tuple)):
+            patch_size = patch_size[0]
+        # Must be >= patch_size * max(scaled_images_ratios) = patch_size
+        img_size = max(patch_size, 384)
+        num_channels = getattr(config, "num_channels", 3)
+        inputs = {"pixel_values": torch.randn(B, num_channels, img_size, img_size, device=device)}
+
+    # DecisionTransformerModel — needs states, actions, rewards, returns_to_go, timesteps
+    if name_lower == "decisiontransformermodel":
+        state_dim = getattr(config, "state_dim", 17)
+        act_dim = getattr(config, "act_dim", 4)
+        seq_len = 32
+        inputs = {
+            "states": torch.randn(B, seq_len, state_dim, device=device),
+            "actions": torch.randn(B, seq_len, act_dim, device=device),
+            "rewards": torch.randn(B, seq_len, 1, device=device),
+            "returns_to_go": torch.randn(B, seq_len, 1, device=device),
+            "timesteps": torch.randint(0, 100, (B, seq_len), device=device),
+            "attention_mask": torch.ones(B, seq_len, dtype=torch.long, device=device),
+        }
+
+    # TimesFmModel — past_values_padding + freq required
+    if name_lower == "timesfmmodel":
+        context_length = getattr(config, "context_length", 32)
+        inputs = {
+            "past_values": torch.randn(B, context_length, device=device),
+            "past_values_padding": torch.ones(B, context_length, device=device),
+            "freq": torch.zeros(B, dtype=torch.long, device=device),
+        }
+
+    return model, inputs, None
+
+
+def _detect_hf_input_type(model_name, config):
+    """Detect input modality from model name and config attributes."""
+    name_lower = model_name.lower()
+
+    # Check config for multimodal (vision + text sub-configs)
+    has_vision_config = hasattr(config, "vision_config") or hasattr(config, "image_config")
+    has_text_config = hasattr(config, "text_config")
+    if has_vision_config and has_text_config:
+        return "multimodal"
+
+    # Vision+text without vision_config (backbone-based vision + text)
+    # e.g., GroundingDino, MMGroundingDino
+    model_type = getattr(config, "model_type", "")
+    grounding_types = {"grounding-dino", "mm-grounding-dino"}
+    if model_type in grounding_types or ("groundingdino" in name_lower and has_text_config):
+        return "multimodal"
+
+    # Video-text multimodal (needs pixel_values_videos + input_ids)
+    # e.g., PeVideoModel — has text_config but video forward
+    if ("pevideo" in name_lower or model_type == "pe_video") and has_text_config:
+        return "video_multimodal"
+
+    # Vision-only with sub-config (e.g., Sam, Sam2) — has vision_config but no text_config
+    if has_vision_config and not has_text_config and not hasattr(config, "vocab_size"):
+        return "vision"
+
+    # Check config for audio sub-configs
+    has_audio_config = hasattr(config, "audio_config") or hasattr(config, "speech_config")
+    if has_audio_config:
+        return "audio"
+
+    # Image pair matching models (5D input: B, 2, C, H, W)
+    if "efficientloftr" in name_lower or ("loftr" in name_lower and "image" not in name_lower):
+        return "image_pair"
+
+    # Video models — check before general vision (they need 5D input)
+    video_keywords = ["timesformer", "videomae", "vivit", "xclip", "video"]
+    if any(kw in name_lower for kw in video_keywords) and hasattr(config, "num_frames"):
+        return "video"
+    # VJEPA2 is a video model with unique arg name (pixel_values_videos)
+    if "vjepa2" in name_lower and hasattr(config, "frames_per_clip"):
+        return "video"
+
+    # Time series models
+    time_series_keywords = ["patchtsmixer", "patchtst", "timesfm"]
+    if any(kw in name_lower for kw in time_series_keywords):
+        return "time_series"
+    if hasattr(config, "context_length") and hasattr(config, "patch_length"):
+        return "time_series"
+
+    # Audio codec models (encode/decode raw waveforms, NOT text)
+    audio_codec_keywords = ["encodec", "dac", "xcodec", "mimi"]
+    model_type_lower = getattr(config, "model_type", "").lower()
+    if any(kw in name_lower for kw in audio_codec_keywords) or any(kw in model_type_lower for kw in audio_codec_keywords):
+        return "audio_codec"
+
+    # Vision models — check config attributes first, then name
+    if hasattr(config, "image_size") and not hasattr(config, "vocab_size"):
+        return "vision"
+    vision_keywords = [
+        "vit", "swin", "deit", "beit", "convnext", "resnet", "poolformer",
+        "pvt", "segformer", "dinat", "nat", "levit", "efficientnet",
+        "mobilevit", "mobilenet", "regnet", "van", "dinov2", "hiera",
+        "siglip", "image", "cvt", "focalnet", "bit", "dpt", "glpn",
+        # Object detection / segmentation / depth / video models
+        "detr", "dfine", "rtdetr", "yolos", "deformable",
+        "seggpt", "segformer", "maskformer", "mask2former",
+        "depth", "loftr", "uvdoc", "vjepa",
+        "ppdoclayout", "ppocr", "timmwrapper",
+        "tabletransformer", "groundingdino",
+        # Vision models with vocab_size (dVAE codebook, not text)
+        "flavaimage",
+    ]
+    # Only match vision if the model is NOT also a text model
+    # Note: some vision models have vocab_size for codebook (BEiT, Flava) — not text
+    has_vocab = hasattr(config, "vocab_size") and config.vocab_size is not None
+    has_image_size = hasattr(config, "image_size")
+    # Models with image_size + vocab_size that are truly vision (dVAE codebook)
+    codebook_vision = has_image_size and has_vocab and not hasattr(config, "pad_token_id")
+    if any(kw in name_lower for kw in vision_keywords) and (not has_vocab or codebook_vision):
+        return "vision"
+    # Also check model_type for vision patterns
+    model_type = getattr(config, "model_type", "")
+    vision_model_types = ["detr", "yolos", "depth", "seggpt", "vjepa", "rt_detr", "d_fine", "sam2"]
+    if any(vt in model_type for vt in vision_model_types) and not has_vocab:
+        return "vision"
+
+    # Audio models
+    model_type = getattr(config, "model_type", "")
+    audio_keywords = [
+        "whisper", "wav2vec", "hubert", "audio", "unispeech", "wavlm", "sew", "ast",
+        "univnet", "fastspeech2", "clapaudio", "speech2text", "speech_to_text", "speecht5",
+        "moonshine",
+    ]
+    if any(kw in name_lower for kw in audio_keywords) or "audio" in model_type:
+        return "audio"
+
+    # Seq2seq models
+    if getattr(config, "is_encoder_decoder", False):
+        return "seq2seq"
+    seq2seq_keywords = [
+        "t5", "bart", "mbart", "pegasus", "marian", "blenderbot",
+        "prophetnet", "led", "longt5", "mt5", "umt5", "nllb", "seamless",
+        "m2m", "plbart", "bigbirdpegasus",
+    ]
+    if any(kw in name_lower for kw in seq2seq_keywords):
+        return "seq2seq"
+
+    return "text"
+
+
+def create_diffusers_model(spec, device):
+    import diffusers
+
+    model_name = spec.get("hf_class") or spec["name"]
+    model_cls = getattr(diffusers, model_name)
+
+    # Use provided config or try minimal defaults
+    constructor_args = spec.get("constructor_args", {})
+    model = model_cls(**constructor_args).to(device)
+
+    # Use provided inputs or try to generate from spec
+    input_spec = spec.get("inputs", {})
+    if input_spec:
+        inputs = {}
+        for k, shape in input_spec.items():
+            if isinstance(shape, list):
+                inputs[k] = torch.randn(*shape, device=device)
+            else:
+                inputs[k] = torch.tensor(shape, device=device)
+        # Fix 0D timestep → 1D (diffusion models need 1D timestep array)
+        if "timestep" in inputs and inputs["timestep"].ndim == 0:
+            batch_size = next(
+                (v.shape[0] for v in inputs.values() if isinstance(v, torch.Tensor) and v.ndim > 0), 1
+            )
+            inputs["timestep"] = torch.randint(0, 1000, (batch_size,), device=device)
+        # Fix class_labels: should be long integer indices, not float
+        if "class_labels" in inputs and inputs["class_labels"].is_floating_point():
+            num_classes = constructor_args.get("num_embeds_ada_norm", constructor_args.get("num_classes", 10))
+            inputs["class_labels"] = torch.randint(0, num_classes, inputs["class_labels"].shape, device=device)
+        return model, inputs, None
+
+    # Fallback: try positional args based on model type
+    return model, {}, None
+
+
+def create_model(spec, device, batch_size=DEFAULT_BATCH):
+    """Factory: create model + inputs based on source."""
+    source = spec["source"]
+    if source == "timm":
+        return create_timm_model(spec, device, batch_size=batch_size)
+    elif source == "hf":
+        return create_hf_model(spec, device, batch_size=batch_size)
+    elif source == "diffusers":
+        return create_diffusers_model(spec, device)
+    else:
+        raise ValueError(f"Unknown source: {source}")
+
+
+def _create_inputs_only(spec, device, batch_size=DEFAULT_BATCH):
+    """Create only inputs (no model retained) for a given spec.
+
+    Used by validation to get shape B inputs without keeping a second model in memory.
+    """
+    model, inputs_dict, inputs_tuple = create_model(spec, device, batch_size=batch_size)
+    del model
+    if device == "cuda":
+        torch.cuda.empty_cache()
+    return inputs_dict, inputs_tuple
+
+
+# ─── Pass 1: fullgraph identification ────────────────────────────────────────
+
+def _mark_dynamic_dims(inputs_dict, inputs_tuple, source, input_type):
+    """Mark realistic dynamic dimensions on inputs based on model modality.
+
+    - Batch (dim 0): always dynamic
+    - Sequence length (dim 1 for NLP/audio): dynamic
+    - Spatial dims (dim 2,3 for vision): NOT dynamic (architectures require fixed sizes)
+    - Channel/hidden dims: NOT dynamic
+    """
+    if inputs_tuple:
+        for t in inputs_tuple:
+            if isinstance(t, torch.Tensor) and t.ndim >= 1:
+                torch._dynamo.mark_dynamic(t, 0)  # batch
+                # Vision: only batch is dynamic (spatial dims are architecture-fixed)
+    elif inputs_dict:
+        for key, t in inputs_dict.items():
+            if not isinstance(t, torch.Tensor) or t.ndim < 1:
+                continue
+            torch._dynamo.mark_dynamic(t, 0)  # batch always
+            if t.ndim >= 2 and key in (
+                "input_ids", "attention_mask", "decoder_input_ids",
+                "decoder_attention_mask", "token_type_ids", "position_ids",
+                "input_features", "input_values",
+            ):
+                torch._dynamo.mark_dynamic(t, 1)  # seq_len / time
+
+
+def run_pass1(spec, device, mode, dynamic=False):
+    """Try fullgraph=True compile. Returns JSON-serializable result."""
+    t_start = time.perf_counter()
+    result = {
+        "name": spec["name"],
+        "source": spec["source"],
+        "mode": mode,
+        "pass": 1,
+        "dynamic": dynamic,
+        "phase": "create",  # tracks current phase for timeout diagnosis
+    }
+
+    # Phase markers to stderr — orchestrator reads these on timeout
+    print("PHASE:create", file=sys.stderr, flush=True)
+    try:
+        model, inputs_dict, inputs_tuple = create_model(spec, device)
+    except Exception as e:
+        result["status"] = "create_error"
+        result["error"] = str(e)[:500]
+        result["create_time_s"] = round(time.perf_counter() - t_start, 3)
+        return result
+    result["create_time_s"] = round(time.perf_counter() - t_start, 3)
+
+    if mode == "train":
+        model.train()
+    else:
+        model.eval()
+    ctx = torch.no_grad() if mode == "eval" else torch.enable_grad()
+
+    # Step 1: Eager baseline
+    result["phase"] = "eager"
+    print("PHASE:eager", file=sys.stderr, flush=True)
+    torch._dynamo.reset()
+    t_eager = time.perf_counter()
+    try:
+        with ctx:
+            if inputs_tuple:
+                model(*inputs_tuple)
+            else:
+                model(**inputs_dict)
+    except Exception as e:
+        result["status"] = "eager_error"
+        result["error"] = str(e)[:500]
+        result["eager_time_s"] = round(time.perf_counter() - t_eager, 3)
+        _cleanup(model, device)
+        return result
+    result["eager_time_s"] = round(time.perf_counter() - t_eager, 3)
+
+    # Step 2: fullgraph=True
+    result["phase"] = "compile"
+    print("PHASE:compile", file=sys.stderr, flush=True)
+    torch._dynamo.reset()
+    t_compile = time.perf_counter()
+    try:
+        # dynamic modes: True = all dims symbolic, "mark" = realistic dims only, False = static
+        compile_dynamic = True if dynamic is True else None
+        if dynamic == "mark":
+            input_type = spec.get("input_type", "auto")
+            _mark_dynamic_dims(inputs_dict, inputs_tuple, spec["source"], input_type)
+        compiled = torch.compile(model, fullgraph=True, backend="eager", dynamic=compile_dynamic)
+        with ctx:
+            if inputs_tuple:
+                compiled(*inputs_tuple)
+            else:
+                compiled(**inputs_dict)
+        result["status"] = "clean"
+        result["fullgraph_ok"] = True
+    except Exception as e:
+        result["status"] = "graph_break"
+        result["fullgraph_ok"] = False
+        result["fullgraph_error"] = str(e)[:500]
+    result["compile_time_s"] = round(time.perf_counter() - t_compile, 3)
+    result["phase"] = "done"
+
+    if device == "cuda":
+        result["gpu_mem_mb"] = round(torch.cuda.max_memory_allocated() / 1024**2, 1)
+
+    _cleanup(model, device)
+    return result
+
+
+# ─── Validation: two-shape correctness check ─────────────────────────────────
+
+# Validation shapes — avoid 0, 1 (specialized by PyTorch)
+SHAPE_A_BATCH = 2
+SHAPE_A_SEQ = 32
+SHAPE_B_BATCH = 4
+SHAPE_B_SEQ = 48
+
+
+def _compare_outputs(out_a, out_b, atol=1e-4, rtol=1e-4):
+    """Compare two model outputs. Returns (match: bool, max_diff: float, details: str)."""
+    def _to_tensors(out):
+        if isinstance(out, torch.Tensor):
+            return [out]
+        if hasattr(out, "values"):  # ModelOutput / dict-like
+            return [v for v in out.values() if isinstance(v, torch.Tensor)]
+        if isinstance(out, (tuple, list)):
+            tensors = []
+            for v in out:
+                if isinstance(v, torch.Tensor):
+                    tensors.append(v)
+                elif isinstance(v, (tuple, list)):
+                    tensors.extend(t for t in v if isinstance(t, torch.Tensor))
+            return tensors
+        return []
+
+    tensors_a = _to_tensors(out_a)
+    tensors_b = _to_tensors(out_b)
+
+    if len(tensors_a) != len(tensors_b):
+        return False, float("inf"), f"output count mismatch: {len(tensors_a)} vs {len(tensors_b)}"
+
+    max_diff = 0.0
+    for i, (ta, tb) in enumerate(zip(tensors_a, tensors_b)):
+        if ta.shape != tb.shape:
+            return False, float("inf"), f"tensor {i} shape mismatch: {ta.shape} vs {tb.shape}"
+        if ta.dtype != tb.dtype:
+            # Cast to float for comparison
+            ta, tb = ta.float(), tb.float()
+        diff = (ta - tb).abs().max().item()
+        max_diff = max(max_diff, diff)
+        if not torch.allclose(ta, tb, atol=atol, rtol=rtol):
+            return False, max_diff, f"tensor {i} mismatch: max_diff={diff:.6f}"
+
+    return True, max_diff, "ok"
+
+
+def run_validate(spec, device, mode, dynamic=False):
+    """Validate dynamic shape correctness by comparing outputs at two different shapes.
+
+    1. Create model + inputs at shape A (batch=3, seq=32)
+    2. Eager forward at shape A → reference
+    3. Compile with dynamic=True at shape A
+    4. Create inputs at shape B (batch=5, seq=48)
+    5. Compiled forward at shape B → test output
+    6. Eager forward at shape B → reference B
+    7. Compare compiled B vs eager B
+    """
+    t_start = time.perf_counter()
+    result = {
+        "name": spec["name"],
+        "source": spec["source"],
+        "mode": mode,
+        "pass": "validate",
+        "dynamic": dynamic,
+        "shape_a_batch": SHAPE_A_BATCH,
+        "shape_b_batch": SHAPE_B_BATCH,
+    }
+
+    # Phase 1: Create model
+    print("PHASE:create", file=sys.stderr, flush=True)
+    try:
+        model, inputs_dict_a, inputs_tuple_a = create_model(spec, device, batch_size=SHAPE_A_BATCH)
+    except Exception as e:
+        result["status"] = "create_error"
+        result["error"] = str(e)[:500]
+        return result
+    result["create_time_s"] = round(time.perf_counter() - t_start, 3)
+
+    if mode == "train":
+        model.train()
+    else:
+        model.eval()
+    ctx = torch.no_grad() if mode == "eval" else torch.enable_grad()
+
+    # Phase 2: Eager forward at shape A (warmup / baseline)
+    print("PHASE:eager_a", file=sys.stderr, flush=True)
+    torch._dynamo.reset()
+    try:
+        with ctx:
+            if inputs_tuple_a:
+                _ = model(*inputs_tuple_a)
+            else:
+                _ = model(**inputs_dict_a)
+    except Exception as e:
+        result["status"] = "eager_error"
+        result["error"] = f"shape_a eager: {str(e)[:400]}"
+        _cleanup(model, device)
+        return result
+
+    # Phase 3: Compile with dynamic=True at shape A
+    print("PHASE:compile", file=sys.stderr, flush=True)
+    torch._dynamo.reset()
+    compile_dynamic = True if dynamic is True else None
+    if dynamic == "mark":
+        input_type = spec.get("input_type", "auto")
+        _mark_dynamic_dims(inputs_dict_a, inputs_tuple_a, spec["source"], input_type)
+    try:
+        compiled = torch.compile(model, fullgraph=True, backend="eager", dynamic=compile_dynamic)
+        with ctx:
+            if inputs_tuple_a:
+                _ = compiled(*inputs_tuple_a)
+            else:
+                _ = compiled(**inputs_dict_a)
+    except Exception as e:
+        result["status"] = "compile_error"
+        result["error"] = str(e)[:500]
+        _cleanup(model, device)
+        return result
+
+    # Phase 4: Create inputs at shape B (reuse same model, just new inputs)
+    print("PHASE:shape_b", file=sys.stderr, flush=True)
+    try:
+        inputs_dict_b, inputs_tuple_b = _create_inputs_only(spec, device, batch_size=SHAPE_B_BATCH)
+    except Exception as e:
+        result["status"] = "create_error_b"
+        result["error"] = f"shape_b create: {str(e)[:400]}"
+        _cleanup(model, device)
+        return result
+
+    # Phase 5: Compiled forward at shape B
+    print("PHASE:compiled_b", file=sys.stderr, flush=True)
+    try:
+        with ctx:
+            if inputs_tuple_b:
+                compiled_out_b = compiled(*inputs_tuple_b)
+            else:
+                compiled_out_b = compiled(**inputs_dict_b)
+    except Exception as e:
+        result["status"] = "compiled_shape_b_error"
+        result["error"] = str(e)[:500]
+        _cleanup(model, device)
+        return result
+
+    # Phase 6: Eager forward at shape B
+    print("PHASE:eager_b", file=sys.stderr, flush=True)
+    torch._dynamo.reset()
+    try:
+        eager_model = model  # uncompiled
+        with ctx:
+            if inputs_tuple_b:
+                eager_out_b = eager_model(*inputs_tuple_b)
+            else:
+                eager_out_b = eager_model(**inputs_dict_b)
+    except Exception as e:
+        result["status"] = "eager_shape_b_error"
+        result["error"] = str(e)[:500]
+        _cleanup(model, device)
+        return result
+
+    # Phase 7: Compare
+    print("PHASE:compare", file=sys.stderr, flush=True)
+    match, max_diff, details = _compare_outputs(compiled_out_b, eager_out_b)
+    result["status"] = "pass" if match else "mismatch"
+    result["max_diff"] = round(max_diff, 8) if max_diff != float("inf") else "inf"
+    result["compare_details"] = details
+    result["wall_time_s"] = round(time.perf_counter() - t_start, 3)
+
+    if device == "cuda":
+        result["gpu_mem_mb"] = round(torch.cuda.max_memory_allocated() / 1024**2, 1)
+
+    _cleanup(model, device)
+    return result
+
+
+# ─── Pass 2: detailed analysis ───────────────────────────────────────────────
+
+def run_pass2(spec, device, mode):
+    """Run explain() + TORCH_TRACE on a model known to have graph breaks."""
+    result = {
+        "name": spec["name"],
+        "source": spec["source"],
+        "mode": mode,
+        "pass": 2,
+    }
+
+    try:
+        model, inputs_dict, inputs_tuple = create_model(spec, device)
+    except Exception as e:
+        result["status"] = "create_error"
+        result["error"] = str(e)[:500]
+        return result
+
+    if mode == "train":
+        model.train()
+    else:
+        model.eval()
+    ctx = torch.no_grad() if mode == "eval" else torch.enable_grad()
+
+    # Step 1: explain()
+    torch._dynamo.reset()
+    start = time.perf_counter()
+    try:
+        with ctx:
+            if inputs_tuple:
+                explanation = torch._dynamo.explain(model)(*inputs_tuple)
+            else:
+                explanation = torch._dynamo.explain(model)(**inputs_dict)
+
+        result["explain_time_s"] = round(time.perf_counter() - start, 3)
+        result["graph_count"] = explanation.graph_count
+        result["graph_break_count"] = explanation.graph_break_count
+        result["ops_per_graph"] = [len(g) for g in explanation.ops_per_graph]
+
+        if hasattr(explanation, "compile_times"):
+            try:
+                result["compile_times"] = [
+                    round(float(t), 3) if not isinstance(t, str) else t
+                    for t in explanation.compile_times
+                ]
+            except Exception:
+                result["compile_times"] = [str(t) for t in explanation.compile_times]
+
+        # Extract break reasons
+        if hasattr(explanation, "break_reasons") and explanation.break_reasons:
+            result["break_reasons"] = []
+            for br in explanation.break_reasons:
+                try:
+                    info = {"reason": str(getattr(br, "reason", str(br)))[:300]}
+                    if hasattr(br, "user_stack") and br.user_stack:
+                        top = br.user_stack[-1]
+                        info["file"] = str(getattr(top, "filename", ""))
+                        info["line"] = getattr(top, "lineno", 0)
+                    result["break_reasons"].append(info)
+                except Exception:
+                    result["break_reasons"].append({"reason": str(br)[:300]})
+
+        result["status"] = "ok"
+    except Exception as e:
+        result["status"] = "explain_error"
+        result["error"] = str(e)[:500]
+        result["explain_time_s"] = round(time.perf_counter() - start, 3)
+
+    # Step 2: TORCH_TRACE (if env var is set — orchestrator sets it before launch)
+    trace_dir = os.environ.get("TORCH_TRACE")
+    if trace_dir and result.get("status") == "ok":
+        # TORCH_TRACE is already set in env — just compile again
+        torch._dynamo.reset()
+        start = time.perf_counter()
+        try:
+            compiled = torch.compile(model, backend="eager")
+            with ctx:
+                if inputs_tuple:
+                    compiled(*inputs_tuple)
+                else:
+                    compiled(**inputs_dict)
+        except Exception:
+            pass  # Trace may still have partial data
+        result["trace_time_s"] = round(time.perf_counter() - start, 3)
+
+        # Measure trace size
+        from pathlib import Path
+        if os.path.exists(trace_dir):
+            trace_files = list(Path(trace_dir).rglob("*"))
+            trace_size = sum(f.stat().st_size for f in trace_files if f.is_file())
+            result["trace_size_kb"] = round(trace_size / 1024, 1)
+            result["trace_file_count"] = len([f for f in trace_files if f.is_file()])
+
+    if device == "cuda":
+        result["gpu_mem_mb"] = round(torch.cuda.max_memory_allocated() / 1024**2, 1)
+
+    _cleanup(model, device)
+    return result
+
+
+def _cleanup(model, device):
+    del model
+    if device == "cuda":
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
+
+
+# ─── Main ────────────────────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(description="Single-model worker for graph break sweep")
+    parser.add_argument("--model-json", required=True, help="JSON string with model spec")
+    parser.add_argument("--pass-num", type=int, required=True, choices=[1, 2, 3],
+                        help="Pass 1 (fullgraph), 2 (explain), or 3 (validate)")
+    parser.add_argument("--device", default="cuda", choices=["cpu", "cuda"])
+    parser.add_argument("--mode", default="eval", choices=["eval", "train"])
+    parser.add_argument("--dynamic", nargs="?", const="true", default=None,
+                        choices=["true", "mark"],
+                        help="Dynamic shapes: 'true' = all dims symbolic, 'mark' = realistic dims only")
+    args = parser.parse_args()
+
+    spec = json.loads(args.model_json)
+
+    # Convert dynamic arg: None→False, "true"→True, "mark"→"mark"
+    dynamic_val = {"true": True, "mark": "mark"}.get(args.dynamic, False)
+
+    if args.pass_num == 1:
+        result = run_pass1(spec, args.device, args.mode, dynamic=dynamic_val)
+    elif args.pass_num == 3:
+        result = run_validate(spec, args.device, args.mode, dynamic=dynamic_val)
+    else:
+        result = run_pass2(spec, args.device, args.mode)
+
+    # Output single JSON line to stdout
+    print(json.dumps(result))
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,306 @@
+#!/usr/bin/env python3
+"""Model enumeration — discovers models from TIMM, HF Transformers, and Diffusers.
+
+Each model is represented as a JSON-serializable spec dict with at minimum:
+  {"name": "...", "source": "timm|hf|diffusers"}
+
+Plus source-specific fields needed by worker.py to instantiate the model.
+
+Usage:
+  python models.py --source timm           # list all TIMM models
+  python models.py --source hf             # list all HF base Model classes
+  python models.py --source diffusers      # list all Diffusers ModelMixin classes
+  python models.py --source all            # list everything
+  python models.py --source all --count    # just counts
+  python models.py --source all --output models.json  # save to file
+"""
+import argparse
+import inspect
+import json
+import sys
+
+
+def enumerate_timm():
+    """Enumerate all TIMM models via timm.list_models()."""
+    import timm
+
+    models = []
+    for name in sorted(timm.list_models()):
+        models.append({
+            "name": name,
+            "source": "timm",
+        })
+    return models
+
+
+def enumerate_hf():
+    """Enumerate HF Transformers base Model classes with matching Configs.
+
+    Filters:
+    - Must subclass PreTrainedModel
+    - Must end with 'Model' (not ForXxxModel task heads)
+    - Must not be a PreTrainedModel base class
+    - Must have a matching Config class
+    """
+    import transformers
+
+    models = []
+    seen = set()
+
+    for name, obj in sorted(inspect.getmembers(transformers)):
+        if not inspect.isclass(obj):
+            continue
+        if not issubclass(obj, transformers.PreTrainedModel):
+            continue
+        if obj is transformers.PreTrainedModel:
+            continue
+        if "PreTrained" in name:
+            continue
+        if not name.endswith("Model"):
+            continue
+        if "For" in name:
+            continue
+
+        # Find matching config
+        config_name = name.replace("Model", "Config")
+        if not hasattr(transformers, config_name):
+            continue
+
+        # Deduplicate (some models are aliased)
+        if name in seen:
+            continue
+        seen.add(name)
+
+        spec = {
+            "name": name,
+            "source": "hf",
+            "hf_class": name,
+            "hf_config": config_name,
+        }
+
+        # Detect input type from name heuristics (fast, no config instantiation)
+        # The worker does config-based detection at runtime
+        input_type = _detect_hf_input_type(name)
+        if input_type != "text":
+            spec["input_type"] = input_type
+
+        models.append(spec)
+
+    return models
+
+
+def _detect_hf_input_type(model_name):
+    """Detect input modality from model class name (fast, no config instantiation)."""
+    name_lower = model_name.lower()
+
+    # Multimodal models (vision + text)
+    multimodal_keywords = [
+        "align", "altclip", "aimv2model", "blip", "bridgetower", "clip",
+        "chinese_clip", "chineseclip", "flava", "git", "llava", "paligemma",
+        "siglip", "colpali", "colqwen", "idefics", "instructblip",
+        "kosmos", "mgp", "owlv2", "owl_vit", "owlvit", "pix2struct",
+        "vilt", "xclip", "groupvit", "groundingdino", "mmgroundingdino",
+    ]
+    # Match only composite models (not sub-models like CLIPTextModel, CLIPVisionModel)
+    if any(kw in name_lower for kw in multimodal_keywords):
+        # Exclude sub-models (TextModel, VisionModel)
+        if not any(sub in name_lower for sub in ["text", "vision", "image", "audio"]):
+            return "multimodal"
+
+    # Vision models
+    vision_keywords = [
+        "vit", "swin", "deit", "beit", "convnext", "resnet", "poolformer",
+        "pvt", "segformer", "dinat", "nat", "levit", "efficientnet",
+        "mobilevit", "mobilenet", "regnet", "van", "dinov2", "hiera",
+        "cvt", "focalnet", "bit", "dpt", "glpn", "visionmodel",
+    ]
+    if any(kw in name_lower for kw in vision_keywords):
+        return "vision"
+
+    # Audio models
+    audio_keywords = [
+        "whisper", "wav2vec", "hubert", "audio", "unispeech", "wavlm",
+        "sew", "ast", "clap",
+    ]
+    if any(kw in name_lower for kw in audio_keywords):
+        return "audio"
+
+    # Seq2seq models
+    seq2seq_keywords = [
+        "t5", "bart", "mbart", "pegasus", "marian", "blenderbot",
+        "prophetnet", "led", "longt5", "mt5", "umt5", "nllb", "seamless",
+        "m2m", "plbart", "bigbirdpegasus",
+    ]
+    if any(kw in name_lower for kw in seq2seq_keywords):
+        return "seq2seq"
+
+    return "text"
+
+
+def enumerate_diffusers():
+    """Enumerate Diffusers ModelMixin subclasses.
+
+    Diffusers models need per-family constructor args and input shapes.
+    We provide minimal configs for known families; unknown models get
+    an empty constructor_args (will likely fail — flagged for manual config).
+    """
+    import diffusers
+    from diffusers import ModelMixin
+
+    # Minimal constructor configs for known model families
+    FAMILY_CONFIGS = {
+        # VAE / Autoencoder family
+        "AutoencoderKL": {
+            "constructor_args": {
+                "in_channels": 3, "out_channels": 3, "latent_channels": 4,
+                "down_block_types": ("DownEncoderBlock2D", "DownEncoderBlock2D"),
+                "up_block_types": ("UpDecoderBlock2D", "UpDecoderBlock2D"),
+                "block_out_channels": (32, 64),
+            },
+            "inputs": {"sample": [1, 3, 64, 64]},
+        },
+        "AutoencoderTiny": {
+            "constructor_args": {
+                "in_channels": 3, "out_channels": 3, "latent_channels": 4,
+                "encoder_block_out_channels": (32, 32),
+                "decoder_block_out_channels": (32, 32),
+                "num_encoder_blocks": (1, 1), "num_decoder_blocks": (1, 1),
+            },
+            "inputs": {"sample": [3, 3, 64, 64]},
+        },
+        # UNet family
+        "UNet2DModel": {
+            "constructor_args": {
+                "in_channels": 3, "out_channels": 3, "sample_size": 32,
+                "down_block_types": ("DownBlock2D", "DownBlock2D"),
+                "up_block_types": ("UpBlock2D", "UpBlock2D"),
+                "block_out_channels": (32, 64),
+            },
+            "inputs": {"sample": [1, 3, 32, 32], "timestep": 1.0},
+        },
+        "UNet2DConditionModel": {
+            "constructor_args": {
+                "in_channels": 4, "out_channels": 4, "sample_size": 32,
+                "cross_attention_dim": 32,
+                "down_block_types": ("CrossAttnDownBlock2D", "DownBlock2D"),
+                "up_block_types": ("UpBlock2D", "CrossAttnUpBlock2D"),
+                "block_out_channels": (32, 64),
+            },
+            "inputs": {
+                "sample": [1, 4, 32, 32],
+                "timestep": 1.0,
+                "encoder_hidden_states": [1, 1, 32],
+            },
+        },
+        # DiT / Transformer family
+        "DiTTransformer2DModel": {
+            "constructor_args": {
+                "num_attention_heads": 2, "attention_head_dim": 16,
+                "in_channels": 4, "out_channels": 4, "num_layers": 2,
+                "sample_size": 8, "num_embeds_ada_norm": 10,
+            },
+            "inputs": {
+                "hidden_states": [3, 4, 8, 8],
+                "timestep": 1.0,
+                "class_labels": [3],
+            },
+        },
+    }
+
+    models = []
+    for name, obj in sorted(inspect.getmembers(diffusers)):
+        if not inspect.isclass(obj):
+            continue
+        if not issubclass(obj, ModelMixin):
+            continue
+        if obj is ModelMixin:
+            continue
+        # Skip multi-model wrappers
+        if "Multi" in name:
+            continue
+
+        spec = {
+            "name": name,
+            "source": "diffusers",
+            "hf_class": name,
+        }
+
+        # Check if we have a config for this model or its family
+        config = FAMILY_CONFIGS.get(name)
+        if not config:
+            # Try matching by prefix (e.g. AutoencoderKLCogVideoX → AutoencoderKL)
+            for family_name, family_config in FAMILY_CONFIGS.items():
+                if name.startswith(family_name) and name != family_name:
+                    # Family match — may need adjustment
+                    spec["family_match"] = family_name
+                    break
+
+        if config:
+            spec["constructor_args"] = config["constructor_args"]
+            spec["inputs"] = config["inputs"]
+            spec["has_config"] = True
+        else:
+            spec["has_config"] = False
+
+        models.append(spec)
+
+    return models
+
+
+def enumerate_all():
+    """Enumerate models from all sources.
+
+    Diffusers models without configs are auto-excluded (they'd fail to construct).
+    Use enumerate_diffusers() directly to include them.
+    """
+    models = []
+    # HF first: smaller, more diverse, expose more problems early
+    models.extend(enumerate_hf())
+    models.extend(enumerate_timm())
+    # Only include diffusers models that have known constructor configs
+    models.extend([m for m in enumerate_diffusers() if m.get("has_config", False)])
+    return models
+
+
+# ─── Main ────────────────────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(description="Enumerate models for graph break sweep")
+    parser.add_argument("--source", default="all", choices=["timm", "hf", "diffusers", "all"])
+    parser.add_argument("--count", action="store_true", help="Just print counts")
+    parser.add_argument("--output", help="Save model list to JSON file")
+    parser.add_argument("--has-config-only", action="store_true",
+                        help="Only include models with known input configs (diffusers)")
+    args = parser.parse_args()
+
+    if args.source == "all":
+        models = enumerate_all()
+    elif args.source == "timm":
+        models = enumerate_timm()
+    elif args.source == "hf":
+        models = enumerate_hf()
+    elif args.source == "diffusers":
+        models = enumerate_diffusers()
+
+    if args.has_config_only:
+        models = [m for m in models if m.get("has_config", True)]
+
+    if args.count:
+        by_source = {}
+        for m in models:
+            by_source.setdefault(m["source"], 0)
+            by_source[m["source"]] += 1
+        for source, count in sorted(by_source.items()):
+            print(f"  {source}: {count}")
+        print(f"  total: {len(models)}")
+    elif args.output:
+        with open(args.output, "w") as f:
+            json.dump(models, f, indent=2)
+        print(f"Saved {len(models)} models to {args.output}")
+    else:
+        for m in models:
+            print(json.dumps(m))
+
+
+if __name__ == "__main__":
+    main()
