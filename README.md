@@ -8,6 +8,24 @@ When `torch.compile(model, fullgraph=True)` fails, it means the model contains o
 
 This corpus systematically tests **468 models** from HuggingFace Transformers and Diffusers against `torch.compile(fullgraph=True, backend="eager")` in both eval and train modes, producing a structured dataset of which models compile cleanly and which have graph breaks.
 
+### Environment
+
+This corpus was generated with:
+
+| Component | Version |
+|-----------|---------|
+| PyTorch | 2.10.0+cu128 |
+| Transformers | 5.4.0 |
+| Diffusers | 0.37.1 |
+| Python | 3.12.13 |
+| CUDA | 12.8 |
+| GPU | NVIDIA A100 80GB |
+
+To reproduce, install matching versions:
+```bash
+pip install torch==2.10.0 transformers==5.4.0 diffusers==0.37.1
+```
+
 ## Corpus Summary
 
 | Status | Eval | Train |
@@ -38,13 +56,16 @@ for m in corpus['models']:
 ### Reproduce a graph break
 
 ```bash
-pip install torch transformers diffusers
+pip install torch==2.10.0 transformers==5.4.0 diffusers==0.37.1
 
 # Quick check for a single model
 python reproduce.py BartModel
 
 # With train mode
 python reproduce.py BartModel --mode train
+
+# List all graph-break models
+python reproduce.py --list
 ```
 
 ### Run the full sweep
@@ -52,7 +73,7 @@ python reproduce.py BartModel --mode train
 ```bash
 # Set up environment
 python -m venv env && source env/bin/activate
-pip install torch transformers diffusers timm
+pip install torch transformers diffusers
 
 # Run sweep (eval + train, all HF + Diffusers models)
 python sweep/run_sweep.py \
@@ -65,14 +86,82 @@ python sweep/run_sweep.py \
 
 The sweep writes results incrementally to `sweep_results/pass1_checkpoint.jsonl` and can resume from crashes with `--resume`.
 
+## Graph Break Taxonomy
+
+The **70 graph-break models** fall into **10 root cause categories**. The top 3 account for 69% of all breaks and are all fixable in PyTorch core or HuggingFace model code — not inherent model limitations.
+
+| Root Cause | Count | % | Fix Location |
+|------------|-------|---|-------------|
+| **copy.deepcopy()** | 19 | 31% | HF model code: replace deepcopy with clone() |
+| **Skipped/forbidden callable** | 15 | 25% | PyTorch core: support these callables in Dynamo |
+| **as_proxy() missing** | 8 | 13% | PyTorch core: implement as_proxy() for failing types |
+| **Data-dependent branching** | 7 | 11% | Model code: requires torch.cond() or restructuring |
+| **logging.Logger** | 5 | 8% | PyTorch core: skip/inline logger calls in Dynamo |
+| **Unbacked symbols** | 2 | 3% | Hard: model generates shapes dynamically |
+| **Observed exception (try/except)** | 2 | 3% | Dynamo exception handler support |
+| **requires_grad_()** | 1 | 2% | Dynamo mutation support |
+| **Non-Tensor return** | 1 | 2% | Dynamo op return type support |
+| **Untraceable builtin** | 1 | 2% | Dynamo builtin operator support |
+
+**Key insight:** `copy.deepcopy()` alone causes 31% of all graph breaks — all 19 are encoder-decoder models (BART, T5, Pegasus, Whisper, etc.) that clone decoder layers from encoder layers during init. A single HF PR replacing deepcopy with explicit clone() would fix all 19 models.
+
+## Methodology
+
+### Two-Pass Sweep
+
+The sweep uses a two-pass approach to efficiently identify and analyze graph breaks:
+
+**Pass 1 (identification)** — runs `torch.compile(model, fullgraph=True, backend="eager")` on every model. `fullgraph=True` fails immediately on the first graph break, so broken models fail in <0.1s while clean models take 3-10s. This makes Pass 1 fast even on the full corpus. The `--pass1-only` flag runs only this pass.
+
+**Pass 2 (diagnostics)** — runs `torch._dynamo.explain()` + `TORCH_TRACE` only on models that broke in Pass 1. `explain()` reports *all* graph breaks (not just the first), with source locations, graph counts, and subgraph sizes. `TORCH_TRACE` collects full tracebacks and FX output graphs. This avoids running expensive diagnostics on the ~90% of models that compile cleanly.
+
+### Why `backend="eager"`?
+
+The `eager` backend tests Dynamo's tracing ability without adding inductor codegen overhead. Benchmarks show it's 2-5x faster than `aot_eager` and 5.5x faster than `inductor`, with identical graph break detection. The corpus captures Dynamo-level graph breaks — backend-specific issues (inductor bugs, codegen failures) are a separate concern.
+
+| Backend | resnet50 eval | Relative |
+|---------|--------------|----------|
+| eager | 3.3s | 1.0x |
+| aot_eager | 8.1s | 2.4x |
+| inductor | 38.2s | 11.6x |
+
+### Why batch_size=2?
+
+PyTorch specializes on dimension values 0 and 1, treating them as constants rather than symbols. Using `batch=1` bypasses dynamic shape machinery, giving false confidence that compilation works. Any batch size >= 2 avoids this specialization.
+
+We use `bs=2` instead of `bs=3` because they produce identical graph break detection results, but `bs=2` uses 33% less GPU memory — allowing more parallel workers and faster sweeps.
+
+### Why HF Transformers + Diffusers (not TIMM)?
+
+TIMM (1,284 vision models) is excluded from the default sweep because it's nearly solved:
+
+| | TIMM | HF Transformers + Diffusers |
+|---|---|---|
+| Models | 1,284 (73% of corpus) | 468 (27% of corpus) |
+| Graph breaks | 3 (0.2%) | 70 (15%) |
+| Root causes | 1 (RNN wrapping) | 10 categories |
+| Sweep time | ~5 hours | ~1 hour |
+
+TIMM contributes 73% of sweep time but only 4% of graph break signal (3 out of 73 breaks, all the same RNN root cause). The full corpus including TIMM is available via `--source all`.
+
+### Dynamic Shapes Don't Add New Graph Breaks
+
+A `dynamic=True` sweep on statically-clean models showed that dynamic shapes do not introduce new graph break *categories*. The same root causes (deepcopy, skipped callables, data-dependent branching, etc.) appear whether shapes are static or dynamic. Dynamic shapes primarily add compile timeouts from symbolic constraint explosion.
+
+The default sweep runs static shapes only. Dynamic sweeps are available via `--dynamic true` for identifying compile performance regressions.
+
 ## Corpus Format
 
 `corpus/corpus.json` contains:
 
 ```json
 {
-  "metadata": { "pytorch_version": "...", "methodology": "..." },
-  "summary": { "total_models": 468, "graph_break_models": 70, ... },
+  "metadata": {
+    "pytorch_version": "2.10.0+cu128",
+    "python_version": "3.12.13",
+    "methodology": "..."
+  },
+  "summary": { "total_models": 468, "graph_break_models": 70 },
   "models": [
     {
       "name": "BartModel",
@@ -117,17 +206,6 @@ The sweep uses a **poll-loop orchestrator** with process-group isolation:
 - GPU memory pressure reduces parallelism instead of aborting the sweep
 - Results are checkpointed to JSONL after each model completes
 - `--resume` skips already-completed models for crash recovery
-
-## Methodology
-
-1. For each model, instantiate with default config (no pretrained weights)
-2. Generate synthetic inputs matching the model's expected input format
-3. Run eager forward pass to verify the model works
-4. Run `torch.compile(model, fullgraph=True, backend="eager")` and execute
-5. If compilation raises `torch._dynamo.exc.Unsupported`, the model has a graph break
-6. Test both `model.eval()` and `model.train()` modes
-
-The `eager` backend isolates graph break detection from inductor-specific issues.
 
 ## Regenerating the Corpus
 

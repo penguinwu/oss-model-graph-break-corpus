@@ -3,6 +3,8 @@
     "description": "OSS Model Graph Break Corpus \u2014 torch.compile fullgraph=True compatibility for HuggingFace Transformers and Diffusers models",
     "generated": "2026-03-30T18:05:48",
     "pytorch_version": "2.10.0+cu128",
+    "transformers_version": "5.4.0",
+    "diffusers_version": "0.37.1",
     "python_version": "3.12.13",
     "cuda_version": "12.8",
     "gpu": "A100 80GB",
