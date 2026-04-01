@@ -24,7 +24,21 @@
   },
   "summary": {
     "total_models": 468,
-    "graph_break_models": 80
+    "eval": {
+      "clean": 352,
+      "graph_break": 93,
+      "eager_error": 13,
+      "create_error": 6,
+      "timeout": 4
+    },
+    "train": {
+      "clean": 337,
+      "graph_break": 107,
+      "eager_error": 14,
+      "create_error": 6,
+      "timeout": 4
+    },
+    "has_graph_break": 110
   },
   "models": [
     {
@@ -304,20 +318,202 @@
     {
       "name": "AriaModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 20.317,
-        "eager_time_s": 0.45,
-        "error": "'Number of patches 49 not found in patch_to_query_dict amongst possible values dict_keys([1225, 4900]).'",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 25.462,
+        "eager_time_s": 1.145,
+        "fullgraph_ok": false,
+        "compile_time_s": 2.217,
+        "gpu_mem_mb": 5202.1,
+        "graph_break_count": 27,
+        "graph_count": 28,
+        "break_reasons": [
+          {
+            "reason": "Unsupported context manager\n  Explanation: Dynamo does not know how to enter a `lock` context manager.\n  Hint: Avoid using the unsupported context manager.\n  Hint: If the context manager seems like it should be supported (e.g. torch.set_grad_enabled), then it may be the case that it was created outs",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/utils/output_capturing.py",
+            "line": 192
+          },
+          {
+            "reason": "Dynamic shape operator\n  Explanation: Operator `aten.nonzero.default`'s output shape depends on input Tensor data.\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\n\n  Developer debug context: aten.nonzero.default\n\n For more details",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/idefics3/modeling_idefics3.py",
+            "line": 174
+          },
+          {
+            "reason": "Dynamic shape operator\n  Explanation: Operator `aten.nonzero.default`'s output shape depends on input Tensor data.\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\n\n  Developer debug context: aten.nonzero.default\n\n For more details",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/idefics3/modeling_idefics3.py",
+            "line": 174
+          },
+          {
+            "reason": "Unsupported method call\n  Explanation: Dynamo does not know how to trace method `get` of class `ContextVar`\n  Hint: Avoid calling `ContextVar.get` in your code.\n  Hint: Please report an issue to PyTorch.\n\n  Developer debug context: call_method UserDefinedObjectVariable(ContextVar) get [] {}\n\n For mo",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/utils/output_capturing.py",
+            "line": 76
+          },
+          {
+            "reason": "Unsupported method call\n  Explanation: Dynamo does not know how to trace method `get` of class `ContextVar`\n  Hint: Avoid calling `ContextVar.get` in your code.\n  Hint: Please report an issue to PyTorch.\n\n  Developer debug context: call_method UserDefinedObjectVariable(ContextVar) get [] {}\n\n For mo",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/utils/output_capturing.py",
+            "line": 76
+          },
+          {
+            "reason": "Dynamic shape operator\n  Explanation: Operator `aten.nonzero.default`'s output shape depends on input Tensor data.\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\n\n  Developer debug context: aten.nonzero.default\n\n For more details",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/aria/modeling_aria.py",
+            "line": 956
+          },
+          {
+            "reason": "Dynamic shape operator\n  Explanation: Operator `aten.nonzero.default`'s output shape depends on input Tensor data.\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\n\n  Developer debug context: aten.nonzero.default\n\n For more details",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/aria/modeling_aria.py",
+            "line": 956
+          },
+          {
+            "reason": "Unsupported Tensor.item() call with capture_scalar_outputs=False\n  Explanation: Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False.\n  Hint: Set `torch._dynamo.config.capture_scalar_outputs = True` or `export TORCHDYNAMO_CAPTURE_SCALAR_OUTPUTS=1` to include these",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/aria/modeling_aria.py",
+            "line": 272
+          },
+          {
+            "reason": "Unsupported Tensor.item() call with capture_scalar_outputs=False\n  Explanation: Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False.\n  Hint: Set `torch._dynamo.config.capture_scalar_outputs = True` or `export TORCHDYNAMO_CAPTURE_SCALAR_OUTPUTS=1` to include these",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/aria/modeling_aria.py",
+            "line": 272
+          },
+          {
+            "reason": "Unsupported Tensor.item() call with capture_scalar_outputs=False\n  Explanation: Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False.\n  Hint: Set `torch._dynamo.config.capture_scalar_outputs = True` or `export TORCHDYNAMO_CAPTURE_SCALAR_OUTPUTS=1` to include these",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/aria/modeling_aria.py",
+            "line": 272
+          },
+          {
+            "reason": "Unsupported Tensor.item() call with capture_scalar_outputs=False\n  Explanation: Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False.\n  Hint: Set `torch._dynamo.config.capture_scalar_outputs = True` or `export TORCHDYNAMO_CAPTURE_SCALAR_OUTPUTS=1` to include these",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/aria/modeling_aria.py",
+            "line": 272
+          },
+          {
+            "reason": "Unsupported Tensor.item() call with capture_scalar_outputs=False\n  Explanation: Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False.\n  Hint: Set `torch._dynamo.config.capture_scalar_outputs = True` or `export TORCHDYNAMO_CAPTURE_SCALAR_OUTPUTS=1` to include these",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/aria/modeling_aria.py",
+            "line": 272
+          },
+          {
+            "reason": "step_unsupported",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/aria/modeling_aria.py",
+            "line": 269
+          },
+          {
+            "reason": "Unsupported Tensor.item() call with capture_scalar_outputs=False\n  Explanation: Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False.\n  Hint: Set `torch._dynamo.config.capture_scalar_outputs = True` or `export TORCHDYNAMO_CAPTURE_SCALAR_OUTPUTS=1` to include these",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/aria/modeling_aria.py",
+            "line": 272
+          },
+          {
+            "reason": "Unsupported Tensor.item() call with capture_scalar_outputs=False\n  Explanation: Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False.\n  Hint: Set `torch._dynamo.config.capture_scalar_outputs = True` or `export TORCHDYNAMO_CAPTURE_SCALAR_OUTPUTS=1` to include these",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/aria/modeling_aria.py",
+            "line": 272
+          },
+          {
+            "reason": "step_unsupported",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/aria/modeling_aria.py",
+            "line": 269
+          },
+          {
+            "reason": "Unsupported Tensor.item() call with capture_scalar_outputs=False\n  Explanation: Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False.\n  Hint: Set `torch._dynamo.config.capture_scalar_outputs = True` or `export TORCHDYNAMO_CAPTURE_SCALAR_OUTPUTS=1` to include these",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/aria/modeling_aria.py",
+            "line": 272
+          }
+        ],
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 19.655,
-        "eager_time_s": 0.478,
-        "error": "'Number of patches 49 not found in patch_to_query_dict amongst possible values dict_keys([1225, 4900]).'",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 26.258,
+        "eager_time_s": 1.311,
+        "fullgraph_ok": false,
+        "compile_time_s": 2.419,
+        "gpu_mem_mb": 5434.1,
+        "graph_break_count": 27,
+        "graph_count": 28,
+        "break_reasons": [
+          {
+            "reason": "Unsupported context manager\n  Explanation: Dynamo does not know how to enter a `lock` context manager.\n  Hint: Avoid using the unsupported context manager.\n  Hint: If the context manager seems like it should be supported (e.g. torch.set_grad_enabled), then it may be the case that it was created outs",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/utils/output_capturing.py",
+            "line": 192
+          },
+          {
+            "reason": "Dynamic shape operator\n  Explanation: Operator `aten.nonzero.default`'s output shape depends on input Tensor data.\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\n\n  Developer debug context: aten.nonzero.default\n\n For more details",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/idefics3/modeling_idefics3.py",
+            "line": 174
+          },
+          {
+            "reason": "Dynamic shape operator\n  Explanation: Operator `aten.nonzero.default`'s output shape depends on input Tensor data.\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\n\n  Developer debug context: aten.nonzero.default\n\n For more details",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/idefics3/modeling_idefics3.py",
+            "line": 174
+          },
+          {
+            "reason": "Unsupported method call\n  Explanation: Dynamo does not know how to trace method `get` of class `ContextVar`\n  Hint: Avoid calling `ContextVar.get` in your code.\n  Hint: Please report an issue to PyTorch.\n\n  Developer debug context: call_method UserDefinedObjectVariable(ContextVar) get [] {}\n\n For mo",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/utils/output_capturing.py",
+            "line": 76
+          },
+          {
+            "reason": "Unsupported method call\n  Explanation: Dynamo does not know how to trace method `get` of class `ContextVar`\n  Hint: Avoid calling `ContextVar.get` in your code.\n  Hint: Please report an issue to PyTorch.\n\n  Developer debug context: call_method UserDefinedObjectVariable(ContextVar) get [] {}\n\n For mo",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/utils/output_capturing.py",
+            "line": 76
+          },
+          {
+            "reason": "Dynamic shape operator\n  Explanation: Operator `aten.nonzero.default`'s output shape depends on input Tensor data.\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\n\n  Developer debug context: aten.nonzero.default\n\n For more details",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/aria/modeling_aria.py",
+            "line": 956
+          },
+          {
+            "reason": "Dynamic shape operator\n  Explanation: Operator `aten.nonzero.default`'s output shape depends on input Tensor data.\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\n\n  Developer debug context: aten.nonzero.default\n\n For more details",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/aria/modeling_aria.py",
+            "line": 956
+          },
+          {
+            "reason": "Unsupported Tensor.item() call with capture_scalar_outputs=False\n  Explanation: Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False.\n  Hint: Set `torch._dynamo.config.capture_scalar_outputs = True` or `export TORCHDYNAMO_CAPTURE_SCALAR_OUTPUTS=1` to include these",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/aria/modeling_aria.py",
+            "line": 272
+          },
+          {
+            "reason": "Unsupported Tensor.item() call with capture_scalar_outputs=False\n  Explanation: Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False.\n  Hint: Set `torch._dynamo.config.capture_scalar_outputs = True` or `export TORCHDYNAMO_CAPTURE_SCALAR_OUTPUTS=1` to include these",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/aria/modeling_aria.py",
+            "line": 272
+          },
+          {
+            "reason": "Unsupported Tensor.item() call with capture_scalar_outputs=False\n  Explanation: Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False.\n  Hint: Set `torch._dynamo.config.capture_scalar_outputs = True` or `export TORCHDYNAMO_CAPTURE_SCALAR_OUTPUTS=1` to include these",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/aria/modeling_aria.py",
+            "line": 272
+          },
+          {
+            "reason": "Unsupported Tensor.item() call with capture_scalar_outputs=False\n  Explanation: Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False.\n  Hint: Set `torch._dynamo.config.capture_scalar_outputs = True` or `export TORCHDYNAMO_CAPTURE_SCALAR_OUTPUTS=1` to include these",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/aria/modeling_aria.py",
+            "line": 272
+          },
+          {
+            "reason": "Unsupported Tensor.item() call with capture_scalar_outputs=False\n  Explanation: Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False.\n  Hint: Set `torch._dynamo.config.capture_scalar_outputs = True` or `export TORCHDYNAMO_CAPTURE_SCALAR_OUTPUTS=1` to include these",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/aria/modeling_aria.py",
+            "line": 272
+          },
+          {
+            "reason": "step_unsupported",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/aria/modeling_aria.py",
+            "line": 269
+          },
+          {
+            "reason": "Unsupported Tensor.item() call with capture_scalar_outputs=False\n  Explanation: Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False.\n  Hint: Set `torch._dynamo.config.capture_scalar_outputs = True` or `export TORCHDYNAMO_CAPTURE_SCALAR_OUTPUTS=1` to include these",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/aria/modeling_aria.py",
+            "line": 272
+          },
+          {
+            "reason": "Unsupported Tensor.item() call with capture_scalar_outputs=False\n  Explanation: Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False.\n  Hint: Set `torch._dynamo.config.capture_scalar_outputs = True` or `export TORCHDYNAMO_CAPTURE_SCALAR_OUTPUTS=1` to include these",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/aria/modeling_aria.py",
+            "line": 272
+          },
+          {
+            "reason": "step_unsupported",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/aria/modeling_aria.py",
+            "line": 269
+          },
+          {
+            "reason": "Unsupported Tensor.item() call with capture_scalar_outputs=False\n  Explanation: Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False.\n  Hint: Set `torch._dynamo.config.capture_scalar_outputs = True` or `export TORCHDYNAMO_CAPTURE_SCALAR_OUTPUTS=1` to include these",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/aria/modeling_aria.py",
+            "line": 272
+          }
+        ],
+        "retry_r8": true
       }
     },
     {
@@ -384,20 +580,24 @@
     {
       "name": "AutoformerModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 2.942,
-        "eager_time_s": 0.123,
-        "error": "lags cannot go further than history length, found lag 7 while history length is only 96",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 3.144,
+        "eager_time_s": 1.002,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.562,
+        "gpu_mem_mb": 10.7,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 2.615,
-        "eager_time_s": 0.125,
-        "error": "lags cannot go further than history length, found lag 7 while history length is only 96",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 3.569,
+        "eager_time_s": 0.529,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.721,
+        "gpu_mem_mb": 13.6,
+        "retry_r8": true
       }
     },
     {
@@ -405,18 +605,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 9.254,
-        "eager_time_s": 0.352,
-        "error": "shape '[2, 27, 13, 2304]' is invalid for input of size 1679616",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 15.247,
+        "eager_time_s": 0.338,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.28,
+        "gpu_mem_mb": 1260.0,
+        "wall_time_s": 25.32,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 9.012,
-        "eager_time_s": 0.338,
-        "error": "shape '[2, 27, 13, 2304]' is invalid for input of size 1679616",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 14.593,
+        "eager_time_s": 0.409,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.127,
+        "gpu_mem_mb": 1266.9,
+        "wall_time_s": 25.32,
+        "retry_r8": true
       }
     },
     {
@@ -466,18 +672,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 4.861,
-        "eager_time_s": 0.0,
-        "error": "too many indices for tensor of dimension 2",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 6.555,
+        "eager_time_s": 0.635,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.403,
+        "gpu_mem_mb": 310.3,
+        "wall_time_s": 20.25,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 5.029,
-        "eager_time_s": 0.0,
-        "error": "too many indices for tensor of dimension 2",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 6.856,
+        "eager_time_s": 0.427,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.353,
+        "gpu_mem_mb": 316.1,
+        "wall_time_s": 20.25,
+        "retry_r8": true
       }
     },
     {
@@ -739,20 +951,34 @@
     {
       "name": "Blip2Model",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 7.183,
-        "eager_time_s": 0.496,
-        "error": "'bool' object has no attribute 'unsqueeze'",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 10.923,
+        "eager_time_s": 1.114,
+        "fullgraph_ok": true,
+        "compile_time_s": 10.125,
+        "gpu_mem_mb": 861.9,
+        "wall_time_s": 30.67,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 7.352,
-        "eager_time_s": 0.492,
-        "error": "'bool' object has no attribute 'unsqueeze'",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 10.229,
+        "eager_time_s": 1.162,
+        "fullgraph_ok": false,
+        "compile_time_s": 8.717,
+        "gpu_mem_mb": 1027.8,
+        "graph_break_count": 5,
+        "graph_count": 6,
+        "break_reasons": [
+          {
+            "reason": "Data-dependent branching\n  Explanation: Detected data-dependent branching (e.g. `if my_tensor.sum() > 0:`). Dynamo does not support tracing dynamic control flow.\n  Hint: This graph break is fundamental - it is unlikely that Dynamo will ever be able to trace through your code. Consider finding a work",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/opt/modeling_opt.py",
+            "line": 375
+          }
+        ],
+        "retry_r8": true
       }
     },
     {
@@ -1283,37 +1509,50 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 12.668,
-        "eager_time_s": 0.552,
-        "error": "Image features and image tokens do not match, tokens: 32, features: 32",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 22.237,
+        "eager_time_s": 0.681,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.952,
+        "gpu_mem_mb": 1991.1,
+        "wall_time_s": 35.59,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 12.578,
-        "eager_time_s": 0.541,
-        "error": "Image features and image tokens do not match, tokens: 32, features: 32",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 21.773,
+        "eager_time_s": 0.989,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.888,
+        "gpu_mem_mb": 1998.1,
+        "wall_time_s": 35.59,
+        "retry_r8": true
       }
     },
     {
       "name": "CohereAsrModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 35.613,
-        "eager_time_s": 0.0,
-        "error": "'NoneType' object has no attribute 'unsqueeze'",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 46.314,
+        "eager_time_s": 0.897,
+        "fullgraph_ok": true,
+        "compile_time_s": 27.71,
+        "gpu_mem_mb": 7645.5,
+        "wall_time_s": 86.96,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 36.984,
-        "eager_time_s": 0.0,
-        "error": "'NoneType' object has no attribute 'unsqueeze'",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 46.353,
+        "eager_time_s": 1.044,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.588,
+        "gpu_mem_mb": 7877.3,
+        "graph_break_count": 3,
+        "graph_count": 4,
+        "retry_r8": true
       }
     },
     {
@@ -1678,20 +1917,24 @@
     {
       "name": "DbrxModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 9.956,
-        "eager_time_s": 0.325,
-        "error": "mat1 and mat2 shapes cannot be multiplied (64x2048 and 3584x4)",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 9.196,
+        "eager_time_s": 0.632,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.884,
+        "gpu_mem_mb": 1484.0,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 9.824,
-        "eager_time_s": 0.33,
-        "error": "mat1 and mat2 shapes cannot be multiplied (64x2048 and 3584x4)",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 9.385,
+        "eager_time_s": 0.638,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.885,
+        "gpu_mem_mb": 1503.8,
+        "retry_r8": true
       }
     },
     {
@@ -1802,18 +2045,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 15.537,
-        "eager_time_s": 0.525,
-        "error": "Input image size (224*224) doesn't match model (1024*1024).",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 27.911,
+        "eager_time_s": 0.569,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.204,
+        "gpu_mem_mb": 2597.9,
+        "wall_time_s": 40.93,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 15.718,
-        "eager_time_s": 0.489,
-        "error": "Input image size (224*224) doesn't match model (1024*1024).",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 27.341,
+        "eager_time_s": 0.584,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.21,
+        "gpu_mem_mb": 2626.3,
+        "wall_time_s": 40.93,
+        "retry_r8": true
       }
     },
     {
@@ -1821,18 +2070,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 13.773,
-        "eager_time_s": 0.52,
-        "error": "Image features and image tokens do not match, tokens: 0, features: 1605632",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 25.532,
+        "eager_time_s": 0.867,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.747,
+        "gpu_mem_mb": 2228.3,
+        "wall_time_s": 41.09,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 13.443,
-        "eager_time_s": 0.533,
-        "error": "Image features and image tokens do not match, tokens: 0, features: 1605632",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 24.873,
+        "eager_time_s": 1.325,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.255,
+        "gpu_mem_mb": 2256.7,
+        "wall_time_s": 41.09,
+        "retry_r8": true
       }
     },
     {
@@ -1880,18 +2135,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 8.331,
-        "eager_time_s": 0.0,
-        "error": "Image size 384x384 is too small to be scaled with scaled_images_ratios=(0.25, 0.5, 1) when patch_size=384.",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 13.152,
+        "eager_time_s": 0.447,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.798,
+        "gpu_mem_mb": 173.9,
+        "wall_time_s": 25.55,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 8.761,
-        "eager_time_s": 0.0,
-        "error": "Image size 384x384 is too small to be scaled with scaled_images_ratios=(0.25, 0.5, 1) when patch_size=384.",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 13.087,
+        "eager_time_s": 0.588,
+        "fullgraph_ok": true,
+        "compile_time_s": 3.144,
+        "gpu_mem_mb": 174.8,
+        "wall_time_s": 25.54,
+        "retry_r8": true
       }
     },
     {
@@ -2345,18 +2606,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 22.745,
-        "eager_time_s": 0.007,
-        "error": "mat1 and mat2 shapes cannot be multiplied (1344x224 and 588x1280)",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 24.213,
+        "eager_time_s": 0.646,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.403,
+        "gpu_mem_mb": 4868.0,
+        "wall_time_s": 35.05,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 23.679,
-        "eager_time_s": 0.007,
-        "error": "mat1 and mat2 shapes cannot be multiplied (1344x224 and 588x1280)",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 24.74,
+        "eager_time_s": 0.624,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.527,
+        "gpu_mem_mb": 4899.4,
+        "wall_time_s": 35.05,
+        "retry_r8": true
       }
     },
     {
@@ -2387,18 +2654,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 24.163,
-        "eager_time_s": 0.007,
-        "error": "mat1 and mat2 shapes cannot be multiplied (1344x224 and 588x1280)",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 24.824,
+        "eager_time_s": 0.638,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.585,
+        "gpu_mem_mb": 4868.0,
+        "wall_time_s": 35.06,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 23.227,
-        "eager_time_s": 0.007,
-        "error": "mat1 and mat2 shapes cannot be multiplied (1344x224 and 588x1280)",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 25.131,
+        "eager_time_s": 0.632,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.525,
+        "gpu_mem_mb": 4899.4,
+        "wall_time_s": 35.05,
+        "retry_r8": true
       }
     },
     {
@@ -2448,18 +2721,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 3.17,
-        "eager_time_s": 0.001,
-        "error": "ne() received an invalid combination of arguments - got (NoneType), but expected one of:\n * (Tensor other)\n      didn't match because some of the arguments have invalid types: (!NoneType!)\n * (Number other)\n      didn't match because some of the arguments have invalid types: (!NoneType!)\n",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 3.361,
+        "eager_time_s": 0.344,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.089,
+        "gpu_mem_mb": 72.3,
+        "wall_time_s": 15.06,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 2.923,
-        "eager_time_s": 0.001,
-        "error": "ne() received an invalid combination of arguments - got (NoneType), but expected one of:\n * (Tensor other)\n      didn't match because some of the arguments have invalid types: (!NoneType!)\n * (Number other)\n      didn't match because some of the arguments have invalid types: (!NoneType!)\n",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 3.329,
+        "eager_time_s": 0.346,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.007,
+        "gpu_mem_mb": 78.5,
+        "wall_time_s": 15.05,
+        "retry_r8": true
       }
     },
     {
@@ -2682,18 +2961,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 24.174,
-        "eager_time_s": 0.586,
-        "error": "Image features and image tokens do not match, tokens: 0, features: 114688",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 58.011,
+        "eager_time_s": 0.484,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.354,
+        "gpu_mem_mb": 4457.5,
+        "wall_time_s": 71.98,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 24.767,
-        "eager_time_s": 0.669,
-        "error": "Image features and image tokens do not match, tokens: 0, features: 114688",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 57.582,
+        "eager_time_s": 0.457,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.213,
+        "gpu_mem_mb": 4497.7,
+        "wall_time_s": 71.96,
+        "retry_r8": true
       }
     },
     {
@@ -3083,11 +3368,14 @@
         "retry_v3": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 17.699,
-        "eager_time_s": 0.019,
-        "error": "`token_type_ids` is required as a model input when training",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 21.098,
+        "eager_time_s": 0.529,
+        "fullgraph_ok": true,
+        "compile_time_s": 3.941,
+        "gpu_mem_mb": 3043.3,
+        "wall_time_s": 35.05,
+        "retry_r8": true
       }
     },
     {
@@ -3213,18 +3501,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 34.648,
-        "eager_time_s": 0.448,
-        "error": "'NoneType' object is not iterable",
-        "retry_v2": true
+        "status": "clean",
+        "create_time_s": 45.197,
+        "eager_time_s": 0.508,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.295,
+        "gpu_mem_mb": 7380.9,
+        "wall_time_s": 56.08,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 35.871,
-        "eager_time_s": 0.296,
-        "error": "'NoneType' object is not iterable",
-        "retry_v2": true
+        "status": "clean",
+        "create_time_s": 44.765,
+        "eager_time_s": 0.645,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.36,
+        "gpu_mem_mb": 7421.9,
+        "wall_time_s": 56.05,
+        "retry_r8": true
       }
     },
     {
@@ -3301,18 +3595,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 36.758,
-        "eager_time_s": 0.281,
-        "error": "'NoneType' object is not iterable",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 42.683,
+        "eager_time_s": 0.434,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.153,
+        "gpu_mem_mb": 7380.9,
+        "wall_time_s": 55.82,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 34.593,
-        "eager_time_s": 0.262,
-        "error": "'NoneType' object is not iterable",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 43.307,
+        "eager_time_s": 0.41,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.17,
+        "gpu_mem_mb": 7421.9,
+        "wall_time_s": 55.81,
+        "retry_r8": true
       }
     },
     {
@@ -3320,18 +3620,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 32.775,
-        "eager_time_s": 0.299,
-        "error": "'NoneType' object is not iterable",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 49.277,
+        "eager_time_s": 0.812,
+        "fullgraph_ok": true,
+        "compile_time_s": 3.062,
+        "gpu_mem_mb": 7060.8,
+        "wall_time_s": 66.76,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 33.505,
-        "eager_time_s": 0.279,
-        "error": "'NoneType' object is not iterable",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 49.951,
+        "eager_time_s": 0.889,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.989,
+        "gpu_mem_mb": 7094.6,
+        "wall_time_s": 66.7,
+        "retry_r8": true
       }
     },
     {
@@ -3339,37 +3645,125 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 18.299,
-        "eager_time_s": 0.197,
-        "error": "split_with_sizes expects split_sizes to sum exactly to 64 (input tensor's size at dimension -1), but got split_sizes=[8, 12, 12]",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 28.239,
+        "eager_time_s": 0.985,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.357,
+        "gpu_mem_mb": 3631.4,
+        "wall_time_s": 46.33,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 18.7,
-        "eager_time_s": 0.191,
-        "error": "split_with_sizes expects split_sizes to sum exactly to 64 (input tensor's size at dimension -1), but got split_sizes=[8, 12, 12]",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 28.547,
+        "eager_time_s": 1.027,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.45,
+        "gpu_mem_mb": 3663.9,
+        "wall_time_s": 46.17,
+        "retry_r8": true
       }
     },
     {
       "name": "Glm4vMoeVisionModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 18.178,
-        "eager_time_s": 0.001,
-        "error": "shape '[-1, 3, 2, 14, 14]' is invalid for input of size 98304",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 27.782,
+        "eager_time_s": 1.067,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.77,
+        "gpu_mem_mb": 3632.5,
+        "graph_break_count": 11,
+        "graph_count": 12,
+        "break_reasons": [
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm4v_moe/modeling_glm4v_moe.py",
+            "line": 797
+          },
+          {
+            "reason": "Dynamic shape operator\n  Explanation: Operator `aten.repeat_interleave.Tensor`'s output shape depends on input Tensor data.\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\n\n  Developer debug context: aten.repeat_interleave.Tensor\n",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm4v_moe/modeling_glm4v_moe.py",
+            "line": 844
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm4v_moe/modeling_glm4v_moe.py",
+            "line": 853
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm4v_moe/modeling_glm4v_moe.py",
+            "line": 597
+          },
+          {
+            "reason": "step_unsupported",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm4v_moe/modeling_glm4v_moe.py",
+            "line": 597
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm4v_moe/modeling_glm4v_moe.py",
+            "line": 698
+          },
+          {
+            "reason": "step_unsupported",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm4v_moe/modeling_glm4v_moe.py",
+            "line": 698
+          }
+        ],
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 18.264,
-        "eager_time_s": 0.001,
-        "error": "shape '[-1, 3, 2, 14, 14]' is invalid for input of size 98304",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 26.088,
+        "eager_time_s": 2.323,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.871,
+        "gpu_mem_mb": 3857.3,
+        "graph_break_count": 11,
+        "graph_count": 12,
+        "break_reasons": [
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm4v_moe/modeling_glm4v_moe.py",
+            "line": 797
+          },
+          {
+            "reason": "Dynamic shape operator\n  Explanation: Operator `aten.repeat_interleave.Tensor`'s output shape depends on input Tensor data.\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\n\n  Developer debug context: aten.repeat_interleave.Tensor\n",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm4v_moe/modeling_glm4v_moe.py",
+            "line": 844
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm4v_moe/modeling_glm4v_moe.py",
+            "line": 853
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm4v_moe/modeling_glm4v_moe.py",
+            "line": 597
+          },
+          {
+            "reason": "step_unsupported",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm4v_moe/modeling_glm4v_moe.py",
+            "line": 597
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm4v_moe/modeling_glm4v_moe.py",
+            "line": 698
+          },
+          {
+            "reason": "step_unsupported",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm4v_moe/modeling_glm4v_moe.py",
+            "line": 698
+          }
+        ],
+        "retry_r8": true
       }
     },
     {
@@ -3377,37 +3771,125 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 20.695,
-        "eager_time_s": 0.206,
-        "error": "split_with_sizes expects split_sizes to sum exactly to 64 (input tensor's size at dimension -1), but got split_sizes=[8, 12, 12]",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 22.979,
+        "eager_time_s": 0.402,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.304,
+        "gpu_mem_mb": 3951.6,
+        "wall_time_s": 35.26,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 21.142,
-        "eager_time_s": 0.201,
-        "error": "split_with_sizes expects split_sizes to sum exactly to 64 (input tensor's size at dimension -1), but got split_sizes=[8, 12, 12]",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 22.411,
+        "eager_time_s": 0.587,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.265,
+        "gpu_mem_mb": 3992.7,
+        "wall_time_s": 35.24,
+        "retry_r8": true
       }
     },
     {
       "name": "Glm4vVisionModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 18.375,
-        "eager_time_s": 0.001,
-        "error": "shape '[-1, 3, 2, 14, 14]' is invalid for input of size 98304",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 28.688,
+        "eager_time_s": 0.937,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.599,
+        "gpu_mem_mb": 3632.5,
+        "graph_break_count": 11,
+        "graph_count": 12,
+        "break_reasons": [
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm4v/modeling_glm4v.py",
+            "line": 733
+          },
+          {
+            "reason": "Dynamic shape operator\n  Explanation: Operator `aten.repeat_interleave.Tensor`'s output shape depends on input Tensor data.\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\n\n  Developer debug context: aten.repeat_interleave.Tensor\n",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm4v/modeling_glm4v.py",
+            "line": 780
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm4v/modeling_glm4v.py",
+            "line": 789
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm4v/modeling_glm4v.py",
+            "line": 183
+          },
+          {
+            "reason": "step_unsupported",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm4v/modeling_glm4v.py",
+            "line": 183
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm4v/modeling_glm4v.py",
+            "line": 328
+          },
+          {
+            "reason": "step_unsupported",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm4v/modeling_glm4v.py",
+            "line": 328
+          }
+        ],
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 18.686,
-        "eager_time_s": 0.001,
-        "error": "shape '[-1, 3, 2, 14, 14]' is invalid for input of size 98304",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 28.771,
+        "eager_time_s": 0.973,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.804,
+        "gpu_mem_mb": 3857.3,
+        "graph_break_count": 11,
+        "graph_count": 12,
+        "break_reasons": [
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm4v/modeling_glm4v.py",
+            "line": 733
+          },
+          {
+            "reason": "Dynamic shape operator\n  Explanation: Operator `aten.repeat_interleave.Tensor`'s output shape depends on input Tensor data.\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\n\n  Developer debug context: aten.repeat_interleave.Tensor\n",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm4v/modeling_glm4v.py",
+            "line": 780
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm4v/modeling_glm4v.py",
+            "line": 789
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm4v/modeling_glm4v.py",
+            "line": 183
+          },
+          {
+            "reason": "step_unsupported",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm4v/modeling_glm4v.py",
+            "line": 183
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm4v/modeling_glm4v.py",
+            "line": 328
+          },
+          {
+            "reason": "step_unsupported",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm4v/modeling_glm4v.py",
+            "line": 328
+          }
+        ],
+        "retry_r8": true
       }
     },
     {
@@ -3415,18 +3897,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 42.22,
-        "eager_time_s": 0.202,
-        "error": "split_with_sizes expects split_sizes to sum exactly to 64 (input tensor's size at dimension -1), but got split_sizes=[8, 12, 12]",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 48.417,
+        "eager_time_s": 0.656,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.152,
+        "gpu_mem_mb": 8893.7,
+        "wall_time_s": 60.8,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 42.316,
-        "eager_time_s": 0.199,
-        "error": "split_with_sizes expects split_sizes to sum exactly to 64 (input tensor's size at dimension -1), but got split_sizes=[8, 12, 12]",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 49.878,
+        "eager_time_s": 0.6,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.577,
+        "gpu_mem_mb": 8893.7,
+        "wall_time_s": 60.8,
+        "retry_r8": true
       }
     },
     {
@@ -3434,37 +3922,125 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 21.929,
-        "eager_time_s": 0.203,
-        "error": "split_with_sizes expects split_sizes to sum exactly to 64 (input tensor's size at dimension -1), but got split_sizes=[8, 12, 12]",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 23.629,
+        "eager_time_s": 0.418,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.037,
+        "gpu_mem_mb": 4209.6,
+        "wall_time_s": 35.35,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 22.235,
-        "eager_time_s": 0.201,
-        "error": "split_with_sizes expects split_sizes to sum exactly to 64 (input tensor's size at dimension -1), but got split_sizes=[8, 12, 12]",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 24.48,
+        "eager_time_s": 0.388,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.035,
+        "gpu_mem_mb": 4250.5,
+        "wall_time_s": 35.35,
+        "retry_r8": true
       }
     },
     {
       "name": "GlmImageVisionModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 22.136,
-        "eager_time_s": 0.459,
-        "error": "The size of tensor a (32768) must match the size of tensor b (64) at non-singleton dimension 0",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 30.643,
+        "eager_time_s": 0.623,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.584,
+        "gpu_mem_mb": 4559.7,
+        "graph_break_count": 8,
+        "graph_count": 9,
+        "break_reasons": [
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm_image/modeling_glm_image.py",
+            "line": 598
+          },
+          {
+            "reason": "Dynamic shape operator\n  Explanation: Operator `aten.repeat_interleave.Tensor`'s output shape depends on input Tensor data.\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\n\n  Developer debug context: aten.repeat_interleave.Tensor\n",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm_image/modeling_glm_image.py",
+            "line": 640
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm_image/modeling_glm_image.py",
+            "line": 645
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm_image/modeling_glm_image.py",
+            "line": 242
+          },
+          {
+            "reason": "step_unsupported",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm_image/modeling_glm_image.py",
+            "line": 242
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm_image/modeling_glm_image.py",
+            "line": 155
+          },
+          {
+            "reason": "step_unsupported",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm_image/modeling_glm_image.py",
+            "line": 155
+          }
+        ],
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 22.681,
-        "eager_time_s": 0.424,
-        "error": "The size of tensor a (32768) must match the size of tensor b (64) at non-singleton dimension 0",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 26.745,
+        "eager_time_s": 0.669,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.546,
+        "gpu_mem_mb": 4742.6,
+        "graph_break_count": 8,
+        "graph_count": 9,
+        "break_reasons": [
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm_image/modeling_glm_image.py",
+            "line": 598
+          },
+          {
+            "reason": "Dynamic shape operator\n  Explanation: Operator `aten.repeat_interleave.Tensor`'s output shape depends on input Tensor data.\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\n\n  Developer debug context: aten.repeat_interleave.Tensor\n",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm_image/modeling_glm_image.py",
+            "line": 640
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm_image/modeling_glm_image.py",
+            "line": 645
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm_image/modeling_glm_image.py",
+            "line": 242
+          },
+          {
+            "reason": "step_unsupported",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm_image/modeling_glm_image.py",
+            "line": 242
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm_image/modeling_glm_image.py",
+            "line": 155
+          },
+          {
+            "reason": "step_unsupported",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm_image/modeling_glm_image.py",
+            "line": 155
+          }
+        ],
+        "retry_r8": true
       }
     },
     {
@@ -3554,20 +4130,72 @@
     {
       "name": "GlmOcrVisionModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 10.057,
-        "eager_time_s": 0.001,
-        "error": "shape '[-1, 3, 2, 14, 14]' is invalid for input of size 65536",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 12.587,
+        "eager_time_s": 1.022,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.776,
+        "gpu_mem_mb": 1717.5,
+        "graph_break_count": 8,
+        "graph_count": 9,
+        "break_reasons": [
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm_ocr/modeling_glm_ocr.py",
+            "line": 585
+          },
+          {
+            "reason": "Dynamic shape operator\n  Explanation: Operator `aten.repeat_interleave.Tensor`'s output shape depends on input Tensor data.\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\n\n  Developer debug context: aten.repeat_interleave.Tensor\n",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm_ocr/modeling_glm_ocr.py",
+            "line": 629
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm_ocr/modeling_glm_ocr.py",
+            "line": 452
+          },
+          {
+            "reason": "step_unsupported",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm_ocr/modeling_glm_ocr.py",
+            "line": 452
+          }
+        ],
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 10.165,
-        "eager_time_s": 0.001,
-        "error": "shape '[-1, 3, 2, 14, 14]' is invalid for input of size 65536",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 15.294,
+        "eager_time_s": 0.974,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.702,
+        "gpu_mem_mb": 1904.3,
+        "graph_break_count": 8,
+        "graph_count": 9,
+        "break_reasons": [
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm_ocr/modeling_glm_ocr.py",
+            "line": 585
+          },
+          {
+            "reason": "Dynamic shape operator\n  Explanation: Operator `aten.repeat_interleave.Tensor`'s output shape depends on input Tensor data.\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\n\n  Developer debug context: aten.repeat_interleave.Tensor\n",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm_ocr/modeling_glm_ocr.py",
+            "line": 629
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm_ocr/modeling_glm_ocr.py",
+            "line": 452
+          },
+          {
+            "reason": "step_unsupported",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/glm_ocr/modeling_glm_ocr.py",
+            "line": 452
+          }
+        ],
+        "retry_r8": true
       }
     },
     {
@@ -3977,18 +4605,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 19.236,
-        "eager_time_s": 0.006,
-        "error": "not enough values to unpack (expected 5, got 4)",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 21.575,
+        "eager_time_s": 0.546,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.243,
+        "gpu_mem_mb": 3750.2,
+        "wall_time_s": 35.24,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 19.344,
-        "eager_time_s": 0.005,
-        "error": "not enough values to unpack (expected 5, got 4)",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 21.718,
+        "eager_time_s": 0.583,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.722,
+        "gpu_mem_mb": 3778.6,
+        "wall_time_s": 35.24,
+        "retry_r8": true
       }
     },
     {
@@ -3996,18 +4630,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 18.675,
-        "eager_time_s": 0.133,
-        "error": "Exactly 1 of pixel_values, image_encoder_embeddings or perceiver_embeddings has to be not-None.",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 29.308,
+        "eager_time_s": 1.063,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.765,
+        "gpu_mem_mb": 3713.9,
+        "wall_time_s": 40.85,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 19.544,
-        "eager_time_s": 0.134,
-        "error": "Exactly 1 of pixel_values, image_encoder_embeddings or perceiver_embeddings has to be not-None.",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 28.199,
+        "eager_time_s": 0.571,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.871,
+        "gpu_mem_mb": 3780.3,
+        "wall_time_s": 40.85,
+        "retry_r8": true
       }
     },
     {
@@ -4032,58 +4672,90 @@
     {
       "name": "InformerModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 2.662,
-        "eager_time_s": 0.131,
-        "error": "lags cannot go further than history length, found lag 7 while history length is only 96",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 3.684,
+        "eager_time_s": 0.721,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.566,
+        "gpu_mem_mb": 10.3,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 2.724,
-        "eager_time_s": 0.144,
-        "error": "lags cannot go further than history length, found lag 7 while history length is only 96",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 3.607,
+        "eager_time_s": 0.537,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.317,
+        "gpu_mem_mb": 10.6,
+        "retry_r8": true
       }
     },
     {
       "name": "InstructBlipModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 8.177,
-        "eager_time_s": 0.527,
-        "error": "'bool' object has no attribute 'unsqueeze'",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 13.152,
+        "eager_time_s": 0.669,
+        "fullgraph_ok": true,
+        "compile_time_s": 10.349,
+        "gpu_mem_mb": 1170.1,
+        "wall_time_s": 36.2,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 8.292,
-        "eager_time_s": 0.559,
-        "error": "'bool' object has no attribute 'unsqueeze'",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 11.8,
+        "eager_time_s": 1.181,
+        "fullgraph_ok": false,
+        "compile_time_s": 9.825,
+        "gpu_mem_mb": 1366.9,
+        "graph_break_count": 4,
+        "graph_count": 5,
+        "break_reasons": [
+          {
+            "reason": "Data-dependent branching\n  Explanation: Detected data-dependent branching (e.g. `if my_tensor.sum() > 0:`). Dynamo does not support tracing dynamic control flow.\n  Hint: This graph break is fundamental - it is unlikely that Dynamo will ever be able to trace through your code. Consider finding a work",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/opt/modeling_opt.py",
+            "line": 375
+          }
+        ],
+        "retry_r8": true
       }
     },
     {
       "name": "InstructBlipVideoModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 8.622,
-        "eager_time_s": 0.0,
-        "error": "not enough values to unpack (expected 5, got 4)",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 11.2,
+        "eager_time_s": 0.633,
+        "fullgraph_ok": true,
+        "compile_time_s": 9.908,
+        "gpu_mem_mb": 1281.6,
+        "wall_time_s": 30.86,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 8.189,
-        "eager_time_s": 0.0,
-        "error": "not enough values to unpack (expected 5, got 4)",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 10.537,
+        "eager_time_s": 0.712,
+        "fullgraph_ok": false,
+        "compile_time_s": 9.312,
+        "gpu_mem_mb": 2063.5,
+        "graph_break_count": 4,
+        "graph_count": 5,
+        "break_reasons": [
+          {
+            "reason": "Data-dependent branching\n  Explanation: Detected data-dependent branching (e.g. `if my_tensor.sum() > 0:`). Dynamo does not support tracing dynamic control flow.\n  Hint: This graph break is fundamental - it is unlikely that Dynamo will ever be able to trace through your code. Consider finding a work",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/opt/modeling_opt.py",
+            "line": 375
+          }
+        ],
+        "retry_r8": true
       }
     },
     {
@@ -4188,20 +4860,24 @@
     {
       "name": "JambaModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 21.834,
-        "eager_time_s": 0.007,
-        "error": "list index out of range",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 19.676,
+        "eager_time_s": 0.573,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.118,
+        "gpu_mem_mb": 4750.2,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 21.889,
-        "eager_time_s": 0.007,
-        "error": "list index out of range",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 20.966,
+        "eager_time_s": 0.548,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.377,
+        "gpu_mem_mb": 4785.8,
+        "retry_r8": true
       }
     },
     {
@@ -4209,18 +4885,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 14.167,
-        "eager_time_s": 0.41,
-        "error": "Image features and image tokens do not match, tokens: 0, features: 2359296",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 18.417,
+        "eager_time_s": 0.462,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.521,
+        "gpu_mem_mb": 2629.8,
+        "wall_time_s": 30.8,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 14.25,
-        "eager_time_s": 0.433,
-        "error": "Image features and image tokens do not match, tokens: 0, features: 2359296",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 18.485,
+        "eager_time_s": 0.447,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.699,
+        "gpu_mem_mb": 2658.3,
+        "wall_time_s": 30.8,
+        "retry_r8": true
       }
     },
     {
@@ -4283,20 +4965,27 @@
     {
       "name": "Kosmos2Model",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 7.969,
-        "eager_time_s": 0.005,
-        "error": "'NoneType' object has no attribute 'to'",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 10.256,
+        "eager_time_s": 0.53,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.96,
+        "gpu_mem_mb": 1109.5,
+        "wall_time_s": 25.7,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 7.862,
-        "eager_time_s": 0.008,
-        "error": "'NoneType' object has no attribute 'to'",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 9.62,
+        "eager_time_s": 0.452,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.211,
+        "gpu_mem_mb": 1147.1,
+        "graph_break_count": 3,
+        "graph_count": 4,
+        "retry_r8": true
       }
     },
     {
@@ -4323,18 +5012,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 6.889,
-        "eager_time_s": 0.03,
-        "error": "The size of tensor a (32) must match the size of tensor b (33) at non-singleton dimension 1",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 8.693,
+        "eager_time_s": 0.723,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.019,
+        "gpu_mem_mb": 961.2,
+        "wall_time_s": 20.31,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 6.974,
-        "eager_time_s": 0.028,
-        "error": "The size of tensor a (32) must match the size of tensor b (33) at non-singleton dimension 1",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 8.75,
+        "eager_time_s": 0.789,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.279,
+        "gpu_mem_mb": 967.0,
+        "wall_time_s": 20.29,
+        "retry_r8": true
       }
     },
     {
@@ -4437,18 +5132,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 8.618,
-        "eager_time_s": 0.008,
-        "error": "'conv' is not in list",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 9.517,
+        "eager_time_s": 0.522,
+        "fullgraph_ok": true,
+        "compile_time_s": 1.971,
+        "gpu_mem_mb": 1303.7,
+        "wall_time_s": 20.1,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 8.327,
-        "eager_time_s": 0.008,
-        "error": "'conv' is not in list",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 9.238,
+        "eager_time_s": 0.509,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.134,
+        "gpu_mem_mb": 1328.6,
+        "wall_time_s": 20.1,
+        "retry_r8": true
       }
     },
     {
@@ -4456,18 +5157,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 7.26,
-        "eager_time_s": 0.008,
-        "error": "'full_attention' is not in list",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 10.6,
+        "eager_time_s": 0.704,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.22,
+        "gpu_mem_mb": 968.2,
+        "wall_time_s": 25.6,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 7.042,
-        "eager_time_s": 0.007,
-        "error": "'full_attention' is not in list",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 10.877,
+        "eager_time_s": 0.725,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.764,
+        "gpu_mem_mb": 989.2,
+        "wall_time_s": 25.59,
+        "retry_r8": true
       }
     },
     {
@@ -4475,18 +5182,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 9.919,
-        "eager_time_s": 0.006,
-        "error": "mat1 and mat2 shapes cannot be multiplied (1344x224 and 768x768)",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 15.299,
+        "eager_time_s": 0.569,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.56,
+        "gpu_mem_mb": 1444.1,
+        "wall_time_s": 25.36,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 9.822,
-        "eager_time_s": 0.006,
-        "error": "mat1 and mat2 shapes cannot be multiplied (1344x224 and 768x768)",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 14.886,
+        "eager_time_s": 0.526,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.528,
+        "gpu_mem_mb": 1469.4,
+        "wall_time_s": 25.36,
+        "retry_r8": true
       }
     },
     {
@@ -4559,18 +5272,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 3.752,
-        "eager_time_s": 0.0,
-        "error": "Llama4VisionModel.forward() missing 1 required positional argument: 'pixel_values'",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 4.674,
+        "eager_time_s": 0.234,
+        "fullgraph_ok": true,
+        "compile_time_s": 1.822,
+        "gpu_mem_mb": 257.1,
+        "wall_time_s": 15.24,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 3.896,
-        "eager_time_s": 0.0,
-        "error": "Llama4VisionModel.forward() missing 1 required positional argument: 'pixel_values'",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 5.504,
+        "eager_time_s": 0.223,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.109,
+        "gpu_mem_mb": 438.2,
+        "wall_time_s": 15.35,
+        "retry_r8": true
       }
     },
     {
@@ -4601,18 +5320,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 13.073,
-        "eager_time_s": 0.464,
-        "error": "Image features and image tokens do not match, tokens: 0, features: 4718592",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 13.767,
+        "eager_time_s": 0.396,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.034,
+        "gpu_mem_mb": 2249.8,
+        "wall_time_s": 25.19,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 12.984,
-        "eager_time_s": 0.433,
-        "error": "Image features and image tokens do not match, tokens: 0, features: 4718592",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 13.18,
+        "eager_time_s": 0.533,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.034,
+        "gpu_mem_mb": 2278.2,
+        "wall_time_s": 25.12,
+        "retry_r8": true
       }
     },
     {
@@ -4620,18 +5345,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 12.978,
-        "eager_time_s": 0.005,
-        "error": "'NoneType' object is not iterable",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 13.276,
+        "eager_time_s": 0.385,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.142,
+        "gpu_mem_mb": 2249.8,
+        "wall_time_s": 25.1,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 12.568,
-        "eager_time_s": 0.006,
-        "error": "'NoneType' object is not iterable",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 12.805,
+        "eager_time_s": 0.407,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.223,
+        "gpu_mem_mb": 2278.3,
+        "wall_time_s": 25.09,
+        "retry_r8": true
       }
     },
     {
@@ -4662,18 +5393,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 25.916,
-        "eager_time_s": 0.006,
-        "error": "object of type 'NoneType' has no len()",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 29.937,
+        "eager_time_s": 0.474,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.63,
+        "gpu_mem_mb": 5187.6,
+        "wall_time_s": 40.23,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 26.601,
-        "eager_time_s": 0.006,
-        "error": "object of type 'NoneType' has no len()",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 31.256,
+        "eager_time_s": 0.624,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.298,
+        "gpu_mem_mb": 5229.5,
+        "wall_time_s": 45.28,
+        "retry_r8": true
       }
     },
     {
@@ -4763,20 +5500,72 @@
     {
       "name": "LwDetrModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 5.765,
-        "eager_time_s": 0.409,
-        "error": "torch.cat(): expected a non-empty list of Tensors",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 9.191,
+        "eager_time_s": 1.43,
+        "fullgraph_ok": false,
+        "compile_time_s": 2.659,
+        "gpu_mem_mb": 44.4,
+        "graph_break_count": 6,
+        "graph_count": 7,
+        "break_reasons": [
+          {
+            "reason": "Failed to convert args/kwargs to proxy\n  Explanation: Missing `as_proxy()` implementation for some arg/kwarg.\n\n\n  Developer debug context: call_function args: LazyVariableTracker(realized: BuiltinVariable(ValueError)) ConstantVariable(bool: True) NestedUserFunctionVariable() \n\n For more details abou",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/utils/import_utils.py",
+            "line": 1502
+          },
+          {
+            "reason": "Failed to convert args/kwargs to proxy\n  Explanation: Missing `as_proxy()` implementation for some arg/kwarg.\n\n\n  Developer debug context: call_function args: LazyVariableTracker(realized: BuiltinVariable(ValueError)) ConstantVariable(bool: True) NestedUserFunctionVariable() \n\n For more details abou",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/utils/import_utils.py",
+            "line": 1502
+          },
+          {
+            "reason": "Failed to convert args/kwargs to proxy\n  Explanation: Missing `as_proxy()` implementation for some arg/kwarg.\n\n\n  Developer debug context: call_function args: LazyVariableTracker(realized: BuiltinVariable(ValueError)) ConstantVariable(bool: True) NestedUserFunctionVariable() \n\n For more details abou",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/utils/import_utils.py",
+            "line": 1502
+          },
+          {
+            "reason": "Failed to convert args/kwargs to proxy\n  Explanation: Missing `as_proxy()` implementation for some arg/kwarg.\n\n\n  Developer debug context: call_function args: LazyVariableTracker(realized: BuiltinVariable(ValueError)) ConstantVariable(bool: True) NestedUserFunctionVariable() \n\n For more details abou",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/utils/import_utils.py",
+            "line": 1502
+          }
+        ],
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 5.601,
-        "eager_time_s": 0.429,
-        "error": "torch.cat(): expected a non-empty list of Tensors",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 10.304,
+        "eager_time_s": 1.16,
+        "fullgraph_ok": false,
+        "compile_time_s": 3.102,
+        "gpu_mem_mb": 69.8,
+        "graph_break_count": 6,
+        "graph_count": 7,
+        "break_reasons": [
+          {
+            "reason": "Failed to convert args/kwargs to proxy\n  Explanation: Missing `as_proxy()` implementation for some arg/kwarg.\n\n\n  Developer debug context: call_function args: LazyVariableTracker(realized: BuiltinVariable(ValueError)) ConstantVariable(bool: True) NestedUserFunctionVariable() \n\n For more details abou",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/utils/import_utils.py",
+            "line": 1502
+          },
+          {
+            "reason": "Failed to convert args/kwargs to proxy\n  Explanation: Missing `as_proxy()` implementation for some arg/kwarg.\n\n\n  Developer debug context: call_function args: LazyVariableTracker(realized: BuiltinVariable(ValueError)) ConstantVariable(bool: True) NestedUserFunctionVariable() \n\n For more details abou",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/utils/import_utils.py",
+            "line": 1502
+          },
+          {
+            "reason": "Failed to convert args/kwargs to proxy\n  Explanation: Missing `as_proxy()` implementation for some arg/kwarg.\n\n\n  Developer debug context: call_function args: LazyVariableTracker(realized: BuiltinVariable(ValueError)) ConstantVariable(bool: True) NestedUserFunctionVariable() \n\n For more details abou",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/utils/import_utils.py",
+            "line": 1502
+          },
+          {
+            "reason": "Failed to convert args/kwargs to proxy\n  Explanation: Missing `as_proxy()` implementation for some arg/kwarg.\n\n\n  Developer debug context: call_function args: LazyVariableTracker(realized: BuiltinVariable(ValueError)) ConstantVariable(bool: True) NestedUserFunctionVariable() \n\n For more details abou",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/utils/import_utils.py",
+            "line": 1502
+          }
+        ],
+        "retry_r8": true
       }
     },
     {
@@ -5212,18 +6001,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 7.127,
-        "eager_time_s": 0.65,
-        "error": "'NoneType' object is not iterable",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 10.391,
+        "eager_time_s": 0.926,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.845,
+        "gpu_mem_mb": 922.6,
+        "wall_time_s": 25.58,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 6.751,
-        "eager_time_s": 0.613,
-        "error": "'NoneType' object is not iterable",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 10.749,
+        "eager_time_s": 0.86,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.488,
+        "gpu_mem_mb": 922.6,
+        "wall_time_s": 25.58,
+        "retry_r8": true
       }
     },
     {
@@ -5300,18 +6095,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 24.582,
-        "eager_time_s": 0.0,
-        "error": "`aspect_ratio_ids` must be provided if `pixel_values` is provided",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 34.355,
+        "eager_time_s": 0.759,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.509,
+        "gpu_mem_mb": 4770.8,
+        "wall_time_s": 46.64,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 24.599,
-        "eager_time_s": 0.0,
-        "error": "`aspect_ratio_ids` must be provided if `pixel_values` is provided",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 33.635,
+        "eager_time_s": 0.816,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.14,
+        "gpu_mem_mb": 4807.8,
+        "wall_time_s": 46.62,
+        "retry_r8": true
       }
     },
     {
@@ -5576,39 +6377,67 @@
     {
       "name": "MusicgenMelodyModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 3.656,
-        "eager_time_s": 0.001,
-        "error": "shape '[-1, 4, 32]' is invalid for input of size 64",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 5.787,
+        "eager_time_s": 0.383,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.194,
+        "gpu_mem_mb": 147.3,
+        "wall_time_s": 20.53,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 3.438,
-        "eager_time_s": 0.001,
-        "error": "shape '[-1, 4, 32]' is invalid for input of size 64",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 5.264,
+        "eager_time_s": 0.424,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.245,
+        "gpu_mem_mb": 153.4,
+        "graph_break_count": 1,
+        "graph_count": 2,
+        "break_reasons": [
+          {
+            "reason": "step_unsupported",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/musicgen_melody/modeling_musicgen_melody.py",
+            "line": 527
+          }
+        ],
+        "retry_r8": true
       }
     },
     {
       "name": "MusicgenModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 3.505,
-        "eager_time_s": 0.001,
-        "error": "shape '[-1, 4, 32]' is invalid for input of size 64",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 6.513,
+        "eager_time_s": 0.212,
+        "fullgraph_ok": true,
+        "compile_time_s": 1.864,
+        "gpu_mem_mb": 179.3,
+        "wall_time_s": 20.48,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 3.575,
-        "eager_time_s": 0.001,
-        "error": "shape '[-1, 4, 32]' is invalid for input of size 64",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 6.216,
+        "eager_time_s": 0.217,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.169,
+        "gpu_mem_mb": 185.4,
+        "graph_break_count": 1,
+        "graph_count": 2,
+        "break_reasons": [
+          {
+            "reason": "step_unsupported",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/musicgen/modeling_musicgen.py",
+            "line": 539
+          }
+        ],
+        "retry_r8": true
       }
     },
     {
@@ -5806,11 +6635,13 @@
       "source": "hf",
       "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 5.354,
-        "eager_time_s": 0.006,
-        "error": "list index out of range",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 6.476,
+        "eager_time_s": 0.746,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.155,
+        "gpu_mem_mb": 598.5,
+        "retry_r8": true
       },
       "train": {
         "status": "graph_break",
@@ -5883,18 +6714,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 26.658,
-        "eager_time_s": 0.733,
-        "error": "Image features and image tokens do not match, tokens: 512, features: 512",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 36.055,
+        "eager_time_s": 1.191,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.677,
+        "gpu_mem_mb": 5250.9,
+        "wall_time_s": 51.49,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 26.637,
-        "eager_time_s": 0.764,
-        "error": "Image features and image tokens do not match, tokens: 512, features: 512",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 37.315,
+        "eager_time_s": 0.904,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.576,
+        "gpu_mem_mb": 5292.8,
+        "wall_time_s": 51.49,
+        "retry_r8": true
       }
     },
     {
@@ -6114,18 +6951,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 2.86,
-        "eager_time_s": 0.001,
-        "error": "Given groups=1, weight of size [16, 3, 3, 3], expected input[1, 2, 32, 768] to have 3 channels, but got 2 channels instead",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 4.553,
+        "eager_time_s": 0.648,
+        "fullgraph_ok": true,
+        "compile_time_s": 11.849,
+        "gpu_mem_mb": 204.1,
+        "wall_time_s": 25.67,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 2.868,
-        "eager_time_s": 0.001,
-        "error": "Given groups=1, weight of size [16, 3, 3, 3], expected input[1, 2, 32, 768] to have 3 channels, but got 2 channels instead",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 4.494,
+        "eager_time_s": 0.729,
+        "fullgraph_ok": true,
+        "compile_time_s": 12.533,
+        "gpu_mem_mb": 1151.4,
+        "wall_time_s": 25.64,
+        "retry_r8": true
       }
     },
     {
@@ -6232,20 +7075,72 @@
     {
       "name": "PaddleOCRVisionModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 3.306,
-        "eager_time_s": 0.0,
-        "error": "PaddleOCRVisionModel.forward() missing 1 required positional argument: 'pixel_values'",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 4.805,
+        "eager_time_s": 0.498,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.895,
+        "gpu_mem_mb": 134.7,
+        "graph_break_count": 7,
+        "graph_count": 8,
+        "break_reasons": [
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/paddleocr_vl/modeling_paddleocr_vl.py",
+            "line": 109
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/paddleocr_vl/modeling_paddleocr_vl.py",
+            "line": 109
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/paddleocr_vl/modeling_paddleocr_vl.py",
+            "line": 722
+          },
+          {
+            "reason": "step_unsupported",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/paddleocr_vl/modeling_paddleocr_vl.py",
+            "line": 722
+          }
+        ],
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 3.44,
-        "eager_time_s": 0.0,
-        "error": "PaddleOCRVisionModel.forward() missing 1 required positional argument: 'pixel_values'",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 3.946,
+        "eager_time_s": 0.701,
+        "fullgraph_ok": false,
+        "compile_time_s": 2.715,
+        "gpu_mem_mb": 141.4,
+        "graph_break_count": 7,
+        "graph_count": 8,
+        "break_reasons": [
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/paddleocr_vl/modeling_paddleocr_vl.py",
+            "line": 109
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/paddleocr_vl/modeling_paddleocr_vl.py",
+            "line": 109
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/paddleocr_vl/modeling_paddleocr_vl.py",
+            "line": 722
+          },
+          {
+            "reason": "step_unsupported",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/paddleocr_vl/modeling_paddleocr_vl.py",
+            "line": 722
+          }
+        ],
+        "retry_r8": true
       }
     },
     {
@@ -6312,20 +7207,24 @@
     {
       "name": "PeAudioModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 8.131,
-        "eager_time_s": 0.002,
-        "error": "Given groups=1, weight of size [64, 1, 7], expected input[1, 2, 16000] to have 1 channels, but got 2 channels instead",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 10.879,
+        "eager_time_s": 0.626,
+        "fullgraph_ok": false,
+        "compile_time_s": 0.797,
+        "gpu_mem_mb": 856.0,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 8.028,
-        "eager_time_s": 0.002,
-        "error": "Given groups=1, weight of size [64, 1, 7], expected input[1, 2, 16000] to have 1 channels, but got 2 channels instead",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 10.727,
+        "eager_time_s": 0.789,
+        "fullgraph_ok": false,
+        "compile_time_s": 0.944,
+        "gpu_mem_mb": 856.0,
+        "retry_r8": true
       }
     },
     {
@@ -6489,20 +7388,44 @@
     {
       "name": "Phi4MultimodalAudioModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 10.558,
-        "eager_time_s": 0.0,
-        "error": "Phi4MultimodalAudioModel.forward() missing 1 required positional argument: 'mask'",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 14.051,
+        "eager_time_s": 1.638,
+        "fullgraph_ok": true,
+        "compile_time_s": 12.368,
+        "gpu_mem_mb": 1724.4,
+        "wall_time_s": 36.06,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 10.419,
-        "eager_time_s": 0.0,
-        "error": "Phi4MultimodalAudioModel.forward() missing 1 required positional argument: 'mask'",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 15.531,
+        "eager_time_s": 1.478,
+        "fullgraph_ok": false,
+        "compile_time_s": 0.98,
+        "gpu_mem_mb": 1801.8,
+        "graph_break_count": 6,
+        "graph_count": 7,
+        "break_reasons": [
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/phi4_multimodal/modeling_phi4_multimodal.py",
+            "line": 940
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/phi4_multimodal/modeling_phi4_multimodal.py",
+            "line": 940
+          },
+          {
+            "reason": "Dynamic shape operator\n  Explanation: Operator `aten.nonzero.default`'s output shape depends on input Tensor data.\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\n\n  Developer debug context: aten.nonzero.default\n\n For more details",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/phi4_multimodal/modeling_phi4_multimodal.py",
+            "line": 906
+          }
+        ],
+        "retry_r8": true
       }
     },
     {
@@ -6779,18 +7702,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 17.67,
-        "eager_time_s": 0.161,
-        "error": "'NoneType' object is not iterable",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 25.043,
+        "eager_time_s": 0.666,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.56,
+        "gpu_mem_mb": 3368.5,
+        "wall_time_s": 35.77,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 18.122,
-        "eager_time_s": 0.166,
-        "error": "'NoneType' object is not iterable",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 25.025,
+        "eager_time_s": 0.696,
+        "fullgraph_ok": true,
+        "compile_time_s": 3.265,
+        "gpu_mem_mb": 3376.9,
+        "wall_time_s": 41.04,
+        "retry_r8": true
       }
     },
     {
@@ -6863,18 +7792,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 59.321,
-        "eager_time_s": 0.161,
-        "error": "'NoneType' object has no attribute 'tolist'",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 84.982,
+        "eager_time_s": 0.428,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.472,
+        "gpu_mem_mb": 12551.5,
+        "wall_time_s": 97.96,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 56.686,
-        "eager_time_s": 0.158,
-        "error": "'NoneType' object has no attribute 'tolist'",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 84.597,
+        "eager_time_s": 0.413,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.5,
+        "gpu_mem_mb": 12559.9,
+        "wall_time_s": 97.95,
+        "retry_r8": true
       }
     },
     {
@@ -6949,20 +7884,24 @@
     {
       "name": "Qwen3NextModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 9.28,
-        "eager_time_s": 0.005,
-        "error": "list index out of range",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 10.139,
+        "eager_time_s": 0.758,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.133,
+        "gpu_mem_mb": 1598.2,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 9.455,
-        "eager_time_s": 0.006,
-        "error": "list index out of range",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 10.241,
+        "eager_time_s": 0.819,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.116,
+        "gpu_mem_mb": 1650.5,
+        "retry_r8": true
       }
     },
     {
@@ -6987,18 +7926,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 33.917,
-        "eager_time_s": 0.168,
-        "error": "'NoneType' object has no attribute 'tolist'",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 39.38,
+        "eager_time_s": 0.351,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.083,
+        "gpu_mem_mb": 7175.1,
+        "wall_time_s": 50.27,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 34.216,
-        "eager_time_s": 0.172,
-        "error": "'NoneType' object has no attribute 'tolist'",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 37.298,
+        "eager_time_s": 0.381,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.485,
+        "gpu_mem_mb": 7225.0,
+        "wall_time_s": 50.27,
+        "retry_r8": true
       }
     },
     {
@@ -7006,18 +7951,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 19.056,
-        "eager_time_s": 0.171,
-        "error": "'NoneType' object has no attribute 'tolist'",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 21.011,
+        "eager_time_s": 0.56,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.165,
+        "gpu_mem_mb": 3796.6,
+        "wall_time_s": 30.11,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 19.192,
-        "eager_time_s": 0.184,
-        "error": "'NoneType' object has no attribute 'tolist'",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 20.914,
+        "eager_time_s": 0.625,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.324,
+        "gpu_mem_mb": 3821.1,
+        "wall_time_s": 35.11,
+        "retry_r8": true
       }
     },
     {
@@ -7069,58 +8020,70 @@
     {
       "name": "Qwen3_5Model",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 35.964,
-        "eager_time_s": 0.006,
-        "error": "list index out of range",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 36.102,
+        "eager_time_s": 0.863,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.086,
+        "gpu_mem_mb": 7327.8,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 35.573,
-        "eager_time_s": 0.007,
-        "error": "list index out of range",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 39.321,
+        "eager_time_s": 0.596,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.098,
+        "gpu_mem_mb": 7392.8,
+        "retry_r8": true
       }
     },
     {
       "name": "Qwen3_5MoeModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 21.21,
-        "eager_time_s": 0.185,
-        "error": "'NoneType' object has no attribute 'tolist'",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 21.209,
+        "eager_time_s": 0.781,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.101,
+        "gpu_mem_mb": 4108.0,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 21.664,
-        "eager_time_s": 0.188,
-        "error": "'NoneType' object has no attribute 'tolist'",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 21.203,
+        "eager_time_s": 0.703,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.276,
+        "gpu_mem_mb": 4162.1,
+        "retry_r8": true
       }
     },
     {
       "name": "Qwen3_5MoeTextModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 12.826,
-        "eager_time_s": 0.005,
-        "error": "list index out of range",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 13.916,
+        "eager_time_s": 0.715,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.153,
+        "gpu_mem_mb": 2346.2,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 13.202,
-        "eager_time_s": 0.008,
-        "error": "list index out of range",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 13.641,
+        "eager_time_s": 0.727,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.268,
+        "gpu_mem_mb": 2400.5,
+        "retry_r8": true
       }
     },
     {
@@ -7128,11 +8091,13 @@
       "source": "hf",
       "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 27.03,
-        "eager_time_s": 0.006,
-        "error": "list index out of range",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 29.276,
+        "eager_time_s": 0.673,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.161,
+        "gpu_mem_mb": 5567.7,
+        "retry_r8": true
       },
       "train": {
         "status": "graph_break",
@@ -7762,18 +8727,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 3.72,
-        "eager_time_s": 0.025,
-        "error": "Input image size (1792*896) doesn't match model (896*448).",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 14.24,
+        "eager_time_s": 1.031,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.855,
+        "gpu_mem_mb": 2197.7,
+        "wall_time_s": 30.67,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 3.552,
-        "eager_time_s": 0.02,
-        "error": "Input image size (1792*896) doesn't match model (896*448).",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 11.562,
+        "eager_time_s": 0.649,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.379,
+        "gpu_mem_mb": 3265.1,
+        "wall_time_s": 25.43,
+        "retry_r8": true
       }
     },
     {
@@ -7798,20 +8769,42 @@
     {
       "name": "Siglip2Model",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 5.234,
-        "eager_time_s": 0.001,
-        "error": "mat1 and mat2 shapes cannot be multiplied (2304x384 and 768x768)",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 22.757,
+        "eager_time_s": 0.477,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.244,
+        "gpu_mem_mb": 265.8,
+        "graph_break_count": 3,
+        "graph_count": 4,
+        "break_reasons": [
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/siglip2/modeling_siglip2.py",
+            "line": 169
+          }
+        ],
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 5.183,
-        "eager_time_s": 0.001,
-        "error": "mat1 and mat2 shapes cannot be multiplied (2304x384 and 768x768)",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 23.612,
+        "eager_time_s": 0.63,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.461,
+        "gpu_mem_mb": 310.9,
+        "graph_break_count": 3,
+        "graph_count": 4,
+        "break_reasons": [
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/siglip2/modeling_siglip2.py",
+            "line": 169
+          }
+        ],
+        "retry_r8": true
       }
     },
     {
@@ -7836,20 +8829,42 @@
     {
       "name": "Siglip2VisionModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 4.193,
-        "eager_time_s": 0.001,
-        "error": "mat1 and mat2 shapes cannot be multiplied (2304x384 and 768x768)",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 14.887,
+        "eager_time_s": 0.604,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.257,
+        "gpu_mem_mb": 114.7,
+        "graph_break_count": 2,
+        "graph_count": 3,
+        "break_reasons": [
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/siglip2/modeling_siglip2.py",
+            "line": 169
+          }
+        ],
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 4.224,
-        "eager_time_s": 0.001,
-        "error": "mat1 and mat2 shapes cannot be multiplied (2304x384 and 768x768)",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 15.198,
+        "eager_time_s": 0.449,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.524,
+        "gpu_mem_mb": 155.8,
+        "graph_break_count": 2,
+        "graph_count": 3,
+        "break_reasons": [
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/siglip2/modeling_siglip2.py",
+            "line": 169
+          }
+        ],
+        "retry_r8": true
       }
     },
     {
@@ -7933,18 +8948,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 19.572,
-        "eager_time_s": 0.006,
-        "error": "not enough values to unpack (expected 5, got 4)",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 28.868,
+        "eager_time_s": 0.43,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.828,
+        "gpu_mem_mb": 3750.2,
+        "wall_time_s": 41.32,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 19.89,
-        "eager_time_s": 0.007,
-        "error": "not enough values to unpack (expected 5, got 4)",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 28.414,
+        "eager_time_s": 0.548,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.542,
+        "gpu_mem_mb": 3778.6,
+        "wall_time_s": 41.45,
+        "retry_r8": true
       }
     },
     {
@@ -7994,20 +9015,24 @@
     {
       "name": "SpeechEncoderDecoderModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 4.458,
-        "eager_time_s": 0.0,
-        "error": "You have to specify either input_values or input_features",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 5.074,
+        "eager_time_s": 0.628,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.616,
+        "gpu_mem_mb": 303.2,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 4.382,
-        "eager_time_s": 0.0,
-        "error": "You have to specify either input_values or input_features",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 5.271,
+        "eager_time_s": 0.627,
+        "fullgraph_ok": false,
+        "compile_time_s": 0.826,
+        "gpu_mem_mb": 377.0,
+        "retry_r8": true
       }
     },
     {
@@ -8305,20 +9330,24 @@
     {
       "name": "TimeSeriesTransformerModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 2.624,
-        "eager_time_s": 0.129,
-        "error": "lags cannot go further than history length, found lag 7 while history length is only 96",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 3.054,
+        "eager_time_s": 0.452,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.76,
+        "gpu_mem_mb": 10.2,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 2.741,
-        "eager_time_s": 0.124,
-        "error": "lags cannot go further than history length, found lag 7 while history length is only 96",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 2.872,
+        "eager_time_s": 0.558,
+        "fullgraph_ok": false,
+        "compile_time_s": 1.428,
+        "gpu_mem_mb": 11.6,
+        "retry_r8": true
       }
     },
     {
@@ -8345,18 +9374,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 2.977,
-        "eager_time_s": 0.507,
-        "error": "The size of tensor a (16) must match the size of tensor b (2) at non-singleton dimension 1",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 6.08,
+        "eager_time_s": 0.844,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.203,
+        "gpu_mem_mb": 92.4,
+        "wall_time_s": 20.11,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 3.045,
-        "eager_time_s": 0.495,
-        "error": "The size of tensor a (16) must match the size of tensor b (2) at non-singleton dimension 1",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 5.62,
+        "eager_time_s": 1.338,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.262,
+        "gpu_mem_mb": 95.2,
+        "wall_time_s": 20.1,
+        "retry_r8": true
       }
     },
     {
@@ -8402,18 +9437,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 4.269,
-        "eager_time_s": 0.67,
-        "error": "shape '[2, 1, 7, 768]' is invalid for input of size 5376",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 9.184,
+        "eager_time_s": 1.352,
+        "fullgraph_ok": true,
+        "compile_time_s": 6.312,
+        "gpu_mem_mb": 2651.1,
+        "wall_time_s": 30.59,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 4.462,
-        "eager_time_s": 0.697,
-        "error": "shape '[2, 1, 7, 768]' is invalid for input of size 5376",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 9.416,
+        "eager_time_s": 1.449,
+        "fullgraph_ok": true,
+        "compile_time_s": 7.169,
+        "gpu_mem_mb": 16429.1,
+        "wall_time_s": 30.56,
+        "retry_r8": true
       }
     },
     {
@@ -8480,37 +9521,47 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 2.759,
-        "eager_time_s": 0.296,
-        "error": "Given groups=1, weight of size [128, 768, 1, 1], expected input[2, 128, 14, 14] to have 768 channels, but got 128 channels instead",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 8.11,
+        "eager_time_s": 1.271,
+        "fullgraph_ok": true,
+        "compile_time_s": 5.407,
+        "gpu_mem_mb": 39.6,
+        "wall_time_s": 25.33,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 2.779,
-        "eager_time_s": 0.289,
-        "error": "Given groups=1, weight of size [128, 768, 1, 1], expected input[2, 128, 14, 14] to have 768 channels, but got 128 channels instead",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 4.592,
+        "eager_time_s": 1.308,
+        "fullgraph_ok": true,
+        "compile_time_s": 6.448,
+        "gpu_mem_mb": 67.3,
+        "wall_time_s": 25.31,
+        "retry_r8": true
       }
     },
     {
       "name": "UdopModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 5.773,
-        "eager_time_s": 0.208,
-        "error": "mean(): could not infer output dtype. Input dtype must be either a floating point or complex dtype. Got: Long",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 6.921,
+        "eager_time_s": 0.546,
+        "fullgraph_ok": false,
+        "compile_time_s": 0.923,
+        "gpu_mem_mb": 384.0,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 5.851,
-        "eager_time_s": 0.202,
-        "error": "mean(): could not infer output dtype. Input dtype must be either a floating point or complex dtype. Got: Long",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 6.818,
+        "eager_time_s": 0.674,
+        "fullgraph_ok": false,
+        "compile_time_s": 0.909,
+        "gpu_mem_mb": 405.6,
+        "retry_r8": true
       }
     },
     {
@@ -8674,18 +9725,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 5.507,
-        "eager_time_s": 0.018,
-        "error": "Given groups=1, weight of size [2048, 64, 7], expected input[2, 32, 70] to have 64 channels, but got 32 channels instead",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 6.385,
+        "eager_time_s": 0.61,
+        "fullgraph_ok": true,
+        "compile_time_s": 4.674,
+        "gpu_mem_mb": 1337.8,
+        "wall_time_s": 20.14,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 5.534,
-        "eager_time_s": 0.018,
-        "error": "Given groups=1, weight of size [2048, 64, 7], expected input[2, 32, 70] to have 64 channels, but got 32 channels instead",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 6.327,
+        "eager_time_s": 0.598,
+        "fullgraph_ok": true,
+        "compile_time_s": 4.915,
+        "gpu_mem_mb": 15411.5,
+        "wall_time_s": 20.14,
+        "retry_r8": true
       }
     },
     {
@@ -8693,18 +9750,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 8.378,
-        "eager_time_s": 0.02,
-        "error": "Given groups=1, weight of size [32, 1, 7], expected input[2, 32, 70] to have 1 channels, but got 32 channels instead",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 12.166,
+        "eager_time_s": 0.894,
+        "fullgraph_ok": true,
+        "compile_time_s": 4.977,
+        "gpu_mem_mb": 1451.3,
+        "wall_time_s": 30.06,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 8.148,
-        "eager_time_s": 0.021,
-        "error": "Given groups=1, weight of size [32, 1, 7], expected input[2, 32, 70] to have 1 channels, but got 32 channels instead",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 11.88,
+        "eager_time_s": 0.638,
+        "fullgraph_ok": true,
+        "compile_time_s": 5.907,
+        "gpu_mem_mb": 2195.8,
+        "wall_time_s": 30.04,
+        "retry_r8": true
       }
     },
     {
@@ -8712,18 +9775,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 14.655,
-        "eager_time_s": 0.016,
-        "error": "Given groups=1, weight of size [32, 1, 7], expected input[1, 2, 16006] to have 1 channels, but got 2 channels instead",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 16.752,
+        "eager_time_s": 0.823,
+        "fullgraph_ok": true,
+        "compile_time_s": 7.969,
+        "gpu_mem_mb": 2763.2,
+        "wall_time_s": 40.15,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 14.445,
-        "eager_time_s": 0.017,
-        "error": "Given groups=1, weight of size [32, 1, 7], expected input[1, 2, 16006] to have 1 channels, but got 2 channels instead",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 16.916,
+        "eager_time_s": 0.835,
+        "fullgraph_ok": true,
+        "compile_time_s": 7.996,
+        "gpu_mem_mb": 4143.6,
+        "wall_time_s": 40.15,
+        "retry_r8": true
       }
     },
     {
@@ -8731,37 +9800,115 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 24.804,
-        "eager_time_s": 0.006,
-        "error": "'NoneType' object is not iterable",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 39.601,
+        "eager_time_s": 1.142,
+        "fullgraph_ok": true,
+        "compile_time_s": 3.336,
+        "gpu_mem_mb": 5116.7,
+        "wall_time_s": 53.44,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 25.237,
-        "eager_time_s": 0.006,
-        "error": "'NoneType' object is not iterable",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 34.903,
+        "eager_time_s": 0.563,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.47,
+        "gpu_mem_mb": 5158.6,
+        "wall_time_s": 48.43,
+        "retry_r8": true
       }
     },
     {
       "name": "VideoLlama3VisionModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 3.106,
-        "eager_time_s": 0.028,
-        "error": "reshape() takes 1 positional argument but 4 were given",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 4.977,
+        "eager_time_s": 0.881,
+        "fullgraph_ok": false,
+        "compile_time_s": 2.564,
+        "gpu_mem_mb": 68.6,
+        "graph_break_count": 7,
+        "graph_count": 8,
+        "break_reasons": [
+          {
+            "reason": "Dynamic shape operator\n  Explanation: Operator `aten.repeat_interleave.Tensor`'s output shape depends on input Tensor data.\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\n\n  Developer debug context: aten.repeat_interleave.Tensor\n",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/video_llama_3/modeling_video_llama_3.py",
+            "line": 462
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/video_llama_3/modeling_video_llama_3.py",
+            "line": 266
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/video_llama_3/modeling_video_llama_3.py",
+            "line": 266
+          },
+          {
+            "reason": "step_unsupported",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/video_llama_3/modeling_video_llama_3.py",
+            "line": 266
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/video_llama_3/modeling_video_llama_3.py",
+            "line": 427
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/video_llama_3/modeling_video_llama_3.py",
+            "line": 427
+          }
+        ],
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 2.851,
-        "eager_time_s": 0.024,
-        "error": "reshape() takes 1 positional argument but 4 were given",
-        "retry_v3": true
+        "status": "graph_break",
+        "create_time_s": 4.702,
+        "eager_time_s": 0.844,
+        "fullgraph_ok": false,
+        "compile_time_s": 2.493,
+        "gpu_mem_mb": 73.4,
+        "graph_break_count": 7,
+        "graph_count": 8,
+        "break_reasons": [
+          {
+            "reason": "Dynamic shape operator\n  Explanation: Operator `aten.repeat_interleave.Tensor`'s output shape depends on input Tensor data.\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\n\n  Developer debug context: aten.repeat_interleave.Tensor\n",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/video_llama_3/modeling_video_llama_3.py",
+            "line": 462
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/video_llama_3/modeling_video_llama_3.py",
+            "line": 266
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/video_llama_3/modeling_video_llama_3.py",
+            "line": 266
+          },
+          {
+            "reason": "step_unsupported",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/video_llama_3/modeling_video_llama_3.py",
+            "line": 266
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/video_llama_3/modeling_video_llama_3.py",
+            "line": 427
+          },
+          {
+            "reason": "Data dependent operator\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs = True`\n\n  Developer debug con",
+            "file": "/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/video_llama_3/modeling_video_llama_3.py",
+            "line": 427
+          }
+        ],
+        "retry_r8": true
       }
     },
     {
@@ -8830,18 +9977,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 13.144,
-        "eager_time_s": 0.185,
-        "error": "tuple index out of range",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 16.095,
+        "eager_time_s": 0.135,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.044,
+        "gpu_mem_mb": 3684.4,
+        "wall_time_s": 25.31,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 13.188,
-        "eager_time_s": 0.217,
-        "error": "tuple index out of range",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 15.025,
+        "eager_time_s": 0.123,
+        "fullgraph_ok": true,
+        "compile_time_s": 1.983,
+        "gpu_mem_mb": 3684.4,
+        "wall_time_s": 25.12,
+        "retry_r8": true
       }
     },
     {
@@ -8849,18 +10002,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 5.242,
-        "eager_time_s": 0.0,
-        "error": "You have to specify pixel_values",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 5.987,
+        "eager_time_s": 0.69,
+        "fullgraph_ok": true,
+        "compile_time_s": 3.269,
+        "gpu_mem_mb": 315.9,
+        "wall_time_s": 20.05,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 5.282,
-        "eager_time_s": 0.0,
-        "error": "You have to specify pixel_values",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 5.77,
+        "eager_time_s": 0.551,
+        "fullgraph_ok": true,
+        "compile_time_s": 3.088,
+        "gpu_mem_mb": 373.4,
+        "wall_time_s": 20.06,
+        "retry_r8": true
       }
     },
     {
@@ -9112,18 +10271,24 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 3.06,
-        "eager_time_s": 0.0,
-        "error": "too many values to unpack (expected 4)",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 7.045,
+        "eager_time_s": 0.656,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.875,
+        "gpu_mem_mb": 143.7,
+        "wall_time_s": 20.06,
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 3.188,
-        "eager_time_s": 0.0,
-        "error": "too many values to unpack (expected 4)",
-        "retry_v3": true
+        "status": "clean",
+        "create_time_s": 7.011,
+        "eager_time_s": 0.696,
+        "fullgraph_ok": true,
+        "compile_time_s": 2.135,
+        "gpu_mem_mb": 215.8,
+        "wall_time_s": 20.03,
+        "retry_r8": true
       }
     },
     {
@@ -9347,18 +10512,12 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 204.81,
-        "eager_time_s": 0.206,
-        "error": "Fast Mamba kernels are not available. Make sure to they are installed and that the mamba module is on a CUDA device. lease run 'pip install causal-conv1d>=1.2.0' and 'pip install mamba-ssm', or set use_mamba_kernels=False in the model's config.",
-        "retry_v3": true
+        "status": "timeout",
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 198.609,
-        "eager_time_s": 0.186,
-        "error": "Fast Mamba kernels are not available. Make sure to they are installed and that the mamba module is on a CUDA device. lease run 'pip install causal-conv1d>=1.2.0' and 'pip install mamba-ssm', or set use_mamba_kernels=False in the model's config.",
-        "retry_v3": true
+        "status": "timeout",
+        "retry_r8": true
       }
     },
     {
@@ -9366,18 +10525,12 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "eager_error",
-        "create_time_s": 100.476,
-        "eager_time_s": 0.444,
-        "error": "2",
-        "retry_v3": true
+        "status": "timeout",
+        "retry_r8": true
       },
       "train": {
-        "status": "eager_error",
-        "create_time_s": 103.186,
-        "eager_time_s": 0.534,
-        "error": "2",
-        "retry_v3": true
+        "status": "timeout",
+        "retry_r8": true
       }
     }
   ]

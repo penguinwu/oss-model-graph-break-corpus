@@ -1,0 +1,16 @@
+{
+  "PI0Model": {
+    "discovered": "2026-03-31",
+    "resolved_status": "eager_error",
+    "source": "hf",
+    "timeout_tier": "large",
+    "wall_time_s": 105.04
+  },
+  "PeAudioVideoModel": {
+    "discovered": "2026-03-31",
+    "resolved_status": "eager_error",
+    "source": "hf",
+    "timeout_tier": "large",
+    "wall_time_s": 100.03
+  }
+}

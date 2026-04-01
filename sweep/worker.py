@@ -227,8 +227,11 @@ def _fix_config(model_name, config):
             if not hasattr(config, "max_position_embeddings") or getattr(config, "max_position_embeddings", None) is None:
                 config.max_position_embeddings = 512
 
-    # --- DbrxModel: attention config needs rope_theta and clip_qkv ---
+    # --- DbrxModel: attention config needs rope_theta, clip_qkv, and hidden_size sync ---
     if name_lower == "dbrxmodel":
+        # Sync hidden_size with d_model so _reduce_model_size can reduce both
+        if hasattr(config, "d_model") and config.d_model:
+            config.hidden_size = config.d_model
         attn_cfg = getattr(config, "attn_config", None)
         if attn_cfg and not hasattr(attn_cfg, "rope_theta"):
             attn_cfg.rope_theta = 500000.0
@@ -297,7 +300,7 @@ def _fix_config(model_name, config):
         if getattr(config, "num_experts_per_tok", None) is None:
             config.num_experts_per_tok = 2
 
-    # --- EsmModel: vocab_size + position_embedding_type + emb_layer_norm ---
+    # --- EsmModel: vocab_size + position_embedding_type + emb_layer_norm + pad_token_id ---
     if name_lower == "esmmodel":
         if getattr(config, "vocab_size", None) is None:
             config.vocab_size = 33
@@ -305,11 +308,31 @@ def _fix_config(model_name, config):
             config.position_embedding_type = "absolute"
         if getattr(config, "emb_layer_norm_before", None) is None:
             config.emb_layer_norm_before = False
+        if getattr(config, "pad_token_id", None) is None:
+            config.pad_token_id = 0
 
     # --- BayesianDetectorModel: watermarking_depth is None ---
     if name_lower == "bayesiandetectormodel":
         if getattr(config, "watermarking_depth", None) is None:
             config.watermarking_depth = 3
+
+    # --- Blip2Model / InstructBlipModel / InstructBlipVideoModel: image_token_index is None ---
+    if name_lower in ("blip2model", "instructblipmodel", "instructblipvideomodel"):
+        if getattr(config, "image_token_index", None) is None:
+            config.image_token_index = 2
+        # InstructBlipVideoModel.forward() references config.image_token_id (not mapped
+        # in attribute_map, which only has video_token_id → video_token_index).
+        # Set it directly so the model can find it.
+        if name_lower == "instructblipvideomodel":
+            if not hasattr(config, "image_token_id") or getattr(config, "image_token_id", None) is None:
+                config.image_token_id = getattr(config, "image_token_index", 2)
+            # Also ensure video_token_index is set (used by ForConditionalGeneration)
+            if getattr(config, "video_token_index", None) is None:
+                config.video_token_index = getattr(config, "image_token_index", 2)
+
+    # --- IdeficsModel: use_resampler must be True when perceiver_embeddings are passed ---
+    if name_lower == "ideficsmodel":
+        config.use_resampler = True
 
     # --- Lfm2MoeModel: layer_types + expert counts are None ---
     if name_lower == "lfm2moemodel":
@@ -377,10 +400,181 @@ def _fix_config(model_name, config):
         config.num_attention_heads = 8
         config.num_key_value_heads = 4
 
+    # --- DepthProModel: make config self-consistent for small patch_size ---
+    # Default patch_size=384 requires 1536x1536 images. Reduce to 16.
+    # Must also fix all dependent dims: _reduce_model_size doesn't recurse into
+    # image_model_config/patch_model_config/fov_model_config (they're not named
+    # vision_config/text_config), so we handle them here.
+    if name_lower == "depthpromodel":
+        config.patch_size = 16
+        config.scaled_images_ratios = [1.0]
+        config.scaled_images_overlap_ratios = [0.0]
+        # Feature dims must match sub-config hidden_size (768 by default)
+        hs = config.patch_model_config.hidden_size
+        config.scaled_images_feature_dims = [hs]
+        # Reduce sub-config layers (they default to 12, not reached by _reduce_model_size)
+        for sub_attr in ("image_model_config", "patch_model_config", "fov_model_config"):
+            sub = getattr(config, sub_attr, None)
+            if sub is not None:
+                if getattr(sub, "num_hidden_layers", 0) > 4:
+                    sub.num_hidden_layers = 2
+                # Sync image_size with reduced patch_size
+                sub.image_size = config.patch_size
+        # intermediate_hook_ids must be < num_hidden_layers (now 2)
+        config.intermediate_hook_ids = [1]
+        config.intermediate_feature_dims = [config.fusion_hidden_size]
+
+    # --- UVDocModel: backbone must output all stages for bridge_connector ---
+    # UVDocModel.forward() concatenates ALL backbone feature_maps along channel dim,
+    # so the backbone must have out_features for every stage. Default config only
+    # outputs the last stage, causing channel count mismatch in bridge_connector.
+    if name_lower == "uvdocmodel":
+        backbone_cfg = getattr(config, "backbone_config", None)
+        if backbone_cfg:
+            stage_configs = getattr(backbone_cfg, "stage_configs", None)
+            if stage_configs:
+                all_stages = [f"stage{i+1}" for i in range(len(stage_configs))]
+                backbone_cfg.out_features = all_stages
+                backbone_cfg.out_indices = list(range(1, len(stage_configs) + 1))
+
+    # --- Llama4VisionModel: intermediate_size must equal hidden_size / pixel_shuffle_ratio^2 ---
+    # Llama4VisionMLP2.fc1 takes pixel-shuffled features as input, whose channel count
+    # is hidden_size / pixel_shuffle_ratio^2. But the default config has intermediate_size=5632
+    # which doesn't match hidden_size=768 / 0.25 = 3072.
+    if name_lower == "llama4visionmodel":
+        psr = getattr(config, "pixel_shuffle_ratio", 0.5)
+        hs = getattr(config, "hidden_size", 768)
+        config.intermediate_size = int(hs / (psr ** 2))
+
+    # --- AriaModel: projector_patch_to_query_dict must include actual patch count ---
+    # Default vision config produces 49 patches (224/32=7, 7*7=49), but
+    # projector_patch_to_query_dict only has keys {1225, 4900}. Add entry for 49.
+    if name_lower == "ariamodel":
+        ptqd = getattr(config, "projector_patch_to_query_dict", None)
+        if ptqd is not None:
+            vision_cfg = getattr(config, "vision_config", None)
+            if vision_cfg:
+                img_size = getattr(vision_cfg, "image_size", 224)
+                ps = getattr(vision_cfg, "patch_size", 32)
+                if isinstance(img_size, (list, tuple)):
+                    img_size = img_size[0]
+                if isinstance(ps, (list, tuple)):
+                    ps = ps[0]
+                num_patches = (img_size // ps) ** 2
+                if num_patches not in ptqd:
+                    # Use smallest existing query count as baseline
+                    ptqd[num_patches] = min(ptqd.values())
+
+    # --- LwDetrModel: projector_scale_factors is empty by default → 0 feature levels ---
+    # The empty projector produces no feature maps, causing "expected a non-empty list of
+    # Tensors" in torch.cat. Also reduce backbone layers and fix out_indices/out_features.
+    if name_lower == "lwdetrmodel":
+        if not getattr(config, "projector_scale_factors", None):
+            config.projector_scale_factors = [1.0]
+            config.num_feature_levels = 1
+            config.projector_in_channels = [config.d_model]
+        backbone_cfg = getattr(config, "backbone_config", None)
+        if backbone_cfg:
+            n = getattr(backbone_cfg, "num_hidden_layers", 10)
+            if n > 4:
+                backbone_cfg.num_hidden_layers = 2
+                backbone_cfg.out_indices = [1, 2]
+                backbone_cfg.out_features = ["stage1", "stage2"]
+            backbone_cfg.image_size = 256
+        # Reduce num_queries and group_detr to avoid topk overflow
+        config.num_queries = 10
+        config.group_detr = 1
+
     # --- Generic size reduction for all models ---
     # For graph break detection, 2 layers is sufficient.
     # This prevents create-phase timeouts for large models.
     _reduce_model_size(config)
+
+    # ── Post-reduction fixes ──
+    # These must run after _reduce_model_size() because they depend on final dimensions.
+
+    # --- Glm4v/GlmImage family: mrope_section missing from rope_parameters ---
+    # Must be post-reduction: _reduce_model_size may change num_attention_heads
+    # (e.g. Glm4vMoe: 96 heads don't divide 4096, gets reduced to 16),
+    # which changes head_dim and thus the required mrope_section sum.
+    _glm_mrope_names = (
+        "glm4vmodel", "glm4vtextmodel", "glm4vmoemodel", "glm4vmoetextmodel",
+        "glmimagemodel", "glmimagetextmodel",
+        "glm46vmodel",
+    )
+    if name_lower in _glm_mrope_names:
+        for cfg_obj in [config, getattr(config, "text_config", None)]:
+            if cfg_obj is None:
+                continue
+            rp = getattr(cfg_obj, "rope_parameters", None)
+            if rp and isinstance(rp, dict):
+                # Compute correct mrope_section sum = rotary_dim = head_dim * prf / 2
+                head_dim = getattr(cfg_obj, "head_dim", None)
+                if head_dim is None:
+                    hs = getattr(cfg_obj, "hidden_size", 4096)
+                    nh = getattr(cfg_obj, "num_attention_heads", 32)
+                    head_dim = hs // nh
+                prf = rp.get("partial_rotary_factor", 1.0)
+                dim = int(head_dim * prf)
+                target = dim // 2  # inv_freq uses arange(0, dim, 2)
+                # Scale default [8,12,12] proportionally to target
+                rp["mrope_section"] = [target * 8 // 32, target * 12 // 32, target - target * 8 // 32 - target * 12 // 32]
+
+    # --- Generic: truncate layer_types to match reduced num_hidden_layers ---
+    for cfg_obj in [config, getattr(config, "text_config", None)]:
+        if cfg_obj is None:
+            continue
+        n = getattr(cfg_obj, "num_hidden_layers", None)
+        if n is not None:
+            lt = getattr(cfg_obj, "layer_types", None)
+            if lt is not None and isinstance(lt, list) and len(lt) > n:
+                # Collect unique types from full list to ensure all are represented
+                all_types = list(dict.fromkeys(lt))  # Deduplicated, preserves order
+                if n >= len(all_types):
+                    # Fill with one of each type, then repeat last
+                    new_lt = all_types[:n]
+                    while len(new_lt) < n:
+                        new_lt.append(all_types[-1])
+                else:
+                    # Not enough layers for all types — take first n
+                    new_lt = lt[:n]
+                cfg_obj.layer_types = new_lt
+
+    # --- Jamba: attn_layer_period must be ≤ num_hidden_layers ---
+    if name_lower == "jambamodel":
+        n = getattr(config, "num_hidden_layers", 2)
+        if getattr(config, "attn_layer_period", n + 1) > n:
+            config.attn_layer_period = 1
+            config.attn_layer_offset = 0
+
+    # --- Lfm2Model: needs 'conv' in layer_types ---
+    if name_lower == "lfm2model":
+        lt = getattr(config, "layer_types", None)
+        if lt and isinstance(lt, list) and "conv" not in lt:
+            config.layer_types[0] = "conv"
+
+    # --- Lfm2MoeModel: needs both 'conv' and 'full_attention' in layer_types ---
+    if name_lower == "lfm2moemodel":
+        lt = getattr(config, "layer_types", None)
+        if lt and isinstance(lt, list):
+            config.layer_types = ["conv", "full_attention"][:len(lt)]
+
+    # --- Lfm2VlModel: text_config needs 'conv' in layer_types ---
+    if name_lower == "lfm2vlmodel":
+        text_cfg = getattr(config, "text_config", None)
+        if text_cfg:
+            lt = getattr(text_cfg, "layer_types", None)
+            if lt and isinstance(lt, list) and "conv" not in lt:
+                text_cfg.layer_types[0] = "conv"
+
+    # --- DbrxModel: sync d_model and FFN config with reduced hidden_size ---
+    if name_lower == "dbrxmodel":
+        hs = getattr(config, "hidden_size", None)
+        if hs:
+            config.d_model = hs
+            ffn_cfg = getattr(config, "ffn_config", None)
+            if ffn_cfg:
+                ffn_cfg.ffn_hidden_size = hs
 
     return config
 
@@ -425,6 +619,16 @@ def _reduce_model_size(config):
                 nkv = getattr(config, "num_key_value_heads", None)
                 if nkv is not None and nkv > heads:
                     config.num_key_value_heads = heads
+                break
+
+    # Ensure num_attention_heads is divisible by num_key_value_heads
+    nh = getattr(config, "num_attention_heads", None)
+    nkv = getattr(config, "num_key_value_heads", None)
+    if nh and nkv and nkv > 0 and nh % nkv != 0:
+        # Find largest divisor of nh that's <= nkv
+        for k in range(nkv, 0, -1):
+            if nh % k == 0:
+                config.num_key_value_heads = k
                 break
 
     # Reduce MoE expert count (each expert is a full FFN layer)
@@ -582,10 +786,11 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
             inputs = {"past_values": torch.randn(B, seq_len, channels, device=device)}
         elif "timesfm" in name_lower and "2_5" not in name_lower:
             # TimesFmModel: 2D + extra args
+            # freq must be (B, 1) so freq_emb output is (B, 1, D) for broadcasting
             inputs = {
                 "past_values": torch.randn(B, seq_len, device=device),
                 "past_values_padding": torch.ones(B, seq_len, device=device),
-                "freq": torch.zeros(B, dtype=torch.long, device=device),
+                "freq": torch.zeros(B, 1, dtype=torch.long, device=device),
             }
         else:
             # Default: 2D (batch, seq_len)
@@ -667,49 +872,84 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
 
     # Sub-models that need hidden_states instead of/in addition to pixel_values
     # These are internal vision encoders (Glm4v, GlmOcr, PaddleOCR, etc.)
-    hidden_states_models = {
-        "glm4vmoevisionmodel", "glm4vvisionmodel", "glmocrvisionmodel",
-        "flavamultimodalmodel", "phi4multimodalaudiomodel",
-        "vibevoiceacoustictokenizerencodermodel", "vibevoiceacoustictokenizerdecodermodel",
-        "ppocrv5mobiledetmodel", "videollama3visionmodel",
+    #
+    # Glm vision models have a special input format: hidden_states/pixel_values are
+    # 2D tensors of FLATTENED PIXEL PATCHES, not transformer hidden states.
+    # Shape: (total_patches, in_channels * temporal_patch_size * patch_size * patch_size)
+    # where total_patches = sum(t*h*w for each row of grid_thw).
+    _glm_vision_models = {
+        "glm4vvisionmodel", "glm4vmoevisionmodel", "glmocrvisionmodel",
     }
-    if name_lower in hidden_states_models:
-        hidden_size = getattr(config, "hidden_size", 768)
-        inputs = {"hidden_states": torch.randn(B, 32, hidden_size, device=device)}
-        # Glm-style vision models also need grid_thw
-        if "glm" in name_lower and "vision" in name_lower:
-            # grid_thw: (num_images, temporal, height_patches, width_patches)
-            inputs["grid_thw"] = torch.tensor([[1, 4, 8]] * B, dtype=torch.long, device=device)
-
-    # GlmImageVisionModel needs grid_thw with pixel_values
-    if name_lower == "glmimagevisionmodel":
-        inputs["grid_thw"] = torch.tensor([[1, 4, 8]] * B, dtype=torch.long, device=device)
-
-    # VideoLlama3VisionModel needs pixel_values + grid_thw + merge_sizes
-    if name_lower == "videollama3visionmodel":
-        img_size = getattr(config, "image_size", 224)
-        if isinstance(img_size, (list, tuple)):
-            img_size = img_size[0]
-        num_channels = getattr(config, "num_channels", 3)
+    if name_lower in _glm_vision_models:
+        in_channels = getattr(config, "in_channels", 3)
+        temporal_patch_size = getattr(config, "temporal_patch_size", 2)
+        patch_size = getattr(config, "patch_size", 14)
+        patch_pixel_dim = in_channels * temporal_patch_size * patch_size * patch_size
+        grid_thw = torch.tensor([[1, 4, 8]] * B, dtype=torch.long, device=device)
+        total_patches = int((grid_thw[:, 0] * grid_thw[:, 1] * grid_thw[:, 2]).sum().item())
         inputs = {
-            "pixel_values": torch.randn(B, num_channels, img_size, img_size, device=device),
-            "grid_thw": torch.tensor([[1, 4, 8]] * B, dtype=torch.long, device=device),
-            "merge_sizes": torch.tensor([[2, 2]] * B, dtype=torch.long, device=device),
+            "hidden_states": torch.randn(total_patches, patch_pixel_dim, device=device),
+            "grid_thw": grid_thw,
         }
 
-    # Siglip2VisionModel needs pixel_attention_mask + spatial_shapes
-    if name_lower == "siglip2visionmodel":
-        img_size = getattr(config, "image_size", 384)
-        if isinstance(img_size, (list, tuple)):
-            img_size = img_size[0]
+    # GlmImageVisionModel: pixel_values are 2D flattened patches (no temporal dim)
+    if name_lower == "glmimagevisionmodel":
+        in_channels = getattr(config, "in_channels", 3)
         patch_size = getattr(config, "patch_size", 16)
-        num_patches_h = img_size // patch_size
-        num_patches_w = num_patches_h
-        num_channels = getattr(config, "num_channels", 3)
+        patch_pixel_dim = in_channels * patch_size * patch_size
+        grid_thw = torch.tensor([[1, 4, 8]] * B, dtype=torch.long, device=device)
+        total_patches = int((grid_thw[:, 0] * grid_thw[:, 1] * grid_thw[:, 2]).sum().item())
         inputs = {
-            "pixel_values": torch.randn(B, num_channels, img_size, img_size, device=device),
-            "pixel_attention_mask": torch.ones(B, img_size, img_size, dtype=torch.long, device=device),
-            "spatial_shapes": torch.tensor([[num_patches_h, num_patches_w]] * B, dtype=torch.long, device=device),
+            "pixel_values": torch.randn(total_patches, patch_pixel_dim, device=device),
+            "grid_thw": grid_thw,
+        }
+
+    # Non-Glm models that need hidden_states
+    _other_hidden_states_models = {
+        "flavamultimodalmodel",
+    }
+    if name_lower in _other_hidden_states_models:
+        hidden_size = getattr(config, "hidden_size", 768)
+        inputs = {"hidden_states": torch.randn(B, 32, hidden_size, device=device)}
+
+    # Phi4MultimodalAudioModel: needs hidden_states (B, seq_len, input_size) + mask
+    # input_size defaults to 80 (audio mel features); mask can be None
+    if name_lower == "phi4multimodalaudiomodel":
+        input_size = getattr(config, "input_size", 80)
+        seq_len = 100
+        inputs = {
+            "hidden_states": torch.randn(B, seq_len, input_size, device=device),
+            "mask": None,
+        }
+
+    # VideoLlama3VisionModel: pre-patchified pixel_values + grid_thw + merge_sizes
+    # pixel_values shape: (total_patches, num_channels * patch_size * patch_size)
+    # merge_sizes shape: (num_images_or_videos,) — scalar per image/video
+    if name_lower == "videollama3visionmodel":
+        num_channels = getattr(config, "num_channels", 3)
+        patch_size = getattr(config, "patch_size", 16)
+        patch_pixel_dim = num_channels * patch_size * patch_size
+        grid_thw = torch.tensor([[1, 4, 8]] * B, dtype=torch.long, device=device)
+        total_patches = int((grid_thw[:, 0] * grid_thw[:, 1] * grid_thw[:, 2]).sum().item())
+        inputs = {
+            "pixel_values": torch.randn(total_patches, patch_pixel_dim, device=device),
+            "grid_thw": grid_thw,
+            "merge_sizes": torch.tensor([1] * B, dtype=torch.long, device=device),
+        }
+
+    # Siglip2VisionModel needs pre-patchified pixel_values + pixel_attention_mask + spatial_shapes
+    # pixel_values shape: (B, num_patches, num_channels * patch_size * patch_size)
+    # NOT standard (B, C, H, W) — Siglip2 uses nn.Linear for patch embedding, not Conv2d
+    if name_lower == "siglip2visionmodel":
+        num_patches = getattr(config, "num_patches", 256)
+        patch_size = getattr(config, "patch_size", 16)
+        num_channels = getattr(config, "num_channels", 3)
+        patch_dim = num_channels * patch_size * patch_size
+        num_patches_h = int(num_patches**0.5)
+        inputs = {
+            "pixel_values": torch.randn(B, num_patches, patch_dim, device=device),
+            "pixel_attention_mask": torch.ones(B, num_patches, dtype=torch.long, device=device),
+            "spatial_shapes": torch.tensor([[num_patches_h, num_patches_h]] * B, dtype=torch.long, device=device),
         }
 
     # Video inference session models — need inference_session (stateful, not compilable)
@@ -720,11 +960,12 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
         qformer_vocab = getattr(getattr(config, "qformer_config", None), "vocab_size", 1000) if hasattr(config, "qformer_config") else 1000
         inputs["qformer_input_ids"] = torch.randint(0, min(qformer_vocab, 1000), (B, 32), device=device)
 
-    # BarkFineModel needs codebook_idx
+    # BarkFineModel: expects 3D input_ids (batch, seq_len, n_codes_total) + codebook_idx
     if name_lower == "barkfinemodel":
+        n_codes_total = getattr(config, "n_codes_total", 8)
         inputs = {
             "codebook_idx": 1,
-            "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
+            "input_ids": torch.randint(0, vocab_size, (B, 32, n_codes_total), device=device),
             "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
         }
 
@@ -734,23 +975,28 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
         inputs = {"inputs": torch.randn(B, 32, getattr(config, "d_model", 768), device=device)}
 
     # SegGptModel needs prompt_pixel_values + prompt_masks
+    # SegGpt concatenates pixel_values + prompt_pixel_values along height,
+    # so individual images must be half the model's expected height.
+    # prompt_masks must have same num_channels as pixel_values because SegGptEmbeddings
+    # passes the concatenated prompt through the same patch_embeddings (which checks num_channels).
     if name_lower == "seggptmodel":
-        img_size = getattr(config, "image_size", 480)
+        img_size = getattr(config, "image_size", 896)
         if isinstance(img_size, (list, tuple)):
             img_size = img_size[0]
+        img_size = img_size // 2  # Model expects concatenated 2*H
         num_channels = getattr(config, "num_channels", 3)
         inputs = {
             "pixel_values": torch.randn(B, num_channels, img_size, img_size, device=device),
             "prompt_pixel_values": torch.randn(B, num_channels, img_size, img_size, device=device),
-            "prompt_masks": torch.randn(B, 1, img_size, img_size, device=device),
+            "prompt_masks": torch.randn(B, num_channels, img_size, img_size, device=device),
         }
 
-    # PeAudioModel needs input_ids (text-audio multimodal)
+    # PeAudioModel needs input_ids + mono audio (text-audio multimodal)
     if name_lower == "peaudiomodel":
         inputs = {
             "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
             "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
-            "input_values": torch.randn(B, 16000, device=device),
+            "input_values": torch.randn(B, 1, 16000, device=device),
         }
 
     # PeAudioVideoModel needs at least 2 of: input_ids, pixel_values_videos, input_values
@@ -774,9 +1020,9 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
             "pixel_values_videos": torch.randn(B, 8, 3, img_size, img_size, device=device),
         }
 
-    # VibeVoiceAcousticTokenizerModel needs input_values (raw audio)
+    # VibeVoiceAcousticTokenizerModel needs input_values (raw audio, 1-channel)
     if name_lower == "vibevoiceacoustictokenizermodel":
-        inputs = {"input_values": torch.randn(B, 16000, device=device)}
+        inputs = {"input_values": torch.randn(B, 1, 16000, device=device)}
 
     # Qwen2_5OmniToken2WavModel needs code + conditioning + reference_mel
     if name_lower == "qwen2_5omnitoken2wavmodel":
@@ -786,6 +1032,24 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
             "conditioning": torch.randn(B, 32, hidden, device=device),
             "reference_mel": torch.randn(B, 80, 100, device=device),
         }
+
+    # VibeVoiceAcousticTokenizerEncoderModel: forward expects hidden_states (not input_values)
+    # hidden_states shape: (B, channels, T) where channels defaults to 1
+    if name_lower == "vibevoiceacoustictokenizerencodermodel":
+        inputs = {"hidden_states": torch.randn(B, 1, 16000, device=device)}
+
+    # VibeVoiceAcousticTokenizerDecoderModel: expects encoded features
+    if name_lower == "vibevoiceacoustictokenizerdecodermodel":
+        hidden = getattr(config, "hidden_size", 64)
+        inputs = {"hidden_states": torch.randn(B, hidden, 70, device=device)}
+
+    # PPOCRV5MobileDetModel: forward expects hidden_states (not pixel_values)
+    # hidden_states is the image tensor (B, C, H, W) — same shape, different key name
+    if name_lower == "ppocrv5mobiledetmodel":
+        img_size = getattr(config, "image_size", 640)
+        if isinstance(img_size, (list, tuple)):
+            img_size = img_size[0]
+        inputs = {"hidden_states": torch.randn(B, 3, img_size, img_size, device=device)}
 
     # PI0Model needs action_embeds
     if name_lower == "pi0model":
@@ -798,9 +1062,9 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
     if name_lower == "brosmodel":
         inputs["bbox"] = torch.randint(0, 1000, (B, 32, 8), device=device)
 
-    # UdopModel needs bbox
+    # UdopModel needs bbox (float for mean() operations)
     if name_lower == "udopmodel":
-        inputs["bbox"] = torch.randint(0, 1000, (B, 32, 4), device=device)
+        inputs["bbox"] = torch.rand(B, 32, 4, device=device) * 1000
 
     # Pix2StructVisionModel needs flattened_patches
     if name_lower == "pix2structvisionmodel":
@@ -858,6 +1122,7 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
     # in their model code and cannot be fixed with simple token injection.
     image_token_fix = {
         # model_name: tokens_per_sequence (determined empirically)
+        "ariamodel": 128,
         "florence2model": 50,
         "gemma3nmodel": 256,
         "gotocr2model": 256,
@@ -903,27 +1168,30 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
             inputs["input_ids"] = torch.randint(0, vocab_size, (B, max_pos), device=device)
             inputs["attention_mask"] = torch.ones(B, max_pos, dtype=torch.long, device=device)
 
-    # Siglip2Model — need hidden_size matching image_size
+    # Siglip2Model — pre-patchified pixel_values + pixel_attention_mask + spatial_shapes
+    # Same as Siglip2VisionModel: uses nn.Linear patch embedding, not Conv2d
     if name_lower == "siglip2model":
         vision_cfg = getattr(config, "vision_config", None)
         if vision_cfg:
-            img_size = getattr(vision_cfg, "image_size", 384)
-            if isinstance(img_size, (list, tuple)):
-                img_size = img_size[0]
+            num_patches = getattr(vision_cfg, "num_patches", 256)
             patch_size = getattr(vision_cfg, "patch_size", 16)
             num_channels = getattr(vision_cfg, "num_channels", 3)
-            num_patches_h = img_size // patch_size
-            num_patches_w = num_patches_h
-            inputs["pixel_values"] = torch.randn(B, num_channels, img_size, img_size, device=device)
-            inputs["pixel_attention_mask"] = torch.ones(B, img_size, img_size, dtype=torch.long, device=device)
+            patch_dim = num_channels * patch_size * patch_size
+            num_patches_h = int(num_patches**0.5)
+            inputs["pixel_values"] = torch.randn(B, num_patches, patch_dim, device=device)
+            inputs["pixel_attention_mask"] = torch.ones(B, num_patches, dtype=torch.long, device=device)
+            inputs["spatial_shapes"] = torch.tensor([[num_patches_h, num_patches_h]] * B, dtype=torch.long, device=device)
 
     # DepthProModel — image_size must be >= patch_size * 4 (scaled_images_ratios)
     if name_lower == "depthpromodel":
         patch_size = getattr(config, "patch_size", 384)
         if isinstance(patch_size, (list, tuple)):
             patch_size = patch_size[0]
-        # Must be >= patch_size * max(scaled_images_ratios) = patch_size
-        img_size = max(patch_size, 384)
+        # Must be >= patch_size / min(scaled_images_ratios)
+        # Default ratios: (0.25, 0.5, 1) → need img_size >= patch_size / 0.25 = 4 * patch_size
+        ratios = getattr(config, "scaled_images_ratios", (0.25, 0.5, 1.0))
+        min_ratio = min(ratios) if ratios else 0.25
+        img_size = max(int(patch_size / min_ratio), patch_size)
         num_channels = getattr(config, "num_channels", 3)
         inputs = {"pixel_values": torch.randn(B, num_channels, img_size, img_size, device=device)}
 
@@ -942,53 +1210,112 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
         }
 
     # TimesFmModel — past_values_padding + freq required
+    # freq must be (B, 1) so freq_emb output is (B, 1, D) for broadcasting with (B, num_patches, D)
     if name_lower == "timesfmmodel":
         context_length = getattr(config, "context_length", 32)
         inputs = {
             "past_values": torch.randn(B, context_length, device=device),
             "past_values_padding": torch.ones(B, context_length, device=device),
-            "freq": torch.zeros(B, dtype=torch.long, device=device),
+            "freq": torch.zeros(B, 1, dtype=torch.long, device=device),
         }
 
     # ── Additional model-specific fixes ──
 
     # BarkModel: forward doesn't accept input_ids — uses generate() pattern
     # Skip: not a standard forward() model
+    # BarkModel has no forward() — only generate(). Use empty input to trigger error gracefully.
     if name_lower == "barkmodel":
         inputs = {
             "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
         }
 
-    # Blip2Model: attention_mask must be tensor, not bool
-    if name_lower == "blip2model":
-        if "attention_mask" in inputs:
-            inputs["attention_mask"] = torch.ones(B, 32, dtype=torch.long, device=device)
-
-    # DeepseekVLHybridModel: needs both pixel_values and high_res_pixel_values
-    if name_lower == "deepseekvlhybridmodel":
-        vision_cfg = getattr(config, "vision_config", getattr(config, "image_config", None))
+    # Blip2Model / InstructBlipModel: need pixel_values + input_ids with image tokens
+    if name_lower in ("blip2model", "instructblipmodel"):
+        num_query_tokens = getattr(config, "num_query_tokens", 32)
+        image_token_id = getattr(config, "image_token_index", 2)
+        total_len = num_query_tokens + 8
+        new_ids = torch.randint(0, vocab_size, (B, total_len), device=device)
+        new_ids[:, :num_query_tokens] = image_token_id
+        # Build pixel_values from vision_config
         img_size = 224
+        num_channels = 3
+        vision_cfg = getattr(config, "vision_config", None)
         if vision_cfg:
             img_size = getattr(vision_cfg, "image_size", 224) or 224
             if isinstance(img_size, (list, tuple)):
                 img_size = img_size[0]
-        inputs["pixel_values"] = torch.randn(B, 3, img_size, img_size, device=device)
-        inputs["high_res_pixel_values"] = torch.randn(B, 3, img_size, img_size, device=device)
+            num_channels = getattr(vision_cfg, "num_channels", 3)
+        inputs = {
+            "input_ids": new_ids,
+            "attention_mask": torch.ones(B, total_len, dtype=torch.long, device=device),
+            "pixel_values": torch.randn(B, num_channels, img_size, img_size, device=device),
+        }
+        # InstructBlipModel also needs qformer_input_ids
+        if name_lower == "instructblipmodel":
+            qformer_vocab = getattr(getattr(config, "qformer_config", None), "vocab_size", 1000) if hasattr(config, "qformer_config") else 1000
+            inputs["qformer_input_ids"] = torch.randint(0, min(qformer_vocab, 1000), (B, 32), device=device)
+
+    # InstructBlipVideoModel: needs pixel_values + input_ids + qformer_input_ids
+    # pixel_values must always be 5D: (B, num_frames, C, H, W) — the model forward
+    # unpacks as (batch_size, frames, channel, height, width).
+    if name_lower == "instructblipvideomodel":
+        num_query_tokens = getattr(config, "num_query_tokens", 32)
+        image_token_id = getattr(config, "image_token_index", 2)
+        num_frames = 4  # InstructBlipVideo always expects video frames
+        total_len = num_query_tokens * num_frames + 8
+        new_ids = torch.randint(0, vocab_size, (B, total_len), device=device)
+        new_ids[:, :num_query_tokens * num_frames] = image_token_id
+        # Build pixel_values from vision_config
+        img_size = 224
+        num_channels = 3
+        vision_cfg = getattr(config, "vision_config", None)
+        if vision_cfg:
+            img_size = getattr(vision_cfg, "image_size", 224) or 224
+            if isinstance(img_size, (list, tuple)):
+                img_size = img_size[0]
+            num_channels = getattr(vision_cfg, "num_channels", 3)
+        pv = torch.randn(B, num_frames, num_channels, img_size, img_size, device=device)
+        qformer_vocab = getattr(getattr(config, "qformer_config", None), "vocab_size", 1000) if hasattr(config, "qformer_config") else 1000
+        inputs = {
+            "input_ids": new_ids,
+            "attention_mask": torch.ones(B, total_len, dtype=torch.long, device=device),
+            "pixel_values": pv,
+            "qformer_input_ids": torch.randint(0, min(qformer_vocab, 1000), (B, 32), device=device),
+        }
+
+    # MusicgenModel/MusicgenMelodyModel: input_ids must be (B*num_codebooks, seq)
+    if name_lower in ("musicgenmodel", "musicgenmelodymodel"):
+        dec_cfg = getattr(config, "decoder", None)
+        num_codebooks = getattr(dec_cfg, "num_codebooks", 4) if dec_cfg else 4
+        dec_vocab = getattr(dec_cfg, "vocab_size", 2048) if dec_cfg else 2048
+        inputs = {
+            "input_ids": torch.randint(0, min(dec_vocab, 1000),
+                                       (B * num_codebooks, 32), device=device),
+        }
 
     # AutoformerModel, InformerModel, TimeSeriesTransformerModel: need past_values + past_time_features
     if name_lower in ("autoformermodel", "informermodel", "timeseriestransformermodel"):
         context_length = getattr(config, "context_length", 96)
         prediction_length = getattr(config, "prediction_length", 24)
-        num_time_features = getattr(config, "num_time_features", 1) or 1
-        # past_values: (B, context_length)
-        # past_time_features: (B, context_length, num_time_features)
-        # future_time_features: (B, prediction_length, num_time_features)
+        num_time_features = getattr(config, "num_time_features", 0)
+        # past_values must be long enough for the maximum lag in lags_sequence
+        lags = getattr(config, "lags_sequence", None)
+        if lags:
+            max_lag = max(lags)
+        else:
+            max_lag = 0
+        past_len = context_length + max_lag
         inputs = {
-            "past_values": torch.randn(B, context_length, device=device),
-            "past_time_features": torch.randn(B, context_length, num_time_features, device=device),
-            "past_observed_mask": torch.ones(B, context_length, device=device),
-            "future_time_features": torch.randn(B, prediction_length, num_time_features, device=device),
+            "past_values": torch.randn(B, past_len, device=device),
+            "past_observed_mask": torch.ones(B, past_len, device=device),
         }
+        if num_time_features > 0:
+            inputs["past_time_features"] = torch.randn(B, past_len, num_time_features, device=device)
+            inputs["future_time_features"] = torch.randn(B, prediction_length, num_time_features, device=device)
+        else:
+            # Model still needs time features tensors, but with 0 features
+            inputs["past_time_features"] = torch.randn(B, past_len, 0, device=device)
+            inputs["future_time_features"] = torch.randn(B, prediction_length, 0, device=device)
 
     # Gemma3Model: vision pooling stride error with reduced config — use text-only
     if name_lower == "gemma3model":
@@ -997,6 +1324,8 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
         inputs = {
             "input_ids": torch.randint(0, voc, (B, 32), device=device),
             "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
+            # Train mode requires token_type_ids
+            "token_type_ids": torch.zeros(B, 32, dtype=torch.long, device=device),
         }
 
     # Gemma3Model: stride should not be zero (sliding window config issue)
@@ -1004,11 +1333,16 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
         if getattr(config, "sliding_window", None) == 0:
             config.sliding_window = 4096
 
-    # KyutaiSpeechToTextModel: decoder needs seq_len - 1 tokens (teacher forcing)
-    if name_lower == "kyutaispeechtotext" or name_lower == "kyutaispeechtotextmodel":
-        if "decoder_input_ids" in inputs and "input_features" in inputs:
-            dec_len = inputs["input_features"].shape[1] - 1 if inputs["input_features"].ndim >= 2 else 31
-            inputs["decoder_input_ids"] = torch.randint(0, vocab_size, (B, 32), device=device)
+    # KyutaiSpeechToTextModel: input_ids must be 3D (B, seq_len, num_codebooks + 1)
+    # The embeddings layer adds audio_tokens_offsets of shape (num_codebooks + 1,) to input_ids,
+    # then sums over the last dim. 2D input_ids causes shape mismatch (seq_len vs num_codebooks+1).
+    if name_lower == "kyutaispeechtotextmodel":
+        num_codebooks = getattr(config, "num_codebooks", 32)
+        n_streams = num_codebooks + 1  # +1 for text token stream (padded with 0)
+        inputs = {
+            "input_ids": torch.randint(0, min(vocab_size, 1000), (B, 32, n_streams), device=device),
+            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
+        }
 
     # ReformerModel: train mode needs seq_len matching axial_pos_shape product
     if name_lower == "reformermodel":
@@ -1039,25 +1373,34 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
             "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
         }
 
-    # Kosmos2Model: image_embeds must be provided (not pixel_values)
+    # Kosmos2Model: image_embeds + image_embeds_position_mask
     if name_lower == "kosmos2model":
         hidden_size = getattr(config, "hidden_size", 2048)
+        num_image_tokens = 64
+        total_len = num_image_tokens + 8
         inputs = {
-            "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
-            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
-            "image_embeds": torch.randn(B, 64, hidden_size, device=device),
+            "input_ids": torch.randint(0, vocab_size, (B, total_len), device=device),
+            "attention_mask": torch.ones(B, total_len, dtype=torch.long, device=device),
+            "image_embeds": torch.randn(B, num_image_tokens, hidden_size, device=device),
+            "image_embeds_position_mask": torch.cat([
+                torch.ones(B, num_image_tokens, dtype=torch.bool, device=device),
+                torch.zeros(B, 8, dtype=torch.bool, device=device),
+            ], dim=1),
         }
 
     # TvpModel: needs pixel_values explicitly
+    # Must use batch_size=1 due to a bug in TvpVisualInputEmbedding.add_2d_positional_embeddings:
+    # col_position_embeddings.view(batch_size, 1, width, hidden_dim) fails for batch_size>1
+    # because the embedding tensor only has (width, hidden_dim) elements.
     if name_lower == "tvpmodel":
         img_size = getattr(config, "image_size", 448)
         if isinstance(img_size, (list, tuple)):
             img_size = img_size[0]
         num_frames = getattr(config, "num_frames", 4)
         inputs = {
-            "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
-            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
-            "pixel_values": torch.randn(B, num_frames, 3, img_size, img_size, device=device),
+            "input_ids": torch.randint(0, vocab_size, (1, 32), device=device),
+            "attention_mask": torch.ones(1, 32, dtype=torch.long, device=device),
+            "pixel_values": torch.randn(1, num_frames, 3, img_size, img_size, device=device),
         }
 
     # Qwen2_5OmniTalkerModel: mrope_section issue — text-only inputs
@@ -1074,13 +1417,45 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
             "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
         }
 
-    # PaddleOCRVisionModel: needs cu_seqlens
-    if name_lower == "paddleocrvisionmodel":
-        hidden_size = getattr(config, "hidden_size", 1280)
-        # cu_seqlens: cumulative sequence lengths for packed sequences
+    # IdeficsModel: requires exactly one of pixel_values/image_encoder_embeddings/perceiver_embeddings
+    # When use_resampler=True and perceiver_embeddings is provided, the model unpacks it as
+    # (batch_size, num_images, image_seq_len, image_hidden_size) — must be 4D.
+    # Also requires image_attention_mask of shape (B, text_seq_len, num_images).
+    # image_hidden_size must match vision_config.embed_dim (not config.hidden_size) because the
+    # cross-attention k/v projections use kv_input_dim=vision_config.embed_dim for cross-attention.
+    if name_lower == "ideficsmodel":
+        vision_cfg = getattr(config, "vision_config", None)
+        image_hidden_size = getattr(vision_cfg, "embed_dim", 768) if vision_cfg else 768
+        perceiver_cfg = getattr(config, "perceiver_config", None)
+        n_latents = getattr(perceiver_cfg, "resampler_n_latents", 64) if perceiver_cfg else 64
+        num_images = 1
+        text_seq_len = 32
         inputs = {
-            "hidden_states": torch.randn(B * 32, hidden_size, device=device),
-            "cu_seqlens": torch.tensor([0, 32, 64], dtype=torch.int32, device=device),
+            "input_ids": torch.randint(0, vocab_size, (B, text_seq_len), device=device),
+            "attention_mask": torch.ones(B, text_seq_len, dtype=torch.long, device=device),
+            "perceiver_embeddings": torch.randn(B, num_images, n_latents, image_hidden_size, device=device),
+            "image_attention_mask": torch.ones(B, text_seq_len, num_images, dtype=torch.long, device=device),
+        }
+
+    # PaddleOCRVisionModel: needs 5D pixel_values + cu_seqlens + image_grid_thw
+    # pixel_values shape: (1, total_patches, num_channels, patch_size, patch_size)
+    # cu_seqlens: cumulative sequence lengths for Flash Attention, shape (num_images + 1,)
+    if name_lower == "paddleocrvisionmodel":
+        patch_size = getattr(config, "patch_size", 14)
+        num_channels = getattr(config, "num_channels", 3)
+        image_grid_thw = [(1, 4, 8)] * B
+        total_patches = sum(t * h * w for t, h, w in image_grid_thw)
+        pixel_values = torch.randn(1, total_patches, num_channels, patch_size, patch_size, device=device)
+        # cu_seqlens: cumulative patch counts per temporal slice
+        grid_thw_tensor = torch.tensor(image_grid_thw, dtype=torch.long, device=device)
+        cu_seqlens = torch.repeat_interleave(
+            grid_thw_tensor[:, 1] * grid_thw_tensor[:, 2], grid_thw_tensor[:, 0]
+        ).cumsum(dim=0, dtype=torch.int32)
+        cu_seqlens = torch.nn.functional.pad(cu_seqlens, (1, 0), value=0)
+        inputs = {
+            "pixel_values": pixel_values,
+            "cu_seqlens": cu_seqlens,
+            "image_grid_thw": image_grid_thw,
         }
 
     # PaddleOCRVLModel: text-only inputs to avoid vision path NoneType
@@ -1099,19 +1474,25 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
         num_channels = getattr(config, "num_channels", 3)
         inputs = {"pixel_values": torch.randn(B, num_channels, img_size, img_size, device=device)}
 
-    # XCLIPVisionModel: video model needs (B, num_frames, C, H, W)
+    # XCLIPVisionModel: standalone vision encoder expects 4D (B*num_frames, C, H, W)
+    # The full XCLIPModel reshapes (B, num_frames, C, H, W) -> (B*num_frames, C, H, W)
+    # before calling the vision model. The encoder layers assume batch_dim = B*num_frames
+    # for cross-frame message passing (batch_size = batch_time // num_frames).
     if name_lower == "xclipvisionmodel":
         img_size = getattr(config, "image_size", 224)
         if isinstance(img_size, (list, tuple)):
             img_size = img_size[0]
+        num_channels = getattr(config, "num_channels", 3)
         num_frames = getattr(config, "num_frames", 8)
-        inputs = {"pixel_values": torch.randn(B, num_frames, 3, img_size, img_size, device=device)}
+        inputs = {"pixel_values": torch.randn(B * num_frames, num_channels, img_size, img_size, device=device)}
 
-    # Llama4VisionModel: needs correct hidden_size for projection
+    # Llama4VisionModel: needs pixel_values as required positional argument
     if name_lower == "llama4visionmodel":
-        hidden_size = getattr(config, "hidden_size", 1280)
-        # Use hidden_states instead of pixel_values to avoid projection mismatch
-        inputs = {"hidden_states": torch.randn(B, 32, hidden_size, device=device)}
+        img_size = getattr(config, "image_size", 560)
+        if isinstance(img_size, (list, tuple)):
+            img_size = img_size[0]
+        num_channels = getattr(config, "num_channels", 3)
+        inputs = {"pixel_values": torch.randn(B, num_channels, img_size, img_size, device=device)}
 
     # LlavaNextVideoModel: text-only to avoid vision NoneType
     if name_lower == "llavanextvideomodel":
@@ -1152,16 +1533,17 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
     # Lfm2VlModel: shape mismatch in vision projection
     # These may need specific model version — skip for now
 
-    # LwDetrModel: reshape mismatch — needs specific image_size
+    # LwDetrModel: image_size lives in backbone_config, not top-level config
     if name_lower == "lwdetrmodel":
-        img_size = getattr(config, "image_size", None)
-        if img_size is None:
-            img_size = 512
+        backbone_cfg = getattr(config, "backbone_config", None)
+        img_size = getattr(backbone_cfg, "image_size", 256) if backbone_cfg else 256
         if isinstance(img_size, (list, tuple)):
             h, w = img_size
         else:
             h = w = img_size
-        num_channels = getattr(config, "num_channels", 3)
+        num_channels = 3
+        if backbone_cfg:
+            num_channels = getattr(backbone_cfg, "num_channels", 3)
         inputs = {"pixel_values": torch.randn(B, num_channels, h, w, device=device)}
 
     # FastSpeech2ConformerModel: train mode needs labels
@@ -1170,11 +1552,16 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
         num_mel = getattr(config, "num_mel_channels", 80)
         inputs["labels"] = torch.randn(B, 50, num_mel, device=device)
 
-    # CohereAsrModel: text-only path (audio path has NoneType issues)
+    # CohereAsrModel: encoder-decoder ASR model, needs input_features (mel spectrogram) + decoder_input_ids
+    # Encoder is ParakeetEncoder which expects (B, time, num_mel_bins) audio features.
+    # The subsampling layer calls input_features.unsqueeze(1), so input_features must not be None.
     if name_lower == "cohereasrmodel":
+        encoder_cfg = getattr(config, "encoder_config", None)
+        num_mel_bins = getattr(encoder_cfg, "num_mel_bins", 128) if encoder_cfg else 128
+        decoder_start = getattr(config, "decoder_start_token_id", None) or getattr(config, "bos_token_id", 1) or 1
         inputs = {
-            "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
-            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
+            "input_features": torch.randn(B, 100, num_mel_bins, device=device),
+            "decoder_input_ids": torch.tensor([[decoder_start]] * B, device=device),
         }
 
     # PaliGemmaModel train: needs token_type_ids
@@ -1187,6 +1574,58 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
         inputs = {
             "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
             "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
+        }
+
+    # ── VL/multimodal models: text-only to avoid NoneType iteration on image inputs ──
+    _vl_text_only_models = {
+        # NoneType.tolist from image_grid_thw
+        "qwen2_5_vlmodel", "qwen3vlmodel", "qwen3vlmoemodel", "qwen3_5moemodel",
+        # NoneType not iterable from image_sizes/grid_thw
+        "qwen2vlmodel", "llavamodel", "llavanextmodel",
+        "mistral3model", "videollama3model",
+        "glm46vmodel", "glm4vmodel", "glm4vmoemodel",
+        # mat1/mat2 mismatch from vision projection — text-only avoids it
+        "ernie4_5_vlmoemodel", "ernie4_5_vl_moemodel", "lfm2vlmodel",
+        # NoneType has no len
+        "llavaonevisionmodel",
+        # Image features / image tokens mismatch
+        "cohere2visionmodel", "fastvlmmodel", "deepseekvlmodel", "janusmodel",
+        # high_res_pixel_values size mismatch (vision_config vs high_res_vision_config)
+        "deepseekvlhybridmodel",
+        # aspect_ratio_ids required with pixel_values
+        "mllamamodel",
+        # Not enough values to unpack (image inputs)
+        "idefics3model", "smolvlmmodel",
+        # Image token/feature mismatch or tuple unpack
+        "vipllavamodel", "ayavisionmodel",
+        # numel mismatch: token_count * text_hidden_size != token_count * vision_hidden_size
+        "ovis2model",
+    }
+    if name_lower in _vl_text_only_models:
+        text_cfg = getattr(config, "text_config", config)
+        voc = min(getattr(text_cfg, "vocab_size", 32000) or 32000, 1000)
+        inputs = {
+            "input_ids": torch.randint(0, voc, (B, 32), device=device),
+            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
+        }
+
+    # VisionEncoderDecoderModel: needs pixel_values + decoder_input_ids
+    if name_lower == "visionencoderdecodermodel":
+        enc_cfg = getattr(config, "encoder", None)
+        img_size = getattr(enc_cfg, "image_size", 224) if enc_cfg else 224
+        if isinstance(img_size, (list, tuple)):
+            img_size = img_size[0]
+        num_channels = getattr(enc_cfg, "num_channels", 3) if enc_cfg else 3
+        inputs = {
+            "pixel_values": torch.randn(B, num_channels, img_size, img_size, device=device),
+            "decoder_input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
+        }
+
+    # SpeechEncoderDecoderModel: needs input_values + decoder_input_ids
+    if name_lower == "speechencoderdecodermodel":
+        inputs = {
+            "input_values": torch.randn(B, 16000, device=device),
+            "decoder_input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
         }
 
     return model, inputs, None
