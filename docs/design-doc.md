@@ -1,8 +1,8 @@
 # Design Doc: OSS Model Graph Break Corpus
 
-**Revision:** 28
+**Revision:** 29
 **Owner:** Peng Wu
-**Date:** 2026-04-01
+**Date:** 2026-04-02
 **Status:** Design Review
 **Google Drive:** [OSS Model Graph Break Corpus](https://drive.google.com/drive/folders/1r74REnQBKK6ssoF6dS9mcbBrIZ8hrtBd)
 
@@ -117,21 +117,21 @@ Static graph breaks persist under dynamic shapes. Dynamic testing reveals **cons
 | Status | Eval | Train |
 |--------|------|-------|
 | Clean | **352 (75%)** | **337 (72%)** |
-| Graph Break | **93 (20%)** | **107 (23%)** |
+| Graph Break | **92 (20%)** | **107 (23%)** |
 | Eager Error | 13 (3%) | 14 (3%) |
-| Create Error | 6 (1%) | 6 (1%) |
+| Create Error | 7 (1%) | 6 (1%) |
 | Timeout | 4 (1%) | 4 (1%) |
 
-**110 models** have graph breaks in at least one mode. 93 break in eval; 17 additional models break only in train (BioGpt, Blip2, CohereAsr, ConditionalDetr, Detr, Flaubert, IBert, InstructBlip, InstructBlipVideo, Kosmos2, MusicgenMelody, Musicgen, OPT, Phi4MultimodalAudio, SEWD, TableTransformer, XGLM).
+**109 models** have graph breaks in at least one mode. 92 break in eval; 17 additional models break only in train (BioGpt, Blip2, CohereAsr, ConditionalDetr, Detr, Flaubert, IBert, InstructBlip, InstructBlipVideo, Kosmos2, MusicgenMelody, Musicgen, OPT, Phi4MultimodalAudio, SEWD, TableTransformer, XGLM).
 
-### 4.2 Graph Break Taxonomy (110 Models, 10 Root Causes)
+### 4.2 Graph Break Taxonomy (109 Models, 10 Root Causes)
 
 | Root Cause | Count | % | Priority | Fix Location |
 |------------|-------|---|----------|-------------|
 | **Data-dependent branching** | 28 | 25% | LOW | Model code: requires torch.cond() or restructuring |
 | **copy.deepcopy()** | 21 | 19% | HIGH | HF model code: replace deepcopy with clone() |
 | **Skipped/forbidden callable** | 16 | 15% | HIGH | PyTorch core: support these callables in Dynamo |
-| **logging.Logger** | 12 | 11% | MEDIUM | PyTorch core: skip/inline logger calls in Dynamo |
+| **logging.Logger** | 11 | 10% | MEDIUM | PyTorch core: skip/inline logger calls in Dynamo |
 | **as_proxy() missing** | 11 | 10% | HIGH | PyTorch core: implement as_proxy() for failing types |
 | **Unbacked symbols** | 10 | 9% | MEDIUM | Model code: shapes generated dynamically from data |
 | **Observed exception (try/except)** | 3 | 3% | MEDIUM | Dynamo exception handler support |
@@ -141,20 +141,20 @@ Static graph breaks persist under dynamic shapes. Dynamic testing reveals **cons
 
 ### 4.3 Fix Impact Analysis
 
-The top 3 actionable categories cover **45% of all broken models** (49/110):
+The top 3 actionable categories cover **45% of all broken models** (49/109):
 
 | Fix | Owner | Models Fixed | Effort |
 |-----|-------|-------------|--------|
 | Replace `copy.deepcopy()` with `clone()` in encoder-decoder models | HF Transformers | 21 | Low — single PR |
 | Un-skip audio feature extractor callables | PyTorch Dynamo | 12 | Medium |
-| Support `Logger` methods in Dynamo | PyTorch Dynamo | 12 | Medium |
+| Support `Logger` methods in Dynamo | PyTorch Dynamo | 11 | Medium |
 | Implement `as_proxy()` for detection/vision output types | PyTorch Dynamo | 11 | Medium |
 
 **Inherently hard (35%):** Data-dependent branching (28 models) and unbacked symbols (10 models) require `torch.cond()`, model restructuring, or shape redesign. No quick fix.
 
 **Detailed breakdown by category:**
 
-**1. Data-dependent branching — 28 models (25%)**
+**1. Data-dependent branching — 28 models (26%)**
 AriaTextModel, BioGptModel, Blip2Model†, CohereAsrModel†, ConditionalDetrModel, DetrModel, EncodecModel, FastSpeech2ConformerModel, FlaubertModel, GraniteMoeHybridModel, IBertModel, InstructBlipModel†, InstructBlipVideoModel†, JambaModel, Kosmos2Model†, LongcatFlashModel, NemotronHModel, OPTModel, OlmoHybridModel, Qwen3NextModel, Qwen3_5Model, Qwen3_5MoeModel, Qwen3_5MoeTextModel, Qwen3_5TextModel, ReformerModel, TableTransformerModel, ViltModel, XGLMModel. (†train-only)
 
 **2. copy.deepcopy() — 21 models (19%)**
@@ -163,8 +163,8 @@ BartModel, BigBirdPegasusModel, BlenderbotModel, BlenderbotSmallModel, FSMTModel
 **3. Skipped/forbidden callable — 16 models (15%)**
 Audio feature extractors (12): Data2VecAudioModel, HubertModel, SEWModel, SpeechT5Model, UniSpeechModel, UniSpeechSatModel, VitsModel, Wav2Vec2BertModel, Wav2Vec2ConformerModel, Wav2Vec2Model, WavLMModel, XcodecModel. SSM (2): FalconMambaModel, MambaModel. Other (2): RecurrentGemmaModel, SpeechEncoderDecoderModel.
 
-**4. logging.Logger — 12 models (11%)**
-BambaModel, FalconH1Model, Florence2Model, Gemma3nModel, GotOcr2Model, InternVLModel, LEDModel, LongformerModel, PaliGemmaModel, RwkvModel, SeamlessM4TModel, SeamlessM4Tv2Model.
+**4. logging.Logger — 11 models (10%)**
+BambaModel, FalconH1Model, Florence2Model, GotOcr2Model, InternVLModel, LEDModel, LongformerModel, PaliGemmaModel, RwkvModel, SeamlessM4TModel, SeamlessM4Tv2Model.
 
 **5. as_proxy() missing — 11 models (10%)**
 DFineModel, DeformableDetrModel, GroundingDinoModel, LwDetrModel, MMGroundingDinoModel, PPDocLayoutV2Model, PPDocLayoutV3Model, RTDetrModel, RTDetrV2Model, Siglip2Model, Siglip2VisionModel.
@@ -180,7 +180,7 @@ Observed exception: LongT5Model, SwitchTransformersModel, UdopModel. Non-Tensor 
 | Gap | Count | Description |
 |-----|-------|-------------|
 | **Eager errors** | 13 | Structurally untestable (see below) |
-| **Create errors** | 6 | Missing deps (natten, detectron2, flash_attn) or unresolvable config |
+| **Create errors** | 7 | Missing deps (natten, detectron2, flash_attn), unresolvable config, or instantiation failure |
 | **Timeouts** | 4 | EdgeTam (×2), ZambaModel, xLSTMModel |
 | **TIMM** | excluded | 1,284 models, 99% clean, 3 graph breaks — available via `--source all` |
 
@@ -208,14 +208,13 @@ Observed exception: LongT5Model, SwitchTransformersModel, UdopModel. Non-Tensor 
 
 | Status | Static | Mark | True |
 |--------|--------|------|------|
-| Clean | **352 (75%)** | **329 (70%)** | **339 (72%)** |
-| Graph Break | **93 (20%)** | **97 (21%)** | **90 (19%)** |
+| Clean | **352 (75%)** | **335 (72%)** | **339 (72%)** |
+| Graph Break | **92 (20%)** | **97 (21%)** | **90 (19%)** |
 | Eager Error | 13 (3%) | 18 (4%) | 18 (4%) |
-| Create Error | 6 (1%) | 18 (4%) | 18 (4%) |
+| Create Error | 7 (1%) | 18 (4%) | 18 (4%) |
 | Timeout | 4 (1%) | 0 | 3 (1%) |
-| Worker Error | 0 | 6 (1%) | 0 |
 
-**Key finding: `dynamic=mark` is stricter than `dynamic=true`.** Mark produces 329 clean vs true's 339 — counterintuitively, making all dims symbolic is more permissive than marking specific dims. This is because `mark_dynamic` enforces that marked dims must NOT be specialized, while `dynamic=true` allows the compiler to specialize freely and just replays with symbolic shapes.
+**Key finding: `dynamic=mark` is stricter than `dynamic=true`.** Mark produces 335 clean vs true's 339 — counterintuitively, making all dims symbolic is more permissive than marking specific dims. This is because `mark_dynamic` enforces that marked dims must NOT be specialized, while `dynamic=true` allows the compiler to specialize freely and just replays with symbolic shapes.
 
 #### dynamic=mark details
 
@@ -234,7 +233,7 @@ Using `mark_dynamic()` on batch (dim 0) and seq_len (dim 1 for NLP models), **8 
 
 These models internally assume fixed sequence length or batch size — a real issue users would hit with `mark_dynamic`. All 8 compile cleanly under `dynamic=true`, confirming the constraint violations are mark-specific.
 
-Additional mark degradation: 12 new create errors (Swin variants), 5 new eager errors (Gemma3n/Zamba2), 6 worker errors (Gemma family — OOM under dynamic overhead).
+Additional mark degradation: 12 new create errors (Swin variants), 5 new eager errors (Gemma3n/Zamba2).
 
 #### dynamic=true details
 
@@ -478,3 +477,4 @@ Benchmarked on PyTorch 2.8.0a0 (CPU, first-compile cost):
 | 26 | 2026-04-01 | **Major restructure.** Methodology before results. Prototype/TIMM/round details → appendix. Project B parked. Added repository guide for two audiences (builders vs consumers). Addressed Peng's review comments. |
 | 27 | 2026-04-01 | Dynamic=mark sweep results. 329 clean (70%, down from 75% static). 8 new constraint-violation graph breaks. Updated Section 4.5, Appendix C. |
 | 28 | 2026-04-02 | Dynamic=true sweep results. Key finding: mark is stricter than true (329 vs 339 clean). Three-mode comparison table. Both dynamic sweeps complete. |
+| 29 | 2026-04-02 | Data gap fill + sweep code fixes. Merged dynamic_true into corpus. Added root_cause to all graph_break entries. Backfilled error text for 57 static entries. Fixed Gemma3nModel (graph_break→create_error, 93→92 eval). Resolved 6 mark worker_errors to clean (329→335). Fixed worker.py exception handler (bare except→type checking) and run_sweep.py subprocess command leak. |
