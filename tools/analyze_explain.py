@@ -34,6 +34,9 @@ def classify_reason(reason_str):
     patterns = [
         ("copy.deepcopy", "copy.deepcopy()"),
         ("deepcopy", "copy.deepcopy()"),
+        ("tensor.item()", "Tensor.item()"),
+        (".item()", "Tensor.item()"),
+        ("step_unsupported", "Unsupported step"),
         ("data-dependent", "Data-dependent branching"),
         ("depends on the value", "Data-dependent guard"),
         ("backed symint", "Data-dependent guard"),
@@ -165,13 +168,18 @@ def analyze(results, args):
                 "line": br.get("line", 0),
             })
 
+    reasons_total = sum(reason_counter.values())
+    if reasons_total < total_breaks:
+        print(f"\nNote: {reasons_total} break_reasons entries vs {total_breaks} graph_break_count total")
+        print("(explain API may not emit a reason for every break)")
+
     print(f"\n{'#':>3}  {'Root Cause':<35} {'Breaks':>7} {'Models':>7} {'%':>6}")
     for i, (category, count) in enumerate(reason_counter.most_common(), 1):
         n_models = len(reason_models[category])
-        pct = count / sum(reason_counter.values()) * 100
+        pct = count / reasons_total * 100 if reasons_total else 0
         print(f"{i:>3}  {category:<35} {count:>7} {n_models:>7} {pct:>5.1f}%")
 
-    print(f"\n     {'Total':<35} {sum(reason_counter.values()):>7}")
+    print(f"\n     {'Total':<35} {reasons_total:>7}")
 
     # ── Top raw reasons (deduplicated) ──
     n_reasons = args.top_reasons if hasattr(args, "top_reasons") and args.top_reasons else 15
