@@ -1,4 +1,25 @@
 {
+  "BltModel": {
+    "discovered": "2026-04-01",
+    "resolved_status": "clean",
+    "source": "hf",
+    "timeout_tier": "large",
+    "wall_time_s": 190.07
+  },
+  "EdgeTamModel": {
+    "discovered": "2026-04-01",
+    "resolved_status": "create_error",
+    "source": "hf",
+    "timeout_tier": "large",
+    "wall_time_s": 570.02
+  },
+  "EdgeTamVisionModel": {
+    "discovered": "2026-04-01",
+    "resolved_status": "create_error",
+    "source": "hf",
+    "timeout_tier": "large",
+    "wall_time_s": 570.02
+  },
   "PI0Model": {
     "discovered": "2026-03-31",
     "resolved_status": "eager_error",
@@ -12,5 +33,19 @@
     "source": "hf",
     "timeout_tier": "large",
     "wall_time_s": 100.03
+  },
+  "RwkvModel": {
+    "discovered": "2026-04-01",
+    "resolved_status": "graph_break",
+    "source": "hf",
+    "timeout_tier": "large",
+    "wall_time_s": 290.12
+  },
+  "ZambaModel": {
+    "discovered": "2026-04-01",
+    "resolved_status": "eager_error",
+    "source": "hf",
+    "timeout_tier": "large",
+    "wall_time_s": 220.01
   }
 }

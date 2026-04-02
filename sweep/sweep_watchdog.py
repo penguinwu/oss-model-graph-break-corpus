@@ -26,10 +26,17 @@ import sys
 import time
 from pathlib import Path
 
-SWEEP_DIR = Path(__file__).parent
+SWEEP_DIR = Path(__file__).resolve().parent
 RUN_SWEEP = SWEEP_DIR / "run_sweep.py"
 RESULTS_DIR = SWEEP_DIR.parent / "sweep_results"
 MAX_RESTARTS = 3
+
+# Additional directories to search for sweep results (handles path mismatch
+# between PARA copy and repo copy of this script)
+ADDITIONAL_RESULTS_DIRS = [
+    Path("/home/pengwu/projects/oss-model-graph-break-corpus/sweep_results"),
+    Path("/home/pengwu/.myclaw/PARA/01_projects/oss-model-graph-break-corpus/sweep_results"),
+]
 
 
 def load_state(output_dir):
@@ -51,16 +58,16 @@ def save_state(output_dir, state):
 def read_progress(output_dir):
     """Read checkpoint and return progress summary.
 
-    Deduplicates by model name — auto-retries append additional lines
-    for the same model, so we keep the last result per model to avoid
+    Deduplicates by (model name, mode) — auto-retries append additional lines
+    for the same work item, so we keep the last result per (name, mode) to avoid
     exceeding 100%.
     """
     ckpt = Path(output_dir) / "pass1_checkpoint.jsonl"
     if not ckpt.exists():
         return {"completed": 0, "by_status": {}}
 
-    # Last result per model wins (retries overwrite earlier entries)
-    by_model = {}
+    # Last result per (name, mode) wins (retries overwrite earlier entries)
+    by_work_item = {}
     with open(ckpt) as f:
         for line in f:
             line = line.strip()
@@ -68,15 +75,16 @@ def read_progress(output_dir):
                 continue
             try:
                 r = json.loads(line)
-                by_model[r["name"]] = r.get("status", "unknown")
+                key = (r["name"], r.get("mode", "eval"))
+                by_work_item[key] = r.get("status", "unknown")
             except (json.JSONDecodeError, KeyError):
                 continue
 
     by_status = {}
-    for status in by_model.values():
+    for status in by_work_item.values():
         by_status[status] = by_status.get(status, 0) + 1
 
-    return {"completed": len(by_model), "by_status": by_status}
+    return {"completed": len(by_work_item), "by_status": by_status}
 
 
 def is_pid_alive(pid):
@@ -162,14 +170,28 @@ def restart_sweep(state, output_dir):
 
 
 def find_latest_sweep():
-    """Find the most recent sweep output directory with a state file."""
-    if not RESULTS_DIR.exists():
-        return None
+    """Find the most recent sweep output directory with a state file.
+
+    Searches RESULTS_DIR (relative to this script) plus ADDITIONAL_RESULTS_DIRS
+    to handle the case where the watchdog and sweep run from different copies.
+    """
     candidates = []
-    for d in RESULTS_DIR.iterdir():
-        state_file = d / "sweep_state.json"
-        if d.is_dir() and state_file.exists():
-            candidates.append((state_file.stat().st_mtime, str(d)))
+    search_dirs = [RESULTS_DIR] + ADDITIONAL_RESULTS_DIRS
+    seen = set()
+    for results_dir in search_dirs:
+        results_dir = results_dir.resolve()
+        if results_dir in seen or not results_dir.exists():
+            continue
+        seen.add(results_dir)
+        # Check subdirectories
+        for d in results_dir.iterdir():
+            state_file = d / "sweep_state.json"
+            if d.is_dir() and state_file.exists():
+                candidates.append((state_file.stat().st_mtime, str(d)))
+        # Also check the results dir itself (sweep may write directly here)
+        top_state = results_dir / "sweep_state.json"
+        if top_state.exists():
+            candidates.append((top_state.stat().st_mtime, str(results_dir)))
     if not candidates:
         return None
     candidates.sort(reverse=True)
@@ -195,6 +217,18 @@ def main():
     status = state.get("status", "unknown")
     total = state.get("total_work_items", 0)
     pid = state.get("pid")
+
+    # Sweep is still initializing (loading models, enumerating)
+    if status == "initializing":
+        alive = is_pid_alive(pid) if pid else False
+        if alive:
+            print(f"Sweep initializing (PID {pid}, started {format_elapsed(state.get('started', ''))} ago)")
+        else:
+            print(f"Sweep DIED during initialization (PID {pid} gone). "
+                  f"Check logs — sweep never started running.")
+            state["status"] = "failed"
+            save_state(output_dir, state)
+        sys.exit(0)
 
     # Already done and notified
     if status == "done":

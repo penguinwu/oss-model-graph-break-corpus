@@ -47,7 +47,7 @@ from collections import deque
 from pathlib import Path
 
 
-SWEEP_DIR = Path(__file__).parent
+SWEEP_DIR = Path(__file__).resolve().parent
 WORKER_SCRIPT = SWEEP_DIR / "worker.py"
 DEFAULT_OUTPUT_DIR = SWEEP_DIR.parent / "sweep_results"
 LARGE_MODELS_FILE = SWEEP_DIR / "large_models.json"
@@ -527,8 +527,30 @@ def _print_progress(completed, total, result):
 def run_sweep(args):
     """Main sweep logic."""
     python_bin = args.python or sys.executable
-    output_dir = Path(args.output_dir)
+    output_dir = Path(args.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # ── Write early state file so watchdog can detect us immediately ──
+    state_file = output_dir / "sweep_state.json"
+    early_state = {
+        "status": "initializing",
+        "pid": os.getpid(),
+        "output_dir": str(output_dir),
+        "started": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "args": sys.argv[1:],
+        "restart_count": 0,
+    }
+    # Preserve restart_count from previous state if resuming
+    if args.resume and state_file.exists():
+        try:
+            with open(state_file) as f:
+                old_state = json.load(f)
+            early_state["restart_count"] = old_state.get("restart_count", 0)
+        except (json.JSONDecodeError, KeyError):
+            pass
+    with open(state_file, "w") as f:
+        json.dump(early_state, f, indent=2)
+    print(f"Sweep state: {state_file} (PID {os.getpid()})")
 
     # ── Load or enumerate models ──
     if args.models:
@@ -613,28 +635,17 @@ def run_sweep(args):
         print(f"Skip list: {len(skip_models)} models will be skipped")
     print()
 
-    # ── Write watchdog state file ──
+    # ── Update watchdog state file with full details ──
     total_work_items = len(specs) * len(pass1_modes)
     state_file = output_dir / "sweep_state.json"
-    state = {
+    with open(state_file) as f:
+        state = json.load(f)
+    state.update({
         "status": "running",
-        "pid": os.getpid(),
-        "output_dir": str(output_dir),
         "total_models": len(specs),
         "total_work_items": total_work_items,
         "modes": pass1_modes,
-        "started": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        "args": sys.argv[1:],
-        "restart_count": 0,
-    }
-    # Preserve restart_count from previous state if resuming
-    if args.resume and state_file.exists():
-        try:
-            with open(state_file) as f:
-                old_state = json.load(f)
-            state["restart_count"] = old_state.get("restart_count", 0)
-        except (json.JSONDecodeError, KeyError):
-            pass
+    })
     with open(state_file, "w") as f:
         json.dump(state, f, indent=2)
 
