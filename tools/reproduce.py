@@ -12,7 +12,9 @@ import sys
 import os
 
 # Add sweep dir to path for model creation
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "sweep"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "sweep"))
+
+REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
 
 
 def main():
@@ -25,7 +27,7 @@ def main():
     args = parser.parse_args()
 
     if args.list:
-        corpus_path = os.path.join(os.path.dirname(__file__), "corpus", "corpus.json")
+        corpus_path = os.path.join(REPO_ROOT, "corpus", "corpus.json")
         with open(corpus_path) as f:
             corpus = json.load(f)
         for m in corpus["models"]:
