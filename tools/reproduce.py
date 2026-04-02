@@ -19,7 +19,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
 
 def main():
     parser = argparse.ArgumentParser(description="Reproduce a graph break for a model")
-    parser.add_argument("model", help="Model name (e.g., BartModel)")
+    parser.add_argument("model", nargs="?", help="Model name (e.g., BartModel)")
     parser.add_argument("--mode", default="eval", choices=["eval", "train"])
     parser.add_argument("--device", default="cuda", choices=["cpu", "cuda"])
     parser.add_argument("--list", action="store_true",
@@ -37,25 +37,36 @@ def main():
                 print(f"{m['source']}/{m['name']:30s}  eval={ev:12s}  train={tr}")
         return
 
+    if not args.model:
+        parser.error("model name is required (e.g., reproduce.py BartModel)")
+
     import torch
     import torch._dynamo
     from worker import create_model
 
     # Look up model in corpus to get source
-    corpus_path = os.path.join(os.path.dirname(__file__), "corpus", "corpus.json")
-    spec = None
+    corpus_path = os.path.join(REPO_ROOT, "corpus", "corpus.json")
+    corpus_models = {}
     if os.path.exists(corpus_path):
         with open(corpus_path) as f:
             corpus = json.load(f)
         for m in corpus["models"]:
-            if m["name"] == args.model:
-                spec = {"name": m["name"], "source": m["source"]}
-                break
+            corpus_models[m["name"]] = m
 
-    if spec is None:
-        # Try hf by default
+    spec = None
+    if args.model in corpus_models:
+        m = corpus_models[args.model]
+        spec = {"name": m["name"], "source": m["source"]}
+    else:
+        # Check for close matches
+        close = [n for n in corpus_models if args.model.lower() in n.lower()]
+        if close:
+            print(f"Model '{args.model}' not found in corpus. Similar names:")
+            for n in close[:10]:
+                print(f"  {n}")
+            print()
         spec = {"name": args.model, "source": "hf"}
-        print(f"Model not found in corpus, assuming source=hf")
+        print(f"Model not found in corpus, trying source=hf")
 
     print(f"Model: {spec['name']} (source={spec['source']})")
     print(f"Mode:  {args.mode}")

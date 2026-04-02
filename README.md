@@ -7,14 +7,14 @@ A corpus of **468 open-source models** tested for `torch.compile(fullgraph=True)
 | Status | Eval | Train |
 |--------|------|-------|
 | **Clean** | 352 (75%) | 337 (72%) |
-| **Graph Break** | 93 (20%) | 107 (23%) |
+| **Graph Break** | 92 (20%) | 107 (23%) |
 | Eager Error | 13 (3%) | 14 (3%) |
-| Create Error | 6 (1%) | 6 (1%) |
+| Create Error | 7 (1%) | 6 (1%) |
 | Timeout | 4 (1%) | 4 (1%) |
 
-**110 models** have graph breaks in at least one mode. 3 targeted PRs (deepcopy→clone, un-skip audio callables, Logger support) would fix **49 models (45%)**.
+**109 models** have graph breaks in at least one mode. 3 targeted PRs (deepcopy→clone, un-skip audio callables, Logger support) would fix **44 models (40%)**.
 
-With `mark_dynamic` on batch + seq_len dims, 9 additional models break — primarily from constraint violations where models specialize on dimensions marked as dynamic. Counterintuitively, `mark_dynamic` (329 clean eval) is stricter than `dynamic=true` (339 clean eval).
+With `mark_dynamic` on batch + seq_len dims, 9 additional models break — primarily from constraint violations where models specialize on dimensions marked as dynamic. Counterintuitively, `mark_dynamic` (335 clean eval) is stricter than `dynamic=true` (339 clean eval).
 
 ## Quick Start (Corpus Consumers)
 
