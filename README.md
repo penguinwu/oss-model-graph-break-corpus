@@ -39,8 +39,12 @@ python tools/query.py --compare-dynamic
 ```bash
 pip install torch==2.10.0 transformers==5.4.0 diffusers==0.37.1
 
+# No GPU needed — runs on CPU by default
 python tools/reproduce.py BartModel
 python tools/reproduce.py BartModel --mode train
+
+# Or explicitly on GPU
+python tools/reproduce.py BartModel --device cuda
 ```
 
 ### Compare sweep results

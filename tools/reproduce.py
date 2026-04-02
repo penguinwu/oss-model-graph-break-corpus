@@ -21,7 +21,7 @@ def main():
     parser = argparse.ArgumentParser(description="Reproduce a graph break for a model")
     parser.add_argument("model", nargs="?", help="Model name (e.g., BartModel)")
     parser.add_argument("--mode", default="eval", choices=["eval", "train"])
-    parser.add_argument("--device", default="cuda", choices=["cpu", "cuda"])
+    parser.add_argument("--device", default="cpu", choices=["cpu", "cuda"])
     parser.add_argument("--list", action="store_true",
                         help="List all graph-break models from the corpus")
     args = parser.parse_args()
