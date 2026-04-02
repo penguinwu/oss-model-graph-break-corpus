@@ -14,7 +14,7 @@ A corpus of **468 open-source models** tested for `torch.compile(fullgraph=True)
 
 **110 models** have graph breaks in at least one mode. 3 targeted PRs (deepcopy→clone, un-skip audio callables, Logger support) would fix **49 models (45%)**.
 
-With `mark_dynamic` on batch + seq_len dims, 23 additional models lose clean status — primarily from constraint violations where models specialize on dimensions marked as dynamic.
+With `mark_dynamic` on batch + seq_len dims, 9 additional models break — primarily from constraint violations where models specialize on dimensions marked as dynamic. Counterintuitively, `mark_dynamic` (329 clean eval) is stricter than `dynamic=true` (339 clean eval).
 
 ## Quick Start (Corpus Consumers)
 

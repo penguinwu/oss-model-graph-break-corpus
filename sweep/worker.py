@@ -1953,9 +1953,36 @@ def run_pass1(spec, device, mode, dynamic=False):
         result["status"] = "clean"
         result["fullgraph_ok"] = True
     except Exception as e:
-        result["status"] = "graph_break"
-        result["fullgraph_ok"] = False
-        result["fullgraph_error"] = str(e)[:500]
+        err_str = str(e)[:500]
+        err_type = type(e).__name__
+
+        # Distinguish real graph breaks from config/infrastructure errors.
+        # Graph breaks come from torch._dynamo internals; config errors are
+        # AttributeError, TypeError, or errors with telltale patterns that
+        # indicate the model itself failed, not that Dynamo hit a graph break.
+        NON_GRAPH_BREAK_TYPES = (AttributeError, TypeError, ImportError)
+        NON_GRAPH_BREAK_PATTERNS = [
+            "object has no attribute",
+            "missing 1 required positional argument",
+            "Image features and image tokens do not match",
+            "CUDA out of memory",
+            "cannot be instantiated",
+            "prediction_length",
+        ]
+        is_infra_error = (
+            isinstance(e, NON_GRAPH_BREAK_TYPES)
+            or any(p in err_str for p in NON_GRAPH_BREAK_PATTERNS)
+        )
+
+        if is_infra_error:
+            result["status"] = "compile_error"
+            result["fullgraph_ok"] = False
+            result["error"] = err_str
+            result["error_type"] = err_type
+        else:
+            result["status"] = "graph_break"
+            result["fullgraph_ok"] = False
+            result["fullgraph_error"] = err_str
     result["compile_time_s"] = round(time.perf_counter() - t_compile, 3)
     result["phase"] = "done"
 

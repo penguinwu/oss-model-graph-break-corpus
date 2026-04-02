@@ -20,6 +20,27 @@
     "timeout_tier": "large",
     "wall_time_s": 570.02
   },
+  "GroundingDinoModel": {
+    "discovered": "2026-04-01",
+    "resolved_status": "graph_break",
+    "source": "hf",
+    "timeout_tier": "large",
+    "wall_time_s": 450.09
+  },
+  "HieraModel": {
+    "discovered": "2026-04-01",
+    "resolved_status": "clean",
+    "source": "hf",
+    "timeout_tier": "large",
+    "wall_time_s": 365.1
+  },
+  "MMGroundingDinoModel": {
+    "discovered": "2026-04-01",
+    "resolved_status": "graph_break",
+    "source": "hf",
+    "timeout_tier": "large",
+    "wall_time_s": 455.08
+  },
   "PI0Model": {
     "discovered": "2026-03-31",
     "resolved_status": "eager_error",
@@ -40,6 +61,24 @@
     "source": "hf",
     "timeout_tier": "large",
     "wall_time_s": 290.12
+  },
+  "Sam2HieraDetModel": {
+    "discovered": "2026-04-01",
+    "phase_at_timeout": "compile",
+    "source": "hf",
+    "timeout_tier": "very_large"
+  },
+  "Sam2Model": {
+    "discovered": "2026-04-01",
+    "phase_at_timeout": "compile",
+    "source": "hf",
+    "timeout_tier": "very_large"
+  },
+  "Sam2VisionModel": {
+    "discovered": "2026-04-01",
+    "phase_at_timeout": "compile",
+    "source": "hf",
+    "timeout_tier": "very_large"
   },
   "ZambaModel": {
     "discovered": "2026-04-01",

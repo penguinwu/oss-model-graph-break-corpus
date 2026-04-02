@@ -1,6 +1,6 @@
 # Design Doc: OSS Model Graph Break Corpus
 
-**Revision:** 27
+**Revision:** 28
 **Owner:** Peng Wu
 **Date:** 2026-04-01
 **Status:** Design Review
@@ -202,23 +202,24 @@ Observed exception: LongT5Model, SwitchTransformersModel, UdopModel. Non-Tensor 
 | Sam3TrackerVideoModel | Requires tracking session for multi-object video |
 | Sam3VideoModel | Requires inference session for video segmentation |
 
-### 4.5 Dynamic Shape Results (dynamic=mark)
+### 4.5 Dynamic Shape Results
 
-Using `mark_dynamic()` on batch (dim 0) and seq_len (dim 1 for NLP models):
+#### Three-mode comparison (eval)
 
-| Status | Static Eval | Mark Eval | Delta |
-|--------|-------------|-----------|-------|
-| Clean | **352 (75%)** | **329 (70%)** | -23 |
-| Graph Break | **93 (20%)** | **97 (21%)** | +4 |
-| Eager Error | 13 (3%) | 18 (4%) | +5 |
-| Create Error | 6 (1%) | 18 (4%) | +12 |
-| Worker Error | 0 | 6 (1%) | +6 |
-| Timeout | 4 (1%) | 0 | -4 |
+| Status | Static | Mark | True |
+|--------|--------|------|------|
+| Clean | **352 (75%)** | **329 (70%)** | **339 (72%)** |
+| Graph Break | **93 (20%)** | **97 (21%)** | **90 (19%)** |
+| Eager Error | 13 (3%) | 18 (4%) | 18 (4%) |
+| Create Error | 6 (1%) | 18 (4%) | 18 (4%) |
+| Timeout | 4 (1%) | 0 | 3 (1%) |
+| Worker Error | 0 | 6 (1%) | 0 |
 
-**23 fewer models compile cleanly** with dynamic shapes. The degradation comes from three sources:
+**Key finding: `dynamic=mark` is stricter than `dynamic=true`.** Mark produces 329 clean vs true's 339 — counterintuitively, making all dims symbolic is more permissive than marking specific dims. This is because `mark_dynamic` enforces that marked dims must NOT be specialized, while `dynamic=true` allows the compiler to specialize freely and just replays with symbolic shapes.
 
-**1. Constraint violations — 8 new graph breaks** (clean → graph_break):
-Models that specialize on dimensions we marked as dynamic. Error: `"Constraints violated — You marked dim as dynamic but your code specialized it to be a constant."`
+#### dynamic=mark details
+
+Using `mark_dynamic()` on batch (dim 0) and seq_len (dim 1 for NLP models), **8 models that compile cleanly with static shapes break due to constraint violations:**
 
 | Model | Violated Dimension |
 |-------|-------------------|
@@ -231,15 +232,15 @@ Models that specialize on dimensions we marked as dynamic. Error: `"Constraints 
 | TapasModel | input_ids dim 0 specialized to constant |
 | UnivNetModel | randn with symbolic shapes |
 
-These are models where the architecture internally assumes a fixed sequence length or batch size — a real issue users would hit with `mark_dynamic`.
+These models internally assume fixed sequence length or batch size — a real issue users would hit with `mark_dynamic`. All 8 compile cleanly under `dynamic=true`, confirming the constraint violations are mark-specific.
 
-**2. New create/eager errors — 12 + 5 models:**
-Some models that worked statically fail during model creation or eager execution when dynamic shape tracing changes tensor behavior. Includes Swin variants (create_error) and Gemma3n/Zamba2 (eager_error).
+Additional mark degradation: 12 new create errors (Swin variants), 5 new eager errors (Gemma3n/Zamba2), 6 worker errors (Gemma family — OOM under dynamic overhead).
 
-**3. Worker errors — 6 Gemma-family models:**
-GPTNeoXModel, Gemma2Model, Gemma3Model, Gemma3TextModel, GemmaModel, GitVisionModel — likely OOM or process crash under dynamic shape overhead.
+#### dynamic=true details
 
-**Combined landscape:** 89 models break in both static and dynamic=mark. 8 new breaks appear only with dynamic shapes. 4 models that broke statically now error differently (create/eager errors).
+Only **1 new graph break** vs static: UnivNetModel (randn with symbolic shapes — same failure as mark). 3 models (Sam2HieraDetModel, Sam2Model, Sam2VisionModel) that were clean statically now timeout under symbolic shape overhead.
+
+No static graph breaks were eliminated by either dynamic mode.
 
 ## 5. Repository Guide
 
@@ -318,7 +319,6 @@ python sweep/run_sweep.py --source hf+diffusers --device cuda --workers 4 \
 | Item | Description | Priority |
 |------|-------------|----------|
 | **Diffusers expansion** | ~110 models with per-family constructor args and inputs | High |
-| **Dynamic=true sweep** | Full symbolic dimensions — most aggressive dynamic shape test | Medium |
 | **Multi-version comparison** | Run corpus across PyTorch 2.8, 2.9, 2.10 to track Dynamo progress | Medium |
 | **aot_eager sweep** | Catch AOTAutograd-specific training failures | Medium |
 | **Gradient checkpointing mode** | Test `model.gradient_checkpointing_enable()` | Medium |
@@ -477,3 +477,4 @@ Benchmarked on PyTorch 2.8.0a0 (CPU, first-compile cost):
 | 25 | 2026-04-01 | R8: 82 eager_error models fixed, taxonomy updated to 110 models |
 | 26 | 2026-04-01 | **Major restructure.** Methodology before results. Prototype/TIMM/round details → appendix. Project B parked. Added repository guide for two audiences (builders vs consumers). Addressed Peng's review comments. |
 | 27 | 2026-04-01 | Dynamic=mark sweep results. 329 clean (70%, down from 75% static). 8 new constraint-violation graph breaks. Updated Section 4.5, Appendix C. |
+| 28 | 2026-04-02 | Dynamic=true sweep results. Key finding: mark is stricter than true (329 vs 339 clean). Three-mode comparison table. Both dynamic sweeps complete. |

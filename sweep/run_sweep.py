@@ -201,7 +201,33 @@ def harvest_worker(handle):
             result["wall_time_s"] = round(wall_time, 2)
             return result
         except (json.JSONDecodeError, IndexError):
-            pass
+            # Worker printed non-JSON output — capture both streams for debugging
+            return {
+                "name": handle.spec["name"],
+                "source": handle.spec["source"],
+                "mode": handle.mode,
+                "pass": handle.pass_num,
+                "status": "worker_error",
+                "error": f"Bad JSON from worker stdout",
+                "stdout_tail": stdout[-300:],
+                "stderr_tail": (stderr or "")[-300:],
+                "returncode": 0,
+                "wall_time_s": round(wall_time, 2),
+            }
+
+    # Worker crashed — extract the actual error from stderr, stripping
+    # subprocess command strings that leak implementation details.
+    error_text = (stderr or "no output")[-500:]
+    # If stderr contains a CalledProcessError repr, extract the actual error
+    # from the last traceback line instead of the command string.
+    if error_text.startswith("Command '") or "CalledProcessError" in error_text:
+        lines = stderr.strip().splitlines() if stderr else []
+        # Look for the last meaningful error line (skip command repr)
+        for line in reversed(lines):
+            line = line.strip()
+            if line and not line.startswith("Command '") and not line.startswith("Traceback"):
+                error_text = line[:500]
+                break
 
     return {
         "name": handle.spec["name"],
@@ -209,7 +235,7 @@ def harvest_worker(handle):
         "mode": handle.mode,
         "pass": handle.pass_num,
         "status": "worker_error",
-        "error": (stderr or "no output")[-500:],
+        "error": error_text,
         "returncode": handle.proc.returncode,
         "wall_time_s": round(wall_time, 2),
     }
