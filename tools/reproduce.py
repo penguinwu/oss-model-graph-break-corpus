@@ -40,7 +40,18 @@ def main():
     if not args.model:
         parser.error("model name is required (e.g., reproduce.py BartModel)")
 
-    import torch
+    try:
+        import torch
+    except ImportError:
+        print("Error: PyTorch not found.")
+        print("Install the required packages:")
+        print("  pip install torch==2.10.0 transformers==5.4.0 diffusers==0.37.1")
+        print()
+        print("Or create a virtual environment:")
+        print("  python -m venv env && source env/bin/activate")
+        print("  pip install torch==2.10.0 transformers==5.4.0 diffusers==0.37.1")
+        sys.exit(1)
+
     import torch._dynamo
     from worker import create_model
 
@@ -64,9 +75,19 @@ def main():
             print(f"Model '{args.model}' not found in corpus. Similar names:")
             for n in close[:10]:
                 print(f"  {n}")
-            print()
-        spec = {"name": args.model, "source": "hf"}
-        print(f"Model not found in corpus, trying source=hf")
+            if len(close) == 1:
+                print(f"\nDid you mean '{close[0]}'?")
+            sys.exit(1)
+        else:
+            print(f"Model '{args.model}' not found in corpus.")
+            print("Use --list to see all available models.")
+            sys.exit(1)
+
+    # Check if diffusers model is supported
+    if spec["source"] == "diffusers":
+        print(f"Note: Diffusers model reproduction requires model-specific input configs.")
+        print(f"Only 5 Diffusers families are currently supported.")
+        print()
 
     print(f"Model: {spec['name']} (source={spec['source']})")
     print(f"Mode:  {args.mode}")
@@ -75,7 +96,13 @@ def main():
 
     # Step 1: Create model
     print("Creating model...")
-    model, inputs_dict, inputs_tuple = create_model(spec, args.device)
+    try:
+        model, inputs_dict, inputs_tuple = create_model(spec, args.device)
+    except Exception as e:
+        print(f"Error creating model: {e}")
+        if spec["source"] == "diffusers":
+            print("This Diffusers model may not have a supported constructor config.")
+        sys.exit(1)
 
     if args.mode == "train":
         model.train()

@@ -17,9 +17,31 @@ import sys
 
 
 def load_results(path):
+    """Load results from JSON or JSONL file.
+
+    Supports:
+    - Standard JSON: array of results or {"results": [...]}
+    - JSONL: one JSON object per line (sweep checkpoint format)
+    """
     with open(path) as f:
-        data = json.load(f)
-    results = data if isinstance(data, list) else data.get("results", [])
+        content = f.read()
+
+    content = content.strip()
+    if content.startswith('[') or (content.startswith('{') and '\n' not in content):
+        # Standard JSON array, or single-line JSON object
+        data = json.loads(content)
+        results = data if isinstance(data, list) else data.get("results", [])
+    else:
+        # JSONL or multi-line JSON object — try JSON first, fall back to JSONL
+        try:
+            data = json.loads(content)
+            results = data if isinstance(data, list) else data.get("results", [])
+        except json.JSONDecodeError:
+            results = []
+            for line in content.splitlines():
+                line = line.strip()
+                if line:
+                    results.append(json.loads(line))
     by_key = {}
     for r in results:
         key = (r["name"], r.get("mode", "eval"))

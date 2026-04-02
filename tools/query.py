@@ -5,13 +5,18 @@ Usage:
     python tools/query.py                          # Summary
     python tools/query.py --status graph_break     # All graph break models
     python tools/query.py --error deepcopy         # Models with 'deepcopy' in error
+    python tools/query.py --source hf              # Filter by source
     python tools/query.py --compare-dynamic        # Static vs dynamic=mark comparison
+    python tools/query.py --top-errors             # Top error categories
+    python tools/query.py --mode-diff              # Models that differ between eval/train
     python tools/query.py --json                   # Machine-readable output
 """
 import argparse
 import json
 import os
+import re
 import sys
+from collections import Counter
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
 CORPUS_PATH = os.path.join(REPO_ROOT, "corpus", "corpus.json")
@@ -20,6 +25,47 @@ CORPUS_PATH = os.path.join(REPO_ROOT, "corpus", "corpus.json")
 def load_corpus():
     with open(CORPUS_PATH) as f:
         return json.load(f)
+
+
+def _get_error(rec):
+    """Get error text from a record, checking both field names."""
+    return rec.get("fullgraph_error", "") or rec.get("error", "")
+
+
+def _classify_error(error_text):
+    """Classify an error string into a category."""
+    e = error_text.lower()
+    if "deepcopy" in e:
+        return "copy.deepcopy"
+    if "marked as skipped" in e:
+        return "skipped function call"
+    if "mark_static_address" in e:
+        return "forbidden callable (mark_static_address)"
+    if "data-dependent" in e or "data dependent" in e:
+        if "guard" in e or "constraint" in e:
+            return "data-dependent guard"
+        return "data-dependent branching"
+    if "logger" in e and "logging" not in e.split("hint")[0] if "hint" in e else "logger" in e:
+        return "logging.Logger"
+    if "as_proxy" in e or "proxy" in e:
+        return "proxy conversion failure"
+    if "requires_grad" in e and "setattr" in e:
+        return "requires_grad mutation"
+    if "callable" in e and "builtin" in e:
+        return "builtin callable"
+    if "context manager" in e or "ContextManag" in e.replace(" ", ""):
+        return "unsupported context manager"
+    if "fake tensor" in e or "faketensor" in e.replace(" ", ""):
+        return "fake tensor error"
+    if "non-tensor" in e or "non-Tensor" in error_text:
+        return "non-Tensor return"
+    if "observed exception" in e:
+        return "observed exception"
+    if "unbacked" in e or "symint" in e:
+        return "unbacked SymInt"
+    if not error_text.strip():
+        return "(no error text)"
+    return "other"
 
 
 def print_summary(corpus):
@@ -55,16 +101,18 @@ def print_summary(corpus):
         print()
 
 
-def filter_models(corpus, status=None, error=None, mode="eval"):
+def filter_models(corpus, status=None, error=None, mode="eval", source=None):
     results = []
     for m in corpus["models"]:
+        if source and m.get("source") != source:
+            continue
         if mode not in m:
             continue
         rec = m[mode]
         if status and rec.get("status") != status:
             continue
         if error:
-            err_text = rec.get("fullgraph_error", "") or rec.get("error", "")
+            err_text = _get_error(rec)
             if error.lower() not in err_text.lower():
                 continue
         results.append(m)
@@ -85,12 +133,86 @@ def compare_dynamic(corpus, mode="eval"):
     print(f"\n{len(changed)} models changed status with dynamic=mark")
 
 
+def top_errors(corpus, mode="eval", n=10):
+    categories = Counter()
+    examples = {}
+    for m in corpus["models"]:
+        rec = m.get(mode, {})
+        if rec.get("status") != "graph_break":
+            continue
+        err = _get_error(rec)
+        cat = _classify_error(err)
+        categories[cat] += 1
+        if cat not in examples:
+            examples[cat] = m["name"]
+
+    print(f"Top error categories ({mode} mode, {sum(categories.values())} graph break models):")
+    print(f"{'#':<4} {'Category':<35} {'Count':>6} {'Example'}")
+    print("-" * 80)
+    for i, (cat, count) in enumerate(categories.most_common(n), 1):
+        print(f"{i:<4} {cat:<35} {count:>6}   {examples[cat]}")
+
+
+def mode_diff(corpus):
+    eval_only = []
+    train_only = []
+    for m in corpus["models"]:
+        e_status = m.get("eval", {}).get("status")
+        t_status = m.get("train", {}).get("status")
+        if e_status == "graph_break" and t_status != "graph_break":
+            eval_only.append((m["name"], t_status))
+        elif t_status == "graph_break" and e_status != "graph_break":
+            train_only.append((m["name"], e_status))
+
+    if eval_only:
+        print(f"Graph break in EVAL only ({len(eval_only)} models):")
+        for name, other in sorted(eval_only):
+            print(f"  {name:<35} train={other}")
+        print()
+
+    if train_only:
+        print(f"Graph break in TRAIN only ({len(train_only)} models):")
+        for name, other in sorted(train_only):
+            print(f"  {name:<35} eval={other}")
+        print()
+
+    both = sum(
+        1 for m in corpus["models"]
+        if m.get("eval", {}).get("status") == "graph_break"
+        and m.get("train", {}).get("status") == "graph_break"
+    )
+    print(f"Summary: {len(eval_only)} eval-only, {len(train_only)} train-only, {both} both")
+
+
+def _model_to_json(m, mode):
+    """Build a full-field JSON record for a model."""
+    rec = m.get(mode, {})
+    result = {
+        "name": m["name"],
+        "source": m.get("source", ""),
+        "status": rec.get("status", ""),
+        "error": _get_error(rec)[:200],
+        "error_category": _classify_error(_get_error(rec)),
+    }
+    for field in ["compile_time_s", "create_time_s", "eager_time_s",
+                  "graph_break_count", "graph_count", "wall_time_s"]:
+        if field in rec:
+            result[field] = rec[field]
+    dm = rec.get("dynamic_mark", {})
+    if dm:
+        result["dynamic_mark_status"] = dm.get("status", "")
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description="Query the graph break corpus")
     parser.add_argument("--status", help="Filter by status (clean, graph_break, eager_error, ...)")
     parser.add_argument("--error", help="Search error messages (e.g., 'deepcopy', 'Logger')")
     parser.add_argument("--mode", default="eval", choices=["eval", "train"])
+    parser.add_argument("--source", help="Filter by source (hf, diffusers)")
     parser.add_argument("--compare-dynamic", action="store_true", help="Compare static vs dynamic=mark")
+    parser.add_argument("--top-errors", action="store_true", help="Show top error categories")
+    parser.add_argument("--mode-diff", action="store_true", help="Show models that differ between eval and train")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     args = parser.parse_args()
 
@@ -100,22 +222,32 @@ def main():
         compare_dynamic(corpus, mode=args.mode)
         return
 
-    if not args.status and not args.error:
-        print_summary(corpus)
+    if args.top_errors:
+        top_errors(corpus, mode=args.mode)
         return
 
-    results = filter_models(corpus, status=args.status, error=args.error, mode=args.mode)
+    if args.mode_diff:
+        mode_diff(corpus)
+        return
+
+    # Summary mode (no filters) — respect --json
+    if not args.status and not args.error and not args.source:
+        if args.json:
+            print(json.dumps([_model_to_json(m, args.mode) for m in corpus["models"]], indent=2))
+        else:
+            print_summary(corpus)
+        return
+
+    results = filter_models(corpus, status=args.status, error=args.error,
+                            mode=args.mode, source=args.source)
 
     if args.json:
-        print(json.dumps([{"name": m["name"], "source": m["source"],
-                           "status": m[args.mode]["status"],
-                           "error": (m[args.mode].get("fullgraph_error", "") or m[args.mode].get("error", ""))[:200]}
-                          for m in results], indent=2))
+        print(json.dumps([_model_to_json(m, args.mode) for m in results], indent=2))
     else:
         print(f"Found {len(results)} models:")
         for m in results:
             rec = m[args.mode]
-            err = (rec.get("fullgraph_error", "") or rec.get("error", ""))[:80]
+            err = _get_error(rec)[:80]
             print(f"  {m['source']}/{m['name']:<30} {rec['status']:<15} {err}")
 
 

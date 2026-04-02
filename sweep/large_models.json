@@ -1,10 +1,31 @@
 {
+  "AlignModel": {
+    "discovered": "2026-04-02",
+    "resolved_status": "clean",
+    "source": "hf",
+    "timeout_tier": "large",
+    "wall_time_s": 100.2
+  },
+  "AlignVisionModel": {
+    "discovered": "2026-04-02",
+    "resolved_status": "clean",
+    "source": "hf",
+    "timeout_tier": "large",
+    "wall_time_s": 95.22
+  },
   "BltModel": {
     "discovered": "2026-04-01",
     "resolved_status": "clean",
     "source": "hf",
     "timeout_tier": "large",
     "wall_time_s": 190.07
+  },
+  "ConvNextV2Model": {
+    "discovered": "2026-04-02",
+    "resolved_status": "clean",
+    "source": "hf",
+    "timeout_tier": "large",
+    "wall_time_s": 125.18
   },
   "EdgeTamModel": {
     "discovered": "2026-04-01",

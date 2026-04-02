@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use this corpus, please cite it as below."
+title: "OSS Model Graph Break Corpus"
+type: dataset
+authors:
+  - family-names: Wu
+    given-names: Peng
+    affiliation: Meta
+date-released: 2026-04-01
+url: "https://github.com/pengwu/oss-model-graph-break-corpus"
+abstract: >-
+  A corpus of 468 open-source models from HuggingFace Transformers and
+  Diffusers tested against torch.compile(fullgraph=True) on PyTorch 2.10.0.
+  Includes status, error classification, dynamic shape results, and
+  reproduction scripts.
+keywords:
+  - pytorch
+  - torch.compile
+  - graph breaks
+  - dynamo
+  - huggingface
+  - transformers
+  - diffusers
+license: MIT
