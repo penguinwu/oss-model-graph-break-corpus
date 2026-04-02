@@ -71,13 +71,13 @@ def filter_models(corpus, status=None, error=None, mode="eval"):
     return results
 
 
-def compare_dynamic(corpus):
+def compare_dynamic(corpus, mode="eval"):
     print(f"{'Model':<35} {'Static':>12} {'Mark':>12} {'Change'}")
     print("-" * 75)
     changed = []
     for m in corpus["models"]:
-        static = m.get("eval", {}).get("status")
-        dm = m.get("eval", {}).get("dynamic_mark", {})
+        static = m.get(mode, {}).get("status")
+        dm = m.get(mode, {}).get("dynamic_mark", {})
         mark = dm.get("status") if dm else None
         if static and mark and static != mark:
             changed.append((m["name"], static, mark))
@@ -97,7 +97,7 @@ def main():
     corpus = load_corpus()
 
     if args.compare_dynamic:
-        compare_dynamic(corpus)
+        compare_dynamic(corpus, mode=args.mode)
         return
 
     if not args.status and not args.error:
@@ -109,7 +109,7 @@ def main():
     if args.json:
         print(json.dumps([{"name": m["name"], "source": m["source"],
                            "status": m[args.mode]["status"],
-                           "error": m[args.mode].get("fullgraph_error", "")[:200]}
+                           "error": (m[args.mode].get("fullgraph_error", "") or m[args.mode].get("error", ""))[:200]}
                           for m in results], indent=2))
     else:
         print(f"Found {len(results)} models:")

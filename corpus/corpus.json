@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "description": "OSS Model Graph Break Corpus — torch.compile fullgraph=True compatibility for HuggingFace Transformers and Diffusers models",
+    "description": "OSS Model Graph Break Corpus \u2014 torch.compile fullgraph=True compatibility for HuggingFace Transformers and Diffusers models",
     "generated": "2026-03-30T18:05:48",
     "pytorch_version": "2.10.0+cu128",
     "transformers_version": "5.4.0",
@@ -38,19 +38,19 @@
     "total_models": 468,
     "eval": {
       "clean": 352,
-      "graph_break": 93,
+      "graph_break": 92,
       "eager_error": 13,
-      "create_error": 6,
+      "create_error": 7,
       "timeout": 4
     },
     "train": {
       "clean": 337,
-      "graph_break": 107,
+      "graph_break": 106,
       "eager_error": 14,
-      "create_error": 6,
+      "create_error": 7,
       "timeout": 4
     },
-    "has_graph_break": 110
+    "has_graph_break": 109
   },
   "models": [
     {
@@ -6694,7 +6694,7 @@
     {
       "name": "Gemma3nModel",
       "source": "hf",
-      "has_graph_break": true,
+      "has_graph_break": false,
       "eval": {
         "status": "create_error",
         "create_time_s": 37.832,

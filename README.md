@@ -7,9 +7,9 @@ A corpus of **468 open-source models** tested for `torch.compile(fullgraph=True)
 | Status | Eval | Train |
 |--------|------|-------|
 | **Clean** | 352 (75%) | 337 (72%) |
-| **Graph Break** | 92 (20%) | 107 (23%) |
+| **Graph Break** | 92 (20%) | 106 (23%) |
 | Eager Error | 13 (3%) | 14 (3%) |
-| Create Error | 7 (1%) | 6 (1%) |
+| Create Error | 7 (1%) | 7 (1%) |
 | Timeout | 4 (1%) | 4 (1%) |
 
 **109 models** have graph breaks in at least one mode. 3 targeted PRs (deepcopy→clone, un-skip audio callables, Logger support) would fix **44 models (40%)**.

@@ -27,7 +27,7 @@
 ## Key Findings
 
 - **118 unique models** with graph breaks in any config/mode (85 break in all 6 configs)
-- **3 targeted PRs** (deepcopy, Logger, audio callables) would fix ~48 models (45%)
+- **3 targeted PRs** (deepcopy, Logger, audio callables) would fix ~44 models (40%)
 - `mark_dynamic` is **stricter** than `dynamic=true` (335 vs 339 clean eval)
 - Full analysis: [analysis/graph-break-analysis.md](../analysis/graph-break-analysis.md)
 
@@ -52,18 +52,18 @@
 - **FalconH1Model** — logging.Logger
 - **FalconMambaModel** — forbidden callable
 - **FastSpeech2ConformerModel** — data-dependent branching
-- **Florence2Model** — logging.Logger
+- **Florence2Model** — builtin callable
 - **FunnelModel** — data-dependent guard
 - **Glm4vMoeVisionModel** — data-dependent guard
 - **Glm4vVisionModel** — data-dependent guard
 - **GlmImageVisionModel** — data-dependent guard
 - **GlmOcrVisionModel** — data-dependent guard
-- **GotOcr2Model** — logging.Logger
+- **GotOcr2Model** — builtin callable
 - **GraniteMoeHybridModel** — data-dependent branching
 - **GroundingDinoModel** — proxy conversion failure
 - **HubertModel** — skipped function call
 - **InformerModel** — non-Tensor return
-- **InternVLModel** — logging.Logger
+- **InternVLModel** — builtin callable
 - **JambaModel** — data-dependent branching
 - **LEDModel** — logging.Logger
 - **LongT5Model** — observed exception
@@ -88,7 +88,7 @@
 - **PPDocLayoutV2Model** — proxy conversion failure
 - **PPDocLayoutV3Model** — proxy conversion failure
 - **PaddleOCRVisionModel** — data-dependent guard
-- **PaliGemmaModel** — logging.Logger
+- **PaliGemmaModel** — builtin callable
 - **PeAudioModel** — non-Tensor return
 - **PegasusModel** — copy.deepcopy
 - **PegasusXModel** — copy.deepcopy

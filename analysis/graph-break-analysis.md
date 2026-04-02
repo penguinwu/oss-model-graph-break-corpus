@@ -162,9 +162,9 @@ Models specialize on dimensions that were marked as dynamic. **Only appears with
 
 | Fix | Models | Eval Fixed | Train Fixed | Fully Clean | Effort |
 |-----|--------|-----------|-------------|-------------|--------|
-| `deepcopy` → `clone()` | 22 | 21 | 7 | ~7* | Low |
-| Un-skip audio callables | 14 | 14 | 3 | ~3* | Medium |
-| Support `Logger` methods | 11 | 11 | 11 | ~11 | Medium |
+| `deepcopy` → `clone()` | 21 | 21 | 7 | ~7* | Low |
+| Un-skip audio callables | 16 | 16 | 3 | ~3* | Medium |
+| Support `Logger` methods | 7 | 7 | 7 | ~7 | Medium |
 | **Total unique models touched** | **~44** | | | | |
 
 *\*Many models have different root causes in eval vs train. Fixing deepcopy (eval) still leaves data-dependent branching (train). "Fully clean" counts models where the fix resolves ALL modes.*
