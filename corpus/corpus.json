@@ -50,7 +50,21 @@
       "create_error": 7,
       "timeout": 4
     },
-    "has_graph_break": 109
+    "has_graph_break": 109,
+    "eval_status": {
+      "clean": 352,
+      "graph_break": 92,
+      "eager_error": 14,
+      "create_error": 7,
+      "timeout": 3
+    },
+    "train_status": {
+      "clean": 337,
+      "graph_break": 106,
+      "eager_error": 15,
+      "create_error": 7,
+      "timeout": 3
+    }
   },
   "models": [
     {
@@ -20761,7 +20775,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "timeout",
+        "status": "eager_error",
         "retry_r8": true,
         "dynamic_mark": {
           "status": "eager_error",
@@ -20773,7 +20787,7 @@
         }
       },
       "train": {
-        "status": "timeout",
+        "status": "eager_error",
         "retry_r8": true,
         "dynamic_mark": {
           "status": "eager_error",
