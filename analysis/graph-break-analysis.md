@@ -1,12 +1,14 @@
 # Graph Break Pattern Analysis for PT2 Team
 
-**Date:** 2026-04-02 | **Corpus:** 468 models | **PyTorch:** 2.10.0+cu128 | **GPU:** A100 80GB
+**Date:** 2026-04-02 | **Corpus:** 468 models | **PyTorch:** 2.10.0+cu128
+
+**Repo:** [oss-model-graph-break-corpus](https://github.com/pengwu/oss-model-graph-break-corpus) — all data, tools, and reproduction scripts. No GPU required to query or reproduce graph breaks.
 
 ## 1. Executive Summary
 
 118 of 468 open-source HuggingFace models have graph breaks in at least one of 6 tested configurations (static/mark\_dynamic/dynamic=true x eval/train). 85 break in all 6 configurations. All graph-break models are from HuggingFace Transformers; all 5 Diffusers models compile cleanly.
 
-The breaks cluster into **12 root causes**. The top 3 actionable fixes (deepcopy, Logger, audio callables) would address **~48 models (45% of all breaks)**. The largest single category, data-dependent branching (49 models), is inherently hard to fix without `torch.cond()` or model restructuring.
+The breaks cluster into **12 root causes**. The top 3 actionable fixes (deepcopy, Logger, audio callables) would address **~44 models (40% of static-mode breaks)**. The largest single category, data-dependent branching (49 models), is inherently hard to fix without `torch.cond()` or model restructuring.
 
 **Key finding:** `mark_dynamic` is **stricter** than `dynamic=true` — 335 vs 339 clean (eval). This is counterintuitive: `mark_dynamic` enforces that marked dims must NOT be specialized, while `dynamic=true` allows the compiler to specialize freely.
 
@@ -45,7 +47,7 @@ Root causes classified by primary error from `fullgraph_error` and `break_reason
 | 2 | `copy.deepcopy()` | 22 | 82 | HF Transformers | **Easy** |
 | 3 | Data-dependent guard | 16 | 74 | Model/Dynamo | Hard |
 | 4 | Skipped function call | 14 | 47 | PyTorch Dynamo | **Medium** |
-| 5 | `logging.Logger` | 12 | 70 | PyTorch Dynamo | **Medium** |
+| 5 | `logging.Logger` | 11 | 64 | PyTorch Dynamo | **Medium** |
 | 6 | Proxy conversion failure | 11 | 47 | PyTorch Dynamo | **Medium** |
 | 7 | Tensor mutation (`requires_grad`) | 11 | 33 | Model authors | Medium |
 | 8 | Constraint violation | 9 | 16 | mark\_dynamic only | N/A |
@@ -103,13 +105,13 @@ Dynamo developers have intentionally marked certain functions as "skipped" (e.g.
 
 **Fix:** Un-skip/whitelist audio feature extractor callables in Dynamo.
 
-#### 3.2.5 `logging.Logger` (12 models)
+#### 3.2.5 `logging.Logger` (11 models)
 
 `logging.Logger` method calls inside `forward()` cause graph breaks for non-export cases.
 
-**Affected models:** AriaModel, BambaModel, FalconH1Model, Florence2Model, GotOcr2Model, InternVLModel, LEDModel, LongformerModel, PaliGemmaModel, RwkvModel, SeamlessM4TModel, SeamlessM4Tv2Model
+**Affected models:** BambaModel, FalconH1Model, Florence2Model, GotOcr2Model, InternVLModel, LEDModel, LongformerModel, PaliGemmaModel, RwkvModel, SeamlessM4TModel, SeamlessM4Tv2Model
 
-**Config stability:** Both eval and train (11 models eval, 11 train). Consistent across all dynamic configs. AriaModel switches from "unsupported context manager" to Logger in dynamic configs (underlying cause is the same — Logger becomes the first-hit break after context manager support).
+**Config stability:** Both eval and train. Consistent across all dynamic configs. AriaModel also hits Logger but its primary cause is classified as unsupported context manager.
 
 **Fix:** Support Logger methods in Dynamo (skip/inline). Medium effort.
 
@@ -156,14 +158,14 @@ Models specialize on dimensions that were marked as dynamic. **Only appears with
 
 ## 4. Fix Impact Analysis
 
-### 4.1 High-Impact Fixes (3 PRs, ~49 models)
+### 4.1 High-Impact Fixes (3 PRs, ~44 models)
 
 | Fix | Models | Eval Fixed | Train Fixed | Fully Clean | Effort |
 |-----|--------|-----------|-------------|-------------|--------|
 | `deepcopy` → `clone()` | 22 | 21 | 7 | ~7* | Low |
 | Un-skip audio callables | 14 | 14 | 3 | ~3* | Medium |
-| Support `Logger` methods | 12 | 11 | 11 | ~11 | Medium |
-| **Total unique models touched** | **~49** | | | | |
+| Support `Logger` methods | 11 | 11 | 11 | ~11 | Medium |
+| **Total unique models touched** | **~44** | | | | |
 
 *\*Many models have different root causes in eval vs train. Fixing deepcopy (eval) still leaves data-dependent branching (train). "Fully clean" counts models where the fix resolves ALL modes.*
 
@@ -235,7 +237,7 @@ Models specialize on dimensions that were marked as dynamic. **Only appears with
 | Time-series/forecasting | 3 | Data-dependent branching, non-Tensor return | No |
 | Other | 37 | Mixed | Varies |
 
-**Source distribution:** All 119 graph-break models are from HuggingFace Transformers (`hf`). All 5 Diffusers models compile cleanly in all configurations.
+**Source distribution:** All 118 graph-break models are from HuggingFace Transformers (`hf`). All 5 Diffusers models compile cleanly in all configurations.
 
 ## 7. Mode-Specific Patterns
 
@@ -277,7 +279,7 @@ These models would need multiple fixes to become fully clean.
 
 ### For PyTorch (Dynamo) Team
 
-1. **Logger support** — 12 models, medium effort, high ROI. These are popular models (Llama-based multimodal, Longformer, SeamlessM4T).
+1. **Logger support** — 11 models, medium effort, high ROI. These are popular models (Llama-based multimodal, Longformer, SeamlessM4T).
 2. **Un-skip audio callables** — 14 models, medium effort. All Wav2Vec2-family.
 3. **`as_proxy()` for detection types** — 11 models, medium effort. All DETR-family.
 4. **`mark_static_address` support** — 2 models (Mamba, FalconMamba), low effort.
@@ -293,6 +295,23 @@ These models would need multiple fixes to become fully clean.
 1. **Avoid `if tensor.value():` control flow** — use `torch.cond()` or restructure.
 2. **Avoid `copy.deepcopy()` in `forward()`** — use explicit cloning.
 3. **Avoid `logging.Logger` calls in `forward()`** — move to `__init__` or use compile-safe alternatives.
+
+## 10. How to Use This Corpus
+
+```bash
+# Browse: find models by status, root cause, or error pattern
+python tools/query.py --status graph_break
+python tools/query.py --error deepcopy
+
+# Reproduce: re-trigger any graph break locally (CPU is fine)
+python tools/reproduce.py BartModel
+python tools/reproduce.py BartModel --mode train --device cuda
+
+# Compare: diff results across sweep runs or dynamic configs
+python tools/compare.py --corpus-dynamic
+```
+
+All corpus data is in `corpus/corpus.json`. See the [README](../README.md) for full documentation.
 
 ## Appendix A: Full Model Status Table (118 models)
 
@@ -428,6 +447,8 @@ These models would need multiple fixes to become fully clean.
 | Diffusers | 0.37.1 |
 | Python | 3.12.13 |
 | CUDA | 12.8 |
-| GPU | NVIDIA A100 80GB |
+| GPU | NVIDIA A100 80GB (sweep) |
 | Backend | `eager` (tests Dynamo tracing, not inductor codegen) |
 | Batch size | 2 (avoids specialization on 0/1) |
+
+**Note:** GPU was used for the original sweep but is not required. All graph breaks reproduce on CPU — the `eager` backend tests Dynamo's tracing logic, not GPU codegen.
