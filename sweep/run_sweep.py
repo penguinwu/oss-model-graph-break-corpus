@@ -550,6 +550,38 @@ def _print_progress(completed, total, result):
           f"{status_str:<12} {wall:>5.1f}s{extra}", flush=True)
 
 
+def _log_versions(python_bin, output_dir):
+    """Log PyTorch, transformers, and diffusers versions at sweep start."""
+    script = (
+        "import json, sys; d = {}; "
+        "import torch; d['torch'] = torch.__version__; d['torch_git'] = torch.version.git_version; "
+        "try:\n import transformers; d['transformers'] = transformers.__version__\n"
+        "except ImportError: d['transformers'] = None\n"
+        "try:\n import diffusers; d['diffusers'] = diffusers.__version__\n"
+        "except ImportError: d['diffusers'] = None\n"
+        "d['python'] = sys.version; print(json.dumps(d))"
+    )
+    try:
+        result = subprocess.run(
+            [python_bin, "-c", script],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode == 0:
+            versions = json.loads(result.stdout.strip())
+            print(f"Environment: torch={versions.get('torch')}, "
+                  f"transformers={versions.get('transformers')}, "
+                  f"diffusers={versions.get('diffusers')}")
+            version_file = output_dir / "versions.json"
+            with open(version_file, "w") as f:
+                json.dump(versions, f, indent=2)
+            return versions
+        else:
+            print(f"WARNING: Could not detect library versions: {result.stderr.strip()}")
+    except Exception as e:
+        print(f"WARNING: Version check failed: {e}")
+    return None
+
+
 def run_sweep(args):
     """Main sweep logic."""
     python_bin = args.python or sys.executable
@@ -578,15 +610,36 @@ def run_sweep(args):
         json.dump(early_state, f, indent=2)
     print(f"Sweep state: {state_file} (PID {os.getpid()})")
 
+    # ── Log and validate library versions ──
+    version_info = _log_versions(python_bin, output_dir)
+    if version_info:
+        early_state["versions"] = version_info
+        with open(state_file, "w") as f:
+            json.dump(early_state, f, indent=2)
+
     # ── Load or enumerate models ──
     if args.models:
-        with open(args.models) as f:
-            specs = json.load(f)
+        try:
+            with open(args.models) as f:
+                specs = json.load(f)
+        except json.JSONDecodeError as e:
+            print(f"ERROR: Invalid JSON in {args.models}: {e}")
+            sys.exit(1)
+        except FileNotFoundError:
+            print(f"ERROR: File not found: {args.models}")
+            sys.exit(1)
         print(f"Loaded {len(specs)} models from {args.models}")
     elif args.pass2_from:
         # Load pass 1 results and filter to graph_break models
-        with open(args.pass2_from) as f:
-            pass1_data = json.load(f)
+        try:
+            with open(args.pass2_from) as f:
+                pass1_data = json.load(f)
+        except json.JSONDecodeError as e:
+            print(f"ERROR: Invalid JSON in {args.pass2_from}: {e}")
+            sys.exit(1)
+        except FileNotFoundError:
+            print(f"ERROR: File not found: {args.pass2_from}")
+            sys.exit(1)
         pass1_results = pass1_data if isinstance(pass1_data, list) else pass1_data.get("results", [])
         broken_names = set()
         for r in pass1_results:
