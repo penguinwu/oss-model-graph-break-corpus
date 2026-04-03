@@ -39,16 +39,16 @@
     "eval": {
       "clean": 352,
       "graph_break": 92,
-      "eager_error": 13,
+      "eager_error": 14,
       "create_error": 7,
-      "timeout": 4
+      "timeout": 3
     },
     "train": {
       "clean": 337,
       "graph_break": 106,
-      "eager_error": 14,
+      "eager_error": 15,
       "create_error": 7,
-      "timeout": 4
+      "timeout": 3
     },
     "has_graph_break": 109,
     "eval_status": {
@@ -2111,7 +2111,7 @@
     {
       "name": "BrosModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
         "status": "clean",
         "create_time_s": 3.197,
@@ -2470,7 +2470,7 @@
     {
       "name": "CanineModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
         "status": "clean",
         "fullgraph_ok": true,
@@ -3199,7 +3199,7 @@
     {
       "name": "CpmAntModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
         "status": "clean",
         "create_time_s": 11.262,
@@ -3875,7 +3875,7 @@
     {
       "name": "DecisionTransformerModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
         "status": "clean",
         "create_time_s": 2.559,
@@ -8873,7 +8873,7 @@
     {
       "name": "IdeficsModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
         "status": "clean",
         "create_time_s": 29.308,
@@ -14791,7 +14791,7 @@
     {
       "name": "PixtralVisionModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
         "status": "clean",
         "fullgraph_ok": true,
@@ -18294,7 +18294,7 @@
     {
       "name": "TapasModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
         "status": "clean",
         "fullgraph_ok": true,
@@ -18969,7 +18969,7 @@
     {
       "name": "UnivNetModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
         "status": "clean",
         "fullgraph_ok": true,
@@ -20658,7 +20658,7 @@
     {
       "name": "YosoModel",
       "source": "hf",
-      "has_graph_break": false,
+      "has_graph_break": true,
       "eval": {
         "status": "clean",
         "fullgraph_ok": true,
