@@ -189,7 +189,7 @@ def main():
                 compiled(*inputs_tuple)
             else:
                 compiled(**inputs_dict)
-        print("  Compile: CLEAN (no graph break)")
+        print("  Compile: FULL_GRAPH (no graph break)")
     except Exception as e:
         print(f"  Compile: GRAPH BREAK")
         print(f"  Error: {e}")

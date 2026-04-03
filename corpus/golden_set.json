@@ -3,43 +3,75 @@
   "models": [
     {
       "name": "BertModel",
-      "eval": { "status": "clean" },
-      "train": { "status": "clean" }
+      "eval": {
+        "status": "clean"
+      },
+      "train": {
+        "status": "clean"
+      }
     },
     {
       "name": "LlamaModel",
-      "eval": { "status": "clean" },
-      "train": { "status": "clean" }
+      "eval": {
+        "status": "clean"
+      },
+      "train": {
+        "status": "clean"
+      }
     },
     {
       "name": "GPT2Model",
-      "eval": { "status": "clean" },
-      "train": { "status": "clean" }
+      "eval": {
+        "status": "clean"
+      },
+      "train": {
+        "status": "clean"
+      }
     },
     {
       "name": "ViTModel",
-      "eval": { "status": "clean" },
-      "train": { "status": "clean" }
+      "eval": {
+        "status": "clean"
+      },
+      "train": {
+        "status": "clean"
+      }
     },
     {
       "name": "AutoencoderKL",
-      "eval": { "status": "clean" },
-      "train": { "status": "clean" }
+      "eval": {
+        "status": "clean"
+      },
+      "train": {
+        "status": "clean"
+      }
     },
     {
       "name": "BartModel",
-      "eval": { "status": "graph_break" },
-      "train": { "status": "graph_break" }
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
     },
     {
       "name": "T5Model",
-      "eval": { "status": "graph_break" },
-      "train": { "status": "graph_break" }
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
     },
     {
       "name": "WhisperModel",
-      "eval": { "status": "graph_break" },
-      "train": { "status": "graph_break" }
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
     },
     {
       "name": "AriaModel",
@@ -54,58 +86,102 @@
     },
     {
       "name": "FalconMambaModel",
-      "eval": { "status": "graph_break" },
-      "train": { "status": "clean" }
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "clean"
+      }
     },
     {
       "name": "BioGptModel",
-      "eval": { "status": "clean" },
-      "train": { "status": "graph_break" }
+      "eval": {
+        "status": "clean"
+      },
+      "train": {
+        "status": "graph_break"
+      }
     },
     {
       "name": "BarkModel",
-      "eval": { "status": "eager_error" },
-      "train": { "status": "eager_error" }
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
     },
     {
       "name": "ClvpModel",
-      "eval": { "status": "create_error" },
-      "train": { "status": "create_error" }
+      "eval": {
+        "status": "create_error"
+      },
+      "train": {
+        "status": "create_error"
+      }
     },
     {
       "name": "EdgeTamModel",
-      "eval": { "status": "create_error" },
-      "train": { "status": "create_error" }
+      "eval": {
+        "status": "create_error"
+      },
+      "train": {
+        "status": "create_error"
+      }
     },
     {
       "name": "BrosModel",
-      "eval": { "status": "clean" },
-      "train": { "status": "clean" }
+      "eval": {
+        "status": "clean"
+      },
+      "train": {
+        "status": "clean"
+      }
     },
     {
       "name": "AlbertModel",
-      "eval": { "status": "clean" },
-      "train": { "status": "clean" }
+      "eval": {
+        "status": "clean"
+      },
+      "train": {
+        "status": "clean"
+      }
     },
     {
       "name": "RobertaModel",
-      "eval": { "status": "clean" },
-      "train": { "status": "clean" }
+      "eval": {
+        "status": "clean"
+      },
+      "train": {
+        "status": "clean"
+      }
     },
     {
       "name": "XLNetModel",
-      "eval": { "status": "clean" },
-      "train": { "status": "clean" }
+      "eval": {
+        "status": "clean"
+      },
+      "train": {
+        "status": "clean"
+      }
     },
     {
       "name": "ElectraModel",
-      "eval": { "status": "clean" },
-      "train": { "status": "clean" }
+      "eval": {
+        "status": "clean"
+      },
+      "train": {
+        "status": "clean"
+      }
     },
     {
       "name": "DebertaV2Model",
-      "eval": { "status": "clean" },
-      "train": { "status": "clean" }
+      "eval": {
+        "status": "clean"
+      },
+      "train": {
+        "status": "clean"
+      }
     }
   ]
 }

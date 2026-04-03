@@ -119,11 +119,11 @@ def format_progress(progress, total, state):
 
     # Compact status counts
     parts = []
-    for status in ["clean", "graph_break", "eager_error", "create_error", "timeout", "worker_error"]:
+    for status in ["full_graph", "graph_break", "eager_error", "create_error", "timeout", "worker_error"]:
         count = by_status.get(status, 0)
         if count > 0:
             short = {
-                "clean": "clean", "graph_break": "break",
+                "full_graph": "full_graph", "graph_break": "break",
                 "eager_error": "eager_err", "create_error": "create_err",
                 "timeout": "timeout", "worker_error": "worker_err",
             }.get(status, status)

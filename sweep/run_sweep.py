@@ -526,7 +526,7 @@ def _print_progress(completed, total, result):
     wall = result.get("wall_time_s", 0)
 
     status_str = {
-        "clean": "CLEAN",
+        "full_graph": "FULL_GRAPH",
         "graph_break": "BREAK",
         "ok": "OK",
         "pass": "PASS",
@@ -1065,7 +1065,7 @@ def run_validation(args):
         specs = []
         seen = set()
         for r in results:
-            if r.get("status") == "clean" and r["name"] not in seen:
+            if r.get("status") == "full_graph" and r["name"] not in seen:
                 seen.add(r["name"])
                 spec = {"name": r["name"], "source": r["source"]}
                 for k in ["hf_class", "hf_config", "input_type", "constructor_args", "inputs"]:
@@ -1198,7 +1198,7 @@ def main():
     parser.add_argument("--validate", action="store_true",
                         help="Run two-shape validation (pass 3) instead of identify/explain")
     parser.add_argument("--validate-from",
-                        help="JSON file with identify results — validate only 'clean' models")
+                        help="JSON file with identify results — validate only 'full_graph' models")
 
     # Resilience
     parser.add_argument("--resume", action="store_true",

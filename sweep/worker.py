@@ -52,7 +52,7 @@ def _handle_chaos():
             if chaos == "clean":
                 time.sleep(1)
                 result = {"name": name, "source": source, "mode": mode,
-                          "pass": pass_num, "status": "clean", "wall_time_s": 1.0}
+                          "pass": pass_num, "status": "full_graph", "wall_time_s": 1.0}
             elif chaos == "crash":
                 import signal as _sig
                 os.kill(os.getpid(), _sig.SIGSEGV)
@@ -62,7 +62,7 @@ def _handle_chaos():
                 sleep_time = int(spec.get("_chaos_sleep", 200))
                 time.sleep(sleep_time)
                 result = {"name": name, "source": source, "mode": mode,
-                          "pass": pass_num, "status": "clean",
+                          "pass": pass_num, "status": "full_graph",
                           "wall_time_s": float(sleep_time)}
             elif chaos == "oom":
                 # Import torch only for OOM test
@@ -77,7 +77,7 @@ def _handle_chaos():
                 import torch
                 _leaked = torch.randn(2048, 2048, 512, device="cuda")  # ~8GB
                 result = {"name": name, "source": source, "mode": mode,
-                          "pass": pass_num, "status": "clean", "wall_time_s": 1.0}
+                          "pass": pass_num, "status": "full_graph", "wall_time_s": 1.0}
             else:
                 result = {"name": name, "source": source, "mode": mode,
                           "pass": pass_num, "status": "worker_error",
@@ -1979,7 +1979,7 @@ def run_identify(spec, device, mode, dynamic=False):
                 compiled(*inputs_tuple)
             else:
                 compiled(**inputs_dict)
-        result["status"] = "clean"
+        result["status"] = "full_graph"
         result["fullgraph_ok"] = True
     except Exception as e:
         err_str = str(e)[:500]

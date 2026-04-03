@@ -141,7 +141,7 @@ def analyze(results, args):
     count_dist = Counter()
     for c in break_counts:
         if c == 0:
-            count_dist["0 (clean)"] += 1
+            count_dist["0 (full_graph)"] += 1
         elif c == 1:
             count_dist["1"] += 1
         elif c <= 3:
@@ -153,7 +153,7 @@ def analyze(results, args):
         else:
             count_dist["11+"] += 1
 
-    bucket_order = ["0 (clean)", "1", "2-3", "4-5", "6-10", "11+"]
+    bucket_order = ["0 (full_graph)", "1", "2-3", "4-5", "6-10", "11+"]
     print(f"\n{'Breaks':>12}  {'Count':>6}  {'%':>6}")
     for bucket in bucket_order:
         n = count_dist.get(bucket, 0)

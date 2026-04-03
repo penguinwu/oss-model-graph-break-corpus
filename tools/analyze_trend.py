@@ -115,7 +115,7 @@ def analyze_mode(versions_data, mode, common_models):
 
         # Identify stats
         statuses = Counter(p1[n].get(mode, "missing") for n in common_models)
-        testable = statuses.get("clean", 0) + statuses.get("graph_break", 0)
+        testable = statuses.get("full_graph", 0) + statuses.get("graph_break", 0)
 
         # Explain stats (if available)
         total_breaks = 0
@@ -140,7 +140,7 @@ def analyze_mode(versions_data, mode, common_models):
             "label": vd["label"],
             "mode": mode,
             "total_models": len(common_models),
-            "clean": statuses.get("clean", 0),
+            "full_graph": statuses.get("full_graph", 0),
             "graph_break": statuses.get("graph_break", 0),
             "eager_error": statuses.get("eager_error", 0),
             "create_error": statuses.get("create_error", 0),
@@ -204,7 +204,7 @@ def print_report(versions_data, modes, common_models, show_details=False):
 
         # Rows
         rows = [
-            ("Clean", "clean"),
+            ("Full graph", "full_graph"),
             ("Graph break", "graph_break"),
             ("Eager error", "eager_error"),
             ("Create error", "create_error"),
@@ -216,7 +216,7 @@ def print_report(versions_data, modes, common_models, show_details=False):
 
         print(f"{'---':<35}" + "".join(f"{'---':>{col_w}}" for _ in labels))
         vals = "".join(f"{s['testable']:>{col_w}}" for s in stats)
-        print(f"{'Testable (clean + graph_break)':<35}{vals}")
+        print(f"{'Testable (full_graph + graph_break)':<35}{vals}")
 
         if has_any_explain:
             print()
@@ -299,11 +299,11 @@ def print_report(versions_data, modes, common_models, show_details=False):
                         path_str = " → ".join(path)
                         print(f"    {name}: {path_str}")
 
-        # Fixed models detail (graph_break → clean)
+        # Fixed models detail (graph_break → full_graph)
         if show_details and has_any_explain:
             fixed = []
             for t, models in transitions.items():
-                if "graph_break → clean" in t:
+                if "graph_break → full_graph" in t:
                     fixed.extend(models)
             if fixed:
                 print(f"\n{'─'*70}")

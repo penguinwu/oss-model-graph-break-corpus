@@ -23,7 +23,8 @@ CORPUS_PATH = REPO_ROOT / "corpus" / "corpus.json"
 GOLDEN_SET_PATH = REPO_ROOT / "corpus" / "golden_set.json"
 
 # Valid statuses per mode
-VALID_STATUSES = {"clean", "graph_break", "eager_error", "create_error", "timeout"}
+VALID_STATUSES = {"full_graph", "graph_break", "eager_error", "create_error",
+                   "compile_error", "explain_error", "timeout", "worker_error"}
 # Required top-level fields per model
 REQUIRED_MODEL_FIELDS = {"name", "source", "has_graph_break", "eval", "train"}
 # Required fields in eval/train when status is present

@@ -115,7 +115,7 @@ def merge_identify_into_mode(mode_data, identify_result):
         mode_data.pop("fullgraph_error", None)  # normalize to "error"
     elif status in ("eager_error", "create_error", "timeout") and "error" in identify_result:
         mode_data["error"] = identify_result["error"]
-    elif status == "clean":
+    elif status == "full_graph":
         mode_data.pop("error", None)
         mode_data.pop("fullgraph_error", None)
 
@@ -253,20 +253,20 @@ def format_changelog(changelog, sweep_dir, versions, corpus):
     status_changes = [c for c in changelog if c["type"] == "status_change"]
 
     # Status transitions
-    regressions = [c for c in status_changes if c["old_status"] == "clean" and c["new_status"] == "graph_break"]
-    fixes = [c for c in status_changes if c["old_status"] == "graph_break" and c["new_status"] == "clean"]
+    regressions = [c for c in status_changes if c["old_status"] == "full_graph" and c["new_status"] == "graph_break"]
+    fixes = [c for c in status_changes if c["old_status"] == "graph_break" and c["new_status"] == "full_graph"]
     other_changes = [c for c in status_changes if c not in regressions and c not in fixes]
 
     lines.append(f"## Changes ({len(changelog)} total)\n")
 
     if regressions:
-        lines.append(f"### Regressions ({len(regressions)}) — clean → graph_break")
+        lines.append(f"### Regressions ({len(regressions)}) — full_graph → graph_break")
         for c in sorted(regressions, key=lambda x: x["name"]):
             lines.append(f"- **{c['name']}** ({c['mode']})")
         lines.append("")
 
     if fixes:
-        lines.append(f"### Fixes ({len(fixes)}) — graph_break → clean")
+        lines.append(f"### Fixes ({len(fixes)}) — graph_break → full_graph")
         for c in sorted(fixes, key=lambda x: x["name"]):
             lines.append(f"- **{c['name']}** ({c['mode']})")
         lines.append("")
@@ -353,12 +353,12 @@ def main():
     # Print summary
     status_changes = [c for c in changelog if c["type"] == "status_change"]
     new_models = [c for c in changelog if c["type"] == "new_model"]
-    regressions = [c for c in status_changes if c["old_status"] == "clean" and c["new_status"] == "graph_break"]
-    fixes = [c for c in status_changes if c["old_status"] == "graph_break" and c["new_status"] == "clean"]
+    regressions = [c for c in status_changes if c["old_status"] == "full_graph" and c["new_status"] == "graph_break"]
+    fixes = [c for c in status_changes if c["old_status"] == "graph_break" and c["new_status"] == "full_graph"]
 
     print(f"\n  Status changes: {len(status_changes)}")
-    print(f"    Regressions (clean→break): {len(regressions)}")
-    print(f"    Fixes (break→clean): {len(fixes)}")
+    print(f"    Regressions (full_graph→break): {len(regressions)}")
+    print(f"    Fixes (break→full_graph): {len(fixes)}")
     print(f"    Other: {len(status_changes) - len(regressions) - len(fixes)}")
     print(f"  New models: {len(new_models)}")
 

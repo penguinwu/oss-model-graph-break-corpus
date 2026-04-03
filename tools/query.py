@@ -129,7 +129,7 @@ def compare_dynamic(corpus, mode="eval"):
         mark = dm.get("status") if dm else None
         if static and mark and static != mark:
             changed.append((m["name"], static, mark))
-            print(f"{m['name']:<35} {static:>12} {mark:>12}   {'NEW' if mark == 'graph_break' and static == 'clean' else ''}")
+            print(f"{m['name']:<35} {static:>12} {mark:>12}   {'NEW' if mark == 'graph_break' and static == 'full_graph' else ''}")
     print(f"\n{len(changed)} models changed status with dynamic=mark")
 
 
@@ -206,7 +206,7 @@ def _model_to_json(m, mode):
 
 def main():
     parser = argparse.ArgumentParser(description="Query the graph break corpus")
-    parser.add_argument("--status", help="Filter by status (clean, graph_break, eager_error, ...)")
+    parser.add_argument("--status", help="Filter by status (full_graph, graph_break, eager_error, ...)")
     parser.add_argument("--error", help="Search error messages (e.g., 'deepcopy', 'Logger')")
     parser.add_argument("--mode", default="eval", choices=["eval", "train"])
     parser.add_argument("--source", help="Filter by source (hf, diffusers)")
