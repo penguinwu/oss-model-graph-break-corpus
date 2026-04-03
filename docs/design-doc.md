@@ -323,7 +323,7 @@ Beyond counting *models* with graph breaks, we track the *total number of graph 
 | Total graph breaks (eval) | **505** | **490** | **466** |
 | Explain OK | 106 | 106 | 103 |
 | Explain error | 1 | 0 | 4 |
-| Avg breaks per broken model | 5.7 | 5.4 | 5.4 |
+| Avg breaks per broken model | 5.3 | 4.9 | 5.1 |
 
 | Metric | v2.8 | v2.9 | v2.10 |
 |--------|------|------|-------|
@@ -331,7 +331,7 @@ Beyond counting *models* with graph breaks, we track the *total number of graph 
 | Total graph breaks (train) | **794** | **759** | **781** |
 | Explain OK | 106 | 106 | 106 |
 | Explain error | 1 | 0 | 1 |
-| Avg breaks per broken model | 7.7 | 7.3 | 7.6 |
+| Avg breaks per broken model | 7.6 | 7.0 | 7.4 |
 
 **Normalization note:** The headline reduction (505→466 eval breaks) is partly confounded by changing denominators — more models became testable in later versions (393→444), while some broken models moved to clean. To isolate compiler improvement from denominator changes, we use an apples-to-apples comparison.
 
@@ -342,14 +342,14 @@ Beyond counting *models* with graph breaks, we track the *total number of graph 
 | Metric (82 models, eval) | v2.8 | v2.9 | v2.10 |
 |--------------------------|------|------|-------|
 | Total graph breaks | **437** | **411** | **437** |
-| Avg breaks per model | 5.4 | 5.3 | 5.6 |
+| Avg breaks per model | 5.3 | 5.0 | 5.3 |
 
 93 models were broken in ALL 3 versions (train mode):
 
 | Metric (93 models, train) | v2.8 | v2.9 | v2.10 |
 |--------------------------|------|------|-------|
 | Total graph breaks | **723** | **677** | **734** |
-| Avg breaks per model | 7.9 | 7.7 | 8.0 |
+| Avg breaks per model | 7.8 | 7.3 | 7.9 |
 
 **Key insight:** For persistently-broken models, break frequency is essentially flat — the compiler isn't reducing the number of breaks within already-broken models. The headline reduction (505→466) comes entirely from **12 models being fixed** in v2.10 (eliminating ~68 breaks). This is a "fix the model, not the break" pattern: PyTorch is making whole models compile cleanly rather than reducing individual break points in partially-broken models.
 

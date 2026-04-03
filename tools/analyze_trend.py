@@ -154,7 +154,7 @@ def analyze_mode(versions_data, mode, common_models):
             "total_graph_breaks": total_breaks if p2 else None,
             "explain_ok": explain_ok if p2 else None,
             "explain_error": explain_error if p2 else None,
-            "avg_breaks_per_broken": round(total_breaks / broken_with_breaks, 1) if broken_with_breaks > 0 else None,
+            "avg_breaks_per_broken": round(total_breaks / statuses.get("graph_break", 1), 1) if statuses.get("graph_break", 0) > 0 else None,
             "has_pass2": p2 is not None,
         })
 
@@ -282,10 +282,11 @@ def print_report(versions_data, modes, common_models, show_details=False):
                 print(f"{'Explain OK':<35}{vals}")
                 vals = "".join(f"{e if e is not None else 'N/A':>{col_w}}" for e in a2a_err)
                 print(f"{'Explain error':<35}{vals}")
-                if any(o and o > 0 for o in a2a_ok):
+                if any(b is not None for b in a2a_breaks):
+                    num_a2a = len(a2a)
                     vals = "".join(
-                        f"{round(b/o, 1) if b is not None and o and o > 0 else 'N/A':>{col_w}}"
-                        for b, o in zip(a2a_breaks, a2a_ok)
+                        f"{round(b/num_a2a, 1) if b is not None else 'N/A':>{col_w}}"
+                        for b in a2a_breaks
                     )
                     print(f"{'Avg breaks per model':<35}{vals}")
 
