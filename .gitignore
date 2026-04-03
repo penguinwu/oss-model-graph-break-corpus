@@ -3,3 +3,5 @@ __pycache__/
 sweep_results/
 *.log
 *.tmp
+.feedback_monitor_state.json
+.feedback_monitor_audit.jsonl
