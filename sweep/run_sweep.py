@@ -12,8 +12,8 @@ Resilience features:
     timeout and added to large_models.json for future runs
 
 Optimizations:
-  - Pass 1 runs eval-only by default (fast identification)
-  - Pass 2 runs both eval+train on broken models only
+  - Identify pass runs eval-only by default (fast identification)
+  - Explain pass runs both eval+train on broken models only
   - 16 parallel workers (A100 has headroom)
   - --source all auto-excludes unconfigured diffusers models
   - Known large models get extended timeout upfront (no wasted short attempt)
@@ -25,14 +25,14 @@ Usage:
   # Explicit resume after crash
   python run_sweep.py --resume --device cuda --python ~/envs/graph-break-corpus/bin/python
 
-  # Pass 2 only (from prior pass 1 results)
-  python run_sweep.py --pass2-from results_pass1.json --device cuda
+  # Explain pass only (from prior identify results)
+  python run_sweep.py --explain-from results_identify.json --device cuda
 
   # Custom model list
   python run_sweep.py --models models.json --device cuda
 
   # Two-shape validation on clean models from a prior sweep
-  python run_sweep.py --validate-from sweep_results/pass1_results.json --device cuda
+  python run_sweep.py --validate-from sweep_results/identify_results.json --device cuda
 """
 import argparse
 import json
@@ -628,34 +628,34 @@ def run_sweep(args):
             print(f"ERROR: File not found: {args.models}")
             sys.exit(1)
         print(f"Loaded {len(specs)} models from {args.models}")
-    elif args.pass2_from:
-        # Load pass 1 results and filter to graph_break models
+    elif args.explain_from:
+        # Load identify results and filter to graph_break models
         try:
-            with open(args.pass2_from) as f:
-                pass1_data = json.load(f)
+            with open(args.explain_from) as f:
+                identify_data = json.load(f)
         except json.JSONDecodeError as e:
-            print(f"ERROR: Invalid JSON in {args.pass2_from}: {e}")
+            print(f"ERROR: Invalid JSON in {args.explain_from}: {e}")
             sys.exit(1)
         except FileNotFoundError:
-            print(f"ERROR: File not found: {args.pass2_from}")
+            print(f"ERROR: File not found: {args.explain_from}")
             sys.exit(1)
-        pass1_results = pass1_data if isinstance(pass1_data, list) else pass1_data.get("results", [])
-        broken_names = set()
-        for r in pass1_results:
+        identify_results = identify_data if isinstance(identify_data, list) else identify_data.get("results", [])
+        explain_names = set()
+        for r in identify_results:
             if r.get("status") == "graph_break":
-                broken_names.add(r["name"])
-        # Rebuild specs from pass 1 results
+                explain_names.add(r["name"])
+        # Rebuild specs from identify results
         specs = []
         seen = set()
-        for r in pass1_results:
-            if r["name"] in broken_names and r["name"] not in seen:
+        for r in identify_results:
+            if r["name"] in explain_names and r["name"] not in seen:
                 seen.add(r["name"])
                 specs.append({"name": r["name"], "source": r["source"]})
                 # Copy any extra fields from the original spec
                 for k in ["hf_class", "hf_config", "input_type", "constructor_args", "inputs"]:
                     if k in r:
                         specs[-1][k] = r[k]
-        print(f"Loaded {len(specs)} broken models from {args.pass2_from}")
+        print(f"Loaded {len(specs)} broken models from {args.explain_from}")
     else:
         # Enumerate from source
         from models import enumerate_timm, enumerate_hf, enumerate_diffusers, enumerate_all
@@ -693,10 +693,10 @@ def run_sweep(args):
         specs = [s for s in specs if s.get("has_config", True)]
         print(f"Filtered to {len(specs)} models with configs (from {before})")
 
-    pass1_modes = args.pass1_modes
-    pass2_modes = args.pass2_modes
+    identify_modes = args.identify_modes
+    explain_modes = args.explain_modes
     print(f"Device: {args.device}, Workers: {args.workers}, "
-          f"Pass1 modes: {pass1_modes}, Pass2 modes: {pass2_modes}, Timeout: {args.timeout}s")
+          f"Identify modes: {identify_modes}, Explain modes: {explain_modes}, Timeout: {args.timeout}s")
 
     # ── Load large model registry for tiered timeouts ──
     large_models_path = Path(args.large_models) if args.large_models else LARGE_MODELS_FILE
@@ -714,7 +714,7 @@ def run_sweep(args):
     print()
 
     # ── Update watchdog state file with full details ──
-    total_work_items = len(specs) * len(pass1_modes)
+    total_work_items = len(specs) * len(identify_modes)
     state_file = output_dir / "sweep_state.json"
     with open(state_file) as f:
         state = json.load(f)
@@ -722,68 +722,68 @@ def run_sweep(args):
         "status": "running",
         "total_models": len(specs),
         "total_work_items": total_work_items,
-        "modes": pass1_modes,
+        "modes": identify_modes,
     })
     with open(state_file, "w") as f:
         json.dump(state, f, indent=2)
 
     # ══════════════════════════════════════════════════════════════════════
-    # PASS 1: Fast identification (eval-only by default)
+    # IDENTIFY: Fast identification (eval-only by default)
     # ══════════════════════════════════════════════════════════════════════
-    if not args.pass2_from:
-        pass1_ckpt = str(output_dir / "pass1_checkpoint.jsonl")
+    if not args.explain_from:
+        identify_ckpt = str(output_dir / "identify_checkpoint.jsonl")
 
         # Load checkpoint for resume
         resume_from = {}
-        if args.resume and os.path.exists(pass1_ckpt):
-            resume_from = load_checkpoint(pass1_ckpt)
+        if args.resume and os.path.exists(identify_ckpt):
+            resume_from = load_checkpoint(identify_ckpt)
             print(f"Loaded {len(resume_from)} completed results from checkpoint")
 
         print(f"{'=' * 70}")
-        print(f"PASS 1: Identifying graph breaks (fullgraph=True) — {len(specs)} models × {len(pass1_modes)} modes ({pass1_modes})")
+        print(f"IDENTIFY: Graph breaks (fullgraph=True) — {len(specs)} models × {len(identify_modes)} modes ({identify_modes})")
         print(f"{'=' * 70}")
 
-        pass1_start = time.perf_counter()
-        pass1_results = run_pass(
-            python_bin, specs, pass_num=1, device=args.device, modes=pass1_modes,
+        identify_start = time.perf_counter()
+        identify_results = run_pass(
+            python_bin, specs, pass_num=1, device=args.device, modes=identify_modes,
             workers=args.workers, timeout_s=args.timeout,
-            checkpoint_file=pass1_ckpt, resume_from=resume_from,
+            checkpoint_file=identify_ckpt, resume_from=resume_from,
             dynamic=args.dynamic, timeout_overrides=timeout_overrides,
             skip_models=skip_models,
         )
-        pass1_time = time.perf_counter() - pass1_start
+        identify_time = time.perf_counter() - identify_start
 
-        # Save pass 1 results (full JSON for analysis)
-        pass1_output = {
+        # Save identify results (full JSON for analysis)
+        identify_output = {
             "metadata": {
-                "pass": 1,
+                "pass": "identify",
                 "device": args.device,
-                "modes": pass1_modes,
+                "modes": identify_modes,
                 "workers": args.workers,
                 "timeout_s": args.timeout,
-                "total_time_s": round(pass1_time, 1),
+                "total_time_s": round(identify_time, 1),
                 "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
                 "python": python_bin,
                 "dynamic": args.dynamic,
             },
-            "results": pass1_results,
+            "results": identify_results,
         }
-        pass1_file = output_dir / "pass1_results.json"
-        with open(pass1_file, "w") as f:
-            json.dump(pass1_output, f, indent=2)
+        identify_file = output_dir / "identify_results.json"
+        with open(identify_file, "w") as f:
+            json.dump(identify_output, f, indent=2)
 
-        # Summarize pass 1
+        # Summarize identify pass
         by_status = {}
-        for r in pass1_results:
+        for r in identify_results:
             by_status[r.get("status", "unknown")] = by_status.get(r.get("status", "unknown"), 0) + 1
 
-        print(f"\nPass 1 complete: {pass1_time:.1f}s")
+        print(f"\nIdentify pass complete: {identify_time:.1f}s")
         for status, count in sorted(by_status.items()):
             print(f"  {status}: {count}")
-        print(f"Saved to {pass1_file}")
+        print(f"Saved to {identify_file}")
 
         # ── Auto-retry: re-run timed-out models with extended timeout ──
-        timeout_results = [r for r in pass1_results if r.get("status") == "timeout"]
+        timeout_results = [r for r in identify_results if r.get("status") == "timeout"]
         # Only retry models that aren't already using the large timeout
         new_timeouts = [r for r in timeout_results if r["name"] not in large_registry]
         if new_timeouts and not args.no_auto_retry:
@@ -799,7 +799,7 @@ def run_sweep(args):
 
             retry_start = time.perf_counter()
             retry_results = run_pass(
-                python_bin, retry_specs, pass_num=1, device=args.device, modes=pass1_modes,
+                python_bin, retry_specs, pass_num=1, device=args.device, modes=identify_modes,
                 workers=max(1, args.workers // 2),  # fewer workers for large models
                 timeout_s=args.timeout_large,
                 checkpoint_file=None,  # don't mix with main checkpoint
@@ -815,23 +815,23 @@ def run_sweep(args):
             for status, count in sorted(retry_by_status.items()):
                 print(f"  {status}: {count}")
 
-            # Replace timeout results in pass1_results with retry results
+            # Replace timeout results in identify_results with retry results
             retry_index = {(r["name"], r.get("mode", "eval")): r for r in retry_results}
             updated_count = 0
-            for i, r in enumerate(pass1_results):
+            for i, r in enumerate(identify_results):
                 key = (r["name"], r.get("mode", "eval"))
                 if key in retry_index:
-                    pass1_results[i] = retry_index[key]
+                    identify_results[i] = retry_index[key]
                     updated_count += 1
 
             # Update checkpoint with retry results
-            if os.path.exists(pass1_ckpt):
+            if os.path.exists(identify_ckpt):
                 # Rewrite checkpoint with updated results
                 all_completed = {}
-                for r in pass1_results:
+                for r in identify_results:
                     key = (r["name"], r.get("mode", "eval"))
                     all_completed[key] = r
-                with open(pass1_ckpt, "w") as f:
+                with open(identify_ckpt, "w") as f:
                     for r in all_completed.values():
                         f.write(json.dumps(r) + "\n")
 
@@ -860,47 +860,47 @@ def run_sweep(args):
             print(f"\n  Updated large model registry: {len(newly_large)} newly resolved, "
                   f"{len(large_registry)} total entries")
 
-            # Re-save pass 1 results with retry data merged
-            pass1_output["results"] = pass1_results
-            pass1_output["metadata"]["retry_count"] = len(retry_specs)
-            pass1_output["metadata"]["timeout_large_s"] = args.timeout_large
-            with open(pass1_file, "w") as f:
-                json.dump(pass1_output, f, indent=2)
+            # Re-save identify results with retry data merged
+            identify_output["results"] = identify_results
+            identify_output["metadata"]["retry_count"] = len(retry_specs)
+            identify_output["metadata"]["timeout_large_s"] = args.timeout_large
+            with open(identify_file, "w") as f:
+                json.dump(identify_output, f, indent=2)
 
             # Recompute status summary
             by_status = {}
-            for r in pass1_results:
+            for r in identify_results:
                 by_status[r.get("status", "unknown")] = by_status.get(r.get("status", "unknown"), 0) + 1
-            print(f"\nUpdated pass 1 summary:")
+            print(f"\nUpdated identify summary:")
             for status, count in sorted(by_status.items()):
                 print(f"  {status}: {count}")
 
-        # Identify broken models for pass 2
-        broken_names = set()
-        for r in pass1_results:
+        # Identify broken models for explain pass
+        explain_names = set()
+        for r in identify_results:
             if r.get("status") == "graph_break":
-                broken_names.add(r["name"])
+                explain_names.add(r["name"])
 
-        broken_specs = [s for s in specs if s["name"] in broken_names]
-        print(f"\n→ {len(broken_specs)} models need pass 2 (will test {pass2_modes})")
+        explain_specs = [s for s in specs if s["name"] in explain_names]
+        print(f"\n→ {len(explain_specs)} models need explain pass (will test {explain_modes})")
     else:
-        broken_specs = specs
-        pass1_results = None
+        explain_specs = specs
+        identify_results = None
 
     # ══════════════════════════════════════════════════════════════════════
-    # PASS 2: Detailed analysis (broken models only, eval+train)
+    # EXPLAIN: Detailed analysis (broken models only, eval+train)
     # ══════════════════════════════════════════════════════════════════════
-    if broken_specs and not args.pass1_only:
-        pass2_ckpt = str(output_dir / "pass2_checkpoint.jsonl")
+    if explain_specs and not args.identify_only:
+        explain_ckpt = str(output_dir / "explain_checkpoint.jsonl")
 
         # Load checkpoint for resume
         resume_from = {}
-        if args.resume and os.path.exists(pass2_ckpt):
-            resume_from = load_checkpoint(pass2_ckpt)
-            print(f"Loaded {len(resume_from)} completed pass 2 results from checkpoint")
+        if args.resume and os.path.exists(explain_ckpt):
+            resume_from = load_checkpoint(explain_ckpt)
+            print(f"Loaded {len(resume_from)} completed explain results from checkpoint")
 
         print(f"\n{'=' * 70}")
-        print(f"PASS 2: Detailed analysis — {len(broken_specs)} models × {len(pass2_modes)} modes ({pass2_modes})")
+        print(f"EXPLAIN: Detailed analysis — {len(explain_specs)} models × {len(explain_modes)} modes ({explain_modes})")
         print(f"{'=' * 70}")
 
         trace_dir = str(output_dir / "traces") if not args.skip_traces else None
@@ -908,34 +908,34 @@ def run_sweep(args):
         if trace_dir and os.path.exists(trace_dir) and not args.resume:
             shutil.rmtree(trace_dir)
 
-        pass2_start = time.perf_counter()
-        pass2_results = run_pass(
-            python_bin, broken_specs, pass_num=2, device=args.device, modes=pass2_modes,
+        explain_start = time.perf_counter()
+        explain_results = run_pass(
+            python_bin, explain_specs, pass_num=2, device=args.device, modes=explain_modes,
             workers=args.workers, timeout_s=args.timeout * 2,  # more time for explain()
             trace_dir=trace_dir,
-            checkpoint_file=pass2_ckpt, resume_from=resume_from,
+            checkpoint_file=explain_ckpt, resume_from=resume_from,
         )
-        pass2_time = time.perf_counter() - pass2_start
+        explain_time = time.perf_counter() - explain_start
 
-        # Save pass 2 results
-        pass2_output = {
+        # Save explain results
+        explain_output = {
             "metadata": {
-                "pass": 2,
+                "pass": "explain",
                 "device": args.device,
-                "modes": pass2_modes,
+                "modes": explain_modes,
                 "workers": args.workers,
-                "total_time_s": round(pass2_time, 1),
+                "total_time_s": round(explain_time, 1),
                 "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
                 "traces": trace_dir or "disabled",
             },
-            "results": pass2_results,
+            "results": explain_results,
         }
-        pass2_file = output_dir / "pass2_results.json"
-        with open(pass2_file, "w") as f:
-            json.dump(pass2_output, f, indent=2)
+        explain_file = output_dir / "explain_results.json"
+        with open(explain_file, "w") as f:
+            json.dump(explain_output, f, indent=2)
 
-        print(f"\nPass 2 complete: {pass2_time:.1f}s")
-        print(f"Saved to {pass2_file}")
+        print(f"\nExplain pass complete: {explain_time:.1f}s")
+        print(f"Saved to {explain_file}")
 
         # Run tlparse if traces were collected
         if trace_dir and os.path.exists(trace_dir):
@@ -946,15 +946,15 @@ def run_sweep(args):
                 shutil.rmtree(tlparse_dir)
             _run_tlparse(trace_dir, tlparse_dir)
     else:
-        pass2_results = []
-        if args.pass1_only:
-            print("\nSkipping pass 2 (--pass1-only)")
+        explain_results = []
+        if args.identify_only:
+            print("\nSkipping explain pass (--identify-only)")
 
     # ══════════════════════════════════════════════════════════════════════
     # MERGED CORPUS
     # ══════════════════════════════════════════════════════════════════════
-    if pass1_results and pass2_results:
-        corpus = _build_corpus(pass1_results, pass2_results, args)
+    if identify_results and explain_results:
+        corpus = _build_corpus(identify_results, explain_results, args)
         corpus_file = output_dir / "corpus.json"
         with open(corpus_file, "w") as f:
             json.dump(corpus, f, indent=2)
@@ -975,25 +975,25 @@ def run_sweep(args):
             pass
 
 
-def _build_corpus(pass1_results, pass2_results, args):
-    """Merge pass 1 and pass 2 results into a unified corpus."""
-    # Index pass 2 by (name, mode)
-    p2_index = {}
-    for r in pass2_results:
+def _build_corpus(identify_results, explain_results, args):
+    """Merge identify and explain results into a unified corpus."""
+    # Index explain pass by (name, mode)
+    explain_index = {}
+    for r in explain_results:
         key = (r["name"], r["mode"])
-        p2_index[key] = r
+        explain_index[key] = r
 
     models = []
-    for r in pass1_results:
+    for r in identify_results:
         record = dict(r)
         key = (r["name"], r["mode"])
-        if key in p2_index:
-            record["pass2"] = p2_index[key]
+        if key in explain_index:
+            record["explain"] = explain_index[key]
         models.append(record)
 
     # Summary stats
     by_status = {}
-    for r in pass1_results:
+    for r in identify_results:
         s = r.get("status", "unknown")
         by_status[s] = by_status.get(s, 0) + 1
 
@@ -1001,7 +1001,7 @@ def _build_corpus(pass1_results, pass2_results, args):
         "metadata": {
             "device": args.device,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
-            "methodology": "Two-pass: fullgraph(all) → explain+TORCH_TRACE(broken only)",
+            "methodology": "Two-pass: identify(all) → explain+TORCH_TRACE(broken only)",
         },
         "summary": by_status,
         "models": models,
@@ -1017,11 +1017,11 @@ def _print_summary(corpus):
         print(f"  {status}: {count}")
 
     # Graph break details
-    breaks = [m for m in corpus["models"] if m.get("status") == "graph_break" and "pass2" in m]
+    breaks = [m for m in corpus["models"] if m.get("status") == "graph_break" and "explain" in m]
     if breaks:
         print(f"\nGraph break models ({len(breaks)}):")
         for m in breaks:
-            p2 = m["pass2"]
+            p2 = m["explain"]
             name = m["name"]
             mode = m["mode"]
             bc = p2.get("graph_break_count", "?")
@@ -1086,7 +1086,7 @@ def run_validation(args):
         specs = specs[:args.limit]
         print(f"Limited to {len(specs)} models")
 
-    validate_modes = args.pass1_modes  # reuse pass1-modes for validation
+    validate_modes = args.identify_modes  # reuse identify-modes for validation
     dynamic = args.dynamic or "true"  # default to dynamic=True for validation
     print(f"Device: {args.device}, Workers: {args.workers}, "
           f"Modes: {validate_modes}, Timeout: {args.timeout}s, Dynamic: {dynamic}")
@@ -1162,22 +1162,22 @@ def main():
                         choices=["timm", "hf", "diffusers", "hf+diffusers", "all"],
                         help="Model sources (hf+diffusers = HF + Diffusers without TIMM)")
     parser.add_argument("--models", help="JSON file with model specs (overrides --source)")
-    parser.add_argument("--pass2-from", help="JSON file with pass 1 results (skip to pass 2)")
+    parser.add_argument("--explain-from", help="JSON file with identify results (skip to explain pass)")
     parser.add_argument("--limit", type=int, help="Max models to test")
     parser.add_argument("--has-config-only", action="store_true",
                         help="Only test models with known input configs")
 
     # Execution
     parser.add_argument("--device", default="cuda", choices=["cpu", "cuda"])
-    parser.add_argument("--pass1-modes", nargs="+", default=["eval", "train"],
+    parser.add_argument("--identify-modes", nargs="+", default=["eval", "train"],
                         choices=["eval", "train"],
-                        help="Modes for pass 1 (default: eval+train)")
-    parser.add_argument("--pass2-modes", nargs="+", default=["eval", "train"],
+                        help="Modes for identify pass (default: eval+train)")
+    parser.add_argument("--explain-modes", nargs="+", default=["eval", "train"],
                         choices=["eval", "train"],
-                        help="Modes for pass 2 (default: eval+train on broken models)")
+                        help="Modes for explain pass (default: eval+train on broken models)")
     parser.add_argument("--workers", type=int, default=16)
     parser.add_argument("--timeout", type=int, default=180,
-                        help="Per-model timeout in seconds (pass 2 gets 2x)")
+                        help="Per-model timeout in seconds (explain pass gets 2x)")
     parser.add_argument("--timeout-large", type=int, default=600,
                         help="Extended timeout for large models and auto-retry (default: 600s)")
     parser.add_argument("--large-models",
@@ -1189,16 +1189,16 @@ def main():
     # Output
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     parser.add_argument("--skip-traces", action="store_true",
-                        help="Skip TORCH_TRACE in pass 2")
-    parser.add_argument("--pass1-only", action="store_true",
-                        help="Only run pass 1 (identification)")
+                        help="Skip TORCH_TRACE in explain pass")
+    parser.add_argument("--identify-only", action="store_true",
+                        help="Only run identify pass (identification)")
     parser.add_argument("--dynamic", nargs="?", const="true", default=None,
                         choices=["true", "mark"],
                         help="Dynamic shapes: 'true' = all dims, 'mark' = realistic dims only")
     parser.add_argument("--validate", action="store_true",
-                        help="Run two-shape validation (pass 3) instead of pass 1/2")
+                        help="Run two-shape validation (pass 3) instead of identify/explain")
     parser.add_argument("--validate-from",
-                        help="JSON file with pass 1 results — validate only 'clean' models")
+                        help="JSON file with identify results — validate only 'clean' models")
 
     # Resilience
     parser.add_argument("--resume", action="store_true",

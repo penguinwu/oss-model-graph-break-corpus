@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Analyze graph break trends across PyTorch versions.
 
-Compares pass 1 (model counts) and pass 2 (total break counts) across multiple
+Compares identify (model counts) and explain (total break counts) across multiple
 PyTorch versions. Normalizes by testable models to avoid confounding from
 changing eager_error/create_error rates.
 
@@ -30,8 +30,8 @@ from collections import Counter, defaultdict
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
 
 
-def load_pass1(path):
-    """Load pass 1 results into {name: {mode: status}}."""
+def load_identify(path):
+    """Load identify results into {name: {mode: status}}."""
     with open(path) as f:
         data = json.load(f)
 
@@ -43,15 +43,15 @@ def load_pass1(path):
                 if mode in m:
                     d[m["name"]][mode] = m[mode].get("status", "unknown")
     else:
-        # pass1_results.json format (flat list or {results: [...]})
+        # identify_results.json format (flat list or {results: [...]})
         results = data if isinstance(data, list) else data.get("results", [])
         for r in results:
             d[r["name"]][r.get("mode", "eval")] = r.get("status", "unknown")
     return d
 
 
-def load_pass2(path):
-    """Load pass 2 (explain) results into {name: {mode: result_dict}}."""
+def load_explain(path):
+    """Load explain results into {name: {mode: result_dict}}."""
     if not os.path.exists(path):
         return None
 
@@ -73,37 +73,37 @@ def find_version_dirs(args):
         # Explicit directories provided
         for i, d in enumerate(args.dirs):
             label = args.labels[i] if args.labels and i < len(args.labels) else os.path.basename(d)
-            p1 = os.path.join(d, "pass1_results.json")
-            p2 = os.path.join(d, "pass2_results.json")
+            p1 = os.path.join(d, "identify_results.json")
+            p2 = os.path.join(d, "explain_results.json")
             if not os.path.exists(p1):
                 print(f"ERROR: {p1} not found", file=sys.stderr)
                 sys.exit(1)
-            versions.append({"label": label, "pass1": p1, "pass2": p2, "dir": d})
+            versions.append({"label": label, "identify": p1, "explain": p2, "dir": d})
     else:
         # Auto-discover: sweep_results/v2.* directories + main corpus
         sweep_dir = os.path.join(REPO_ROOT, "sweep_results")
         version_dirs = sorted(
             d for d in os.listdir(sweep_dir)
-            if d.startswith("v") and os.path.isfile(os.path.join(sweep_dir, d, "pass1_results.json"))
+            if d.startswith("v") and os.path.isfile(os.path.join(sweep_dir, d, "identify_results.json"))
         )
         for vd in version_dirs:
             vpath = os.path.join(sweep_dir, vd)
             versions.append({
                 "label": vd,
-                "pass1": os.path.join(vpath, "pass1_results.json"),
-                "pass2": os.path.join(vpath, "pass2_results.json"),
+                "identify": os.path.join(vpath, "identify_results.json"),
+                "explain": os.path.join(vpath, "explain_results.json"),
                 "dir": vpath,
             })
         # Add main corpus as latest version
         corpus_path = os.path.join(REPO_ROOT, "corpus", "corpus.json")
-        explain_path = os.path.join(sweep_dir, "explain", "pass2_results.json")
+        explain_path = os.path.join(sweep_dir, "explain", "explain_results.json")
         if os.path.exists(corpus_path):
             # Try to detect version from versions.json or metadata
             label = "v2.10"
             versions.append({
                 "label": label,
-                "pass1": corpus_path,
-                "pass2": explain_path,
+                "identify": corpus_path,
+                "explain": explain_path,
                 "dir": sweep_dir,
             })
 
@@ -115,14 +115,14 @@ def analyze_mode(versions_data, mode, common_models):
     results = []
 
     for vd in versions_data:
-        p1 = vd["pass1_data"]
-        p2 = vd.get("pass2_data")
+        p1 = vd["identify_data"]
+        p2 = vd.get("explain_data")
 
-        # Pass 1 stats
+        # Identify stats
         statuses = Counter(p1[n].get(mode, "missing") for n in common_models)
         testable = statuses.get("clean", 0) + statuses.get("graph_break", 0)
 
-        # Pass 2 stats (if available)
+        # Explain stats (if available)
         total_breaks = 0
         explain_ok = 0
         explain_error = 0
@@ -155,7 +155,7 @@ def analyze_mode(versions_data, mode, common_models):
             "explain_ok": explain_ok if p2 else None,
             "explain_error": explain_error if p2 else None,
             "avg_breaks_per_broken": round(total_breaks / statuses.get("graph_break", 1), 1) if statuses.get("graph_break", 0) > 0 else None,
-            "has_pass2": p2 is not None,
+            "has_explain": p2 is not None,
         })
 
     return results
@@ -166,8 +166,8 @@ def find_transitions(versions_data, mode, common_models):
     if len(versions_data) < 2:
         return {}
 
-    first = versions_data[0]["pass1_data"]
-    last = versions_data[-1]["pass1_data"]
+    first = versions_data[0]["identify_data"]
+    last = versions_data[-1]["identify_data"]
 
     transitions = defaultdict(list)
     for n in sorted(common_models):
@@ -175,7 +175,7 @@ def find_transitions(versions_data, mode, common_models):
         s_last = last[n].get(mode, "missing")
         if s_first != s_last:
             # Get intermediate statuses
-            path = [versions_data[i]["pass1_data"][n].get(mode, "?") for i in range(len(versions_data))]
+            path = [versions_data[i]["identify_data"][n].get(mode, "?") for i in range(len(versions_data))]
             transitions[f"{s_first} → {s_last}"].append((n, path))
 
     return transitions
@@ -185,14 +185,14 @@ def find_apples_to_apples(versions_data, mode, common_models):
     """Find models broken in ALL versions for normalized break count comparison."""
     broken_in_all = set(common_models)
     for vd in versions_data:
-        broken_in_all = {n for n in broken_in_all if vd["pass1_data"][n].get(mode) == "graph_break"}
+        broken_in_all = {n for n in broken_in_all if vd["identify_data"][n].get(mode) == "graph_break"}
     return broken_in_all
 
 
 def print_report(versions_data, modes, common_models, show_details=False):
     """Print the full trend report."""
     labels = [vd["label"] for vd in versions_data]
-    has_any_p2 = any(vd.get("pass2_data") for vd in versions_data)
+    has_any_explain = any(vd.get("explain_data") for vd in versions_data)
 
     for mode in modes:
         stats = analyze_mode(versions_data, mode, common_models)
@@ -223,7 +223,7 @@ def print_report(versions_data, modes, common_models, show_details=False):
         vals = "".join(f"{s['testable']:>{col_w}}" for s in stats)
         print(f"{'Testable (clean + graph_break)':<35}{vals}")
 
-        if has_any_p2:
+        if has_any_explain:
             print()
             vals = "".join(f"{s['total_graph_breaks'] if s['total_graph_breaks'] is not None else 'N/A':>{col_w}}" for s in stats)
             print(f"{'Total graph breaks (explain)':<35}{vals}")
@@ -235,7 +235,7 @@ def print_report(versions_data, modes, common_models, show_details=False):
             print(f"{'Avg breaks per broken model':<35}{vals}")
 
         # Apples-to-apples comparison
-        if has_any_p2:
+        if has_any_explain:
             a2a = find_apples_to_apples(versions_data, mode, common_models)
             if a2a:
                 print(f"\n{'─'*70}")
@@ -247,7 +247,7 @@ def print_report(versions_data, modes, common_models, show_details=False):
                 print("-" * len(a2a_header))
 
                 for vd in versions_data:
-                    p2 = vd.get("pass2_data")
+                    p2 = vd.get("explain_data")
                     if not p2:
                         continue
 
@@ -255,7 +255,7 @@ def print_report(versions_data, modes, common_models, show_details=False):
                 a2a_ok = []
                 a2a_err = []
                 for vd in versions_data:
-                    p2 = vd.get("pass2_data")
+                    p2 = vd.get("explain_data")
                     if not p2:
                         a2a_breaks.append(None)
                         a2a_ok.append(None)
@@ -305,7 +305,7 @@ def print_report(versions_data, modes, common_models, show_details=False):
                         print(f"    {name}: {path_str}")
 
         # Fixed models detail (graph_break → clean)
-        if show_details and has_any_p2:
+        if show_details and has_any_explain:
             fixed = []
             for t, models in transitions.items():
                 if "graph_break → clean" in t:
@@ -314,7 +314,7 @@ def print_report(versions_data, modes, common_models, show_details=False):
                 print(f"\n{'─'*70}")
                 print(f"FIXED MODELS — break counts in {labels[0]} ({mode})")
                 print(f"{'─'*70}\n")
-                p2_first = versions_data[0].get("pass2_data")
+                p2_first = versions_data[0].get("explain_data")
                 if p2_first:
                     for name, path in sorted(fixed):
                         r = p2_first.get(name, {}).get(mode, {})
@@ -328,7 +328,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    parser.add_argument("dirs", nargs="*", help="Version directories containing pass1_results.json (auto-discovered if omitted)")
+    parser.add_argument("dirs", nargs="*", help="Version directories containing identify_results.json (auto-discovered if omitted)")
     parser.add_argument("--labels", nargs="*", help="Labels for each version directory")
     parser.add_argument("--train", action="store_true", help="Include train mode analysis")
     parser.add_argument("--details", action="store_true", help="Show per-model details for transitions")
@@ -343,17 +343,17 @@ def main():
     if not args.json:
         print(f"Comparing {len(versions)} versions: {', '.join(v['label'] for v in versions)}")
         for v in versions:
-            print(f"  {v['label']}: pass1={v['pass1']}")
-            if os.path.exists(v["pass2"]):
-                print(f"  {' ' * len(v['label'])}  pass2={v['pass2']}")
+            print(f"  {v['label']}: identify={v['identify']}")
+            if os.path.exists(v["explain"]):
+                print(f"  {' ' * len(v['label'])}  explain={v['explain']}")
 
     # Load data
     for v in versions:
-        v["pass1_data"] = load_pass1(v["pass1"])
-        v["pass2_data"] = load_pass2(v["pass2"])
+        v["identify_data"] = load_identify(v["identify"])
+        v["explain_data"] = load_explain(v["explain"])
 
     # Find common models
-    all_sets = [set(v["pass1_data"].keys()) for v in versions]
+    all_sets = [set(v["identify_data"].keys()) for v in versions]
     common_models = all_sets[0]
     for s in all_sets[1:]:
         common_models &= s

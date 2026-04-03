@@ -5,8 +5,8 @@ Called by the orchestrator as:
   python worker.py --model-json '{"name":"resnet50","source":"timm",...}' \
                    --pass 1 --device cuda --mode eval
 
-Pass 1: fullgraph=True compile → binary pass/fail
-Pass 2: explain() + optional TORCH_TRACE → detailed graph break analysis
+Identify: fullgraph=True compile → binary pass/fail
+Explain: explain() + optional TORCH_TRACE → detailed graph break analysis
 
 Outputs a single JSON line to stdout. All logs go to stderr.
 """
@@ -1831,7 +1831,7 @@ def _create_inputs_only(spec, device, batch_size=DEFAULT_BATCH):
     return inputs_dict, inputs_tuple
 
 
-# ─── Pass 1: fullgraph identification ────────────────────────────────────────
+# ─── Identify: fullgraph identification ──────────────────────────────────────
 
 def _mark_dynamic_dims(inputs_dict, inputs_tuple, source, input_type):
     """Mark realistic dynamic dimensions on inputs based on model modality.
@@ -1859,14 +1859,14 @@ def _mark_dynamic_dims(inputs_dict, inputs_tuple, source, input_type):
                 torch._dynamo.mark_dynamic(t, 1)  # seq_len / time
 
 
-def run_pass1(spec, device, mode, dynamic=False):
+def run_identify(spec, device, mode, dynamic=False):
     """Try fullgraph=True compile. Returns JSON-serializable result."""
     t_start = time.perf_counter()
     result = {
         "name": spec["name"],
         "source": spec["source"],
         "mode": mode,
-        "pass": 1,
+        "pass": "identify",
         "dynamic": dynamic,
         "phase": "create",  # tracks current phase for timeout diagnosis
     }
@@ -2197,15 +2197,15 @@ def run_validate(spec, device, mode, dynamic=False):
     return result
 
 
-# ─── Pass 2: detailed analysis ───────────────────────────────────────────────
+# ─── Explain: detailed analysis ─────────────────────────────────────────────
 
-def run_pass2(spec, device, mode):
+def run_explain(spec, device, mode):
     """Run explain() + TORCH_TRACE on a model known to have graph breaks."""
     result = {
         "name": spec["name"],
         "source": spec["source"],
         "mode": mode,
-        "pass": 2,
+        "pass": "explain",
     }
 
     try:
@@ -2310,7 +2310,7 @@ def main():
     parser = argparse.ArgumentParser(description="Single-model worker for graph break sweep")
     parser.add_argument("--model-json", required=True, help="JSON string with model spec")
     parser.add_argument("--pass-num", type=int, required=True, choices=[1, 2, 3],
-                        help="Pass 1 (fullgraph), 2 (explain), or 3 (validate)")
+                        help="Pass 1 (identify), 2 (explain), or 3 (validate)")
     parser.add_argument("--device", default="cuda", choices=["cpu", "cuda"])
     parser.add_argument("--mode", default="eval", choices=["eval", "train"])
     parser.add_argument("--dynamic", nargs="?", const="true", default=None,
@@ -2324,11 +2324,11 @@ def main():
     dynamic_val = {"true": True, "mark": "mark"}.get(args.dynamic, False)
 
     if args.pass_num == 1:
-        result = run_pass1(spec, args.device, args.mode, dynamic=dynamic_val)
+        result = run_identify(spec, args.device, args.mode, dynamic=dynamic_val)
     elif args.pass_num == 3:
         result = run_validate(spec, args.device, args.mode, dynamic=dynamic_val)
     else:
-        result = run_pass2(spec, args.device, args.mode)
+        result = run_explain(spec, args.device, args.mode)
 
     # Output single JSON line to stdout
     print(json.dumps(result))

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Analyze explain (pass 2) results — graph break counts, reasons, and taxonomy.
+"""Analyze explain results — graph break counts, reasons, and taxonomy.
 
 Usage:
-    python tools/analyze_explain.py                           # Default: sweep_results/explain/pass2_results.json
+    python tools/analyze_explain.py                           # Default: sweep_results/explain/explain_results.json
     python tools/analyze_explain.py results.json              # Custom input
     python tools/analyze_explain.py --json                    # Machine-readable output
     python tools/analyze_explain.py --top-reasons 20          # Top N break reasons
@@ -17,7 +17,7 @@ import sys
 from collections import Counter, defaultdict
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
-DEFAULT_INPUT = os.path.join(REPO_ROOT, "sweep_results", "explain", "pass2_results.json")
+DEFAULT_INPUT = os.path.join(REPO_ROOT, "sweep_results", "explain", "explain_results.json")
 
 
 def load_results(path):
@@ -309,11 +309,11 @@ def analyze(results, args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Analyze explain (pass 2) results — graph break taxonomy and stats",
+        description="Analyze explain results — graph break taxonomy and stats",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("input", nargs="?", default=DEFAULT_INPUT,
-                        help=f"Pass 2 results JSON (default: {DEFAULT_INPUT})")
+                        help=f"Explain results JSON (default: {DEFAULT_INPUT})")
     parser.add_argument("--json", action="store_true", help="Include JSON output")
     parser.add_argument("--csv", help="Export per-model data to CSV")
     parser.add_argument("--model", help="Show detail for a specific model")
@@ -327,7 +327,7 @@ def main():
     if not os.path.exists(args.input):
         print(f"ERROR: File not found: {args.input}")
         print("Run the explain sweep first:")
-        print("  python sweep/run_sweep.py --pass2-from <pass1_results.json> --device cuda --skip-traces")
+        print("  python sweep/run_sweep.py --explain-from <identify_results.json> --device cuda --skip-traces")
         sys.exit(1)
 
     results = load_results(args.input)

@@ -36,8 +36,8 @@ python sweep/run_sweep.py \
     --device cuda \
     --python /path/to/python \
     --source hf+diffusers \
-    --pass1-only \
-    --pass1-modes eval train \
+    --identify-only \
+    --identify-modes eval train \
     --workers 4 \
     --timeout 180 \
     --timeout-large 600 \

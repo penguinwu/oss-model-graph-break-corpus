@@ -62,7 +62,7 @@ def read_progress(output_dir):
     for the same work item, so we keep the last result per (name, mode) to avoid
     exceeding 100%.
     """
-    ckpt = Path(output_dir) / "pass1_checkpoint.jsonl"
+    ckpt = Path(output_dir) / "identify_checkpoint.jsonl"
     if not ckpt.exists():
         return {"completed": 0, "by_status": {}}
 

@@ -6,7 +6,7 @@ Usage:
     python tools/compare.py --corpus-dynamic
 
     # Compare two sweep result files
-    python tools/compare.py sweep_results/static/pass1_results.json sweep_results/dynamic_mark/pass1_results.json
+    python tools/compare.py sweep_results/static/identify_results.json sweep_results/dynamic_mark/identify_results.json
 
     # Compare with labels
     python tools/compare.py old.json new.json --labels "PyTorch 2.9" "PyTorch 2.10"
