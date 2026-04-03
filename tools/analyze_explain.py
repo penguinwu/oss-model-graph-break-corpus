@@ -36,26 +36,36 @@ def classify_reason(reason_str):
         ("deepcopy", "copy.deepcopy()"),
         ("tensor.item()", "Tensor.item()"),
         (".item()", "Tensor.item()"),
-        ("step_unsupported", "Unsupported step"),
+        ("step_unsupported", "Unsupported op/step"),
         ("data-dependent", "Data-dependent branching"),
+        ("_local_scalar_dense", "Data-dependent branching"),
         ("depends on the value", "Data-dependent guard"),
         ("backed symint", "Data-dependent guard"),
-        ("guard", "Data-dependent guard"),
-        ("logger", "logging.Logger"),
-        ("logging", "logging.Logger"),
+        ("dynamic shape operator", "Dynamic shape operator"),
+        ("aten.nonzero", "Dynamic shape operator"),
+        ("repeat_interleave", "Dynamic shape operator"),
+        ("generic_jump", "Data-dependent branching"),
+        ("marked as skipped", "Skipped function call"),
         ("skip function", "Skipped function call"),
         ("skipped call", "Skipped function call"),
         ("forbidden callable", "Skipped function call"),
-        ("builtin callable", "Builtin callable"),
+        ("unsupported method call", "Unsupported method/builtin"),
+        ("failed to trace builtin", "Unsupported method/builtin"),
+        ("unsupported context manager", "Unsupported method/builtin"),
+        ("builtin callable", "Unsupported method/builtin"),
         ("nn module method", "Skipped function call"),
-        ("proxy", "Proxy conversion failure"),
+        ("logger", "logging.Logger"),
+        ("logging", "logging.Logger"),
+        ("proxy", "as_proxy() missing"),
         ("faketensor", "Fake tensor error"),
         ("fake tensor", "Fake tensor error"),
         ("requires_grad", "Tensor requires_grad mutation"),
         ("constraint violation", "Constraint violation"),
         ("mark_dynamic", "Constraint violation"),
         ("non-tensor", "Non-Tensor return"),
+        ("numpyndarrayvariable", "NumPy fallback"),
         ("observed exception", "Observed exception"),
+        ("guard", "Data-dependent guard"),
     ]
     for pattern, category in patterns:
         if pattern in r:
@@ -63,6 +73,37 @@ def classify_reason(reason_str):
     return "Other"
 
 
+# Short examples for categories whose names aren't self-explanatory.
+CATEGORY_EXAMPLES = {
+    "as_proxy() missing": (
+        "Dynamo can't convert certain arg types to proxy during tracing. "
+        "e.g. DETR models pass ValueError/bool to functions Dynamo can't represent"
+    ),
+    "Skipped function call": (
+        "Dynamo devs marked a function as not-traceable. "
+        "e.g. audio models call importlib.util.find_spec during forward()"
+    ),
+    "Unsupported op/step": (
+        "Bytecode instruction uses a pattern Dynamo hasn't implemented. "
+        "e.g. Aria/Glm4v vision encoders hit unimplemented tracing steps"
+    ),
+    "Dynamic shape operator": (
+        "Op output shape depends on input data, not just input shapes. "
+        "e.g. aten.nonzero (data-dependent output size), aten.repeat_interleave"
+    ),
+    "Data-dependent branching": (
+        "Control flow depends on tensor values, not shapes. "
+        "e.g. if tensor.sum() > 0, or aten._local_scalar_dense"
+    ),
+    "Unsupported method/builtin": (
+        "Dynamo can't trace a specific method or builtin. "
+        "e.g. ContiguousFormat.get(), RNG .seed(), context manager 'lock'"
+    ),
+    "Non-Tensor return": (
+        "A torch op returns a non-Tensor value Dynamo can't trace. "
+        "e.g. torch.* ops returning ints or tuples of non-Tensors"
+    ),
+}
 def analyze(results, args):
     # Filter to successful explain results
     ok_results = [r for r in results if r.get("status") == "ok"]
@@ -178,6 +219,8 @@ def analyze(results, args):
         n_models = len(reason_models[category])
         pct = count / reasons_total * 100 if reasons_total else 0
         print(f"{i:>3}  {category:<35} {count:>7} {n_models:>7} {pct:>5.1f}%")
+        if category in CATEGORY_EXAMPLES:
+            print(f"       ↳ {CATEGORY_EXAMPLES[category]}")
 
     print(f"\n     {'Total':<35} {reasons_total:>7}")
 
