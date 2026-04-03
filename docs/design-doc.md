@@ -1,6 +1,6 @@
 # Design Doc: OSS Model Graph Break Corpus
 
-**Revision:** 29
+**Revision:** 30
 **Owner:** Peng Wu
 **Date:** 2026-04-02
 **Status:** Design Review
@@ -139,6 +139,26 @@ Static graph breaks persist under dynamic shapes. Dynamic testing reveals **cons
 | **requires_grad()** | 2 | 2% | MEDIUM | Dynamo mutation support |
 | **Other** | 4 | 4% | VARIES | Per-model investigation needed |
 
+#### All-Breaks Deep Dive (Pass 2 — explain)
+
+Pass 1 counts one break per model (first encountered). Pass 2 uses `torch._dynamo.explain()` to enumerate **all** graph breaks across 107 broken models (214 model×mode pairs). Total: **1,275 graph breaks**, with 661 break_reasons entries (explain API does not emit a reason for every break).
+
+| Root Cause | Breaks | % | Models | Description |
+|------------|--------|---|--------|-------------|
+| **Data-dependent branching** | 238 | 36.0% | 57 | Control flow depends on tensor values (`if tensor.sum() > 0`, `_local_scalar_dense`) |
+| **as_proxy() missing** | 82 | 12.4% | 10 | Dynamo can't convert arg types to proxy (DETR models pass ValueError/bool) |
+| **Dynamic shape operator** | 77 | 11.6% | 16 | Op output shape depends on data (`aten.nonzero`, `repeat_interleave`) |
+| **copy.deepcopy()** | 77 | 11.6% | 25 | Encoder-decoder models clone layers with `copy.deepcopy()` |
+| **Tensor.item()** | 48 | 7.3% | 7 | Tensor→scalar conversion breaks tracing |
+| **Skipped function call** | 48 | 7.3% | 15 | Dynamo-marked not-traceable (audio `importlib.util.find_spec`) |
+| **Unsupported op/step** | 31 | 4.7% | 12 | Bytecode pattern Dynamo hasn't implemented (Aria/Glm4v vision) |
+| **Tensor requires_grad mutation** | 18 | 2.7% | 12 | In-place `requires_grad_()` mutation |
+| **Unsupported method/builtin** | 15 | 2.3% | 4 | `ContiguousFormat.get()`, RNG `.seed()`, context manager `lock` |
+| **logging.Logger** | 15 | 2.3% | 6 | Logger calls during tracing |
+| **Non-Tensor return** | 11 | 1.7% | 1 | torch ops returning ints/tuples Dynamo can't trace |
+
+**Key insight:** Data-dependent branching dominates at the break level (36%) even more than at the model level (25%). A single data-dependent model (e.g., EncodecModel with 29 eval breaks) generates many breaks because each branch point creates a separate graph break. By contrast, `copy.deepcopy()` affects more models (25) but generates fewer total breaks (77) because each model typically has just 2–4 deepcopy calls.
+
 ### 4.3 Fix Impact Analysis
 
 The top 3 actionable categories cover **45% of all broken models** (49/109):
@@ -241,6 +261,51 @@ Only **1 new graph break** vs static: UnivNetModel (randn with symbolic shapes �
 
 No static graph breaks were eliminated by either dynamic mode.
 
+### 4.6 Version Trend (PyTorch 2.8 → 2.9 → 2.10)
+
+Same 468 models tested with identical sweep code, transformers 5.4.0, diffusers 0.37.1, Python 3.12.13. Only variable: PyTorch version.
+
+#### Eval Mode
+
+| Status | v2.8 | v2.9 | v2.10 |
+|--------|------|------|-------|
+| **Clean** | **298 (63.7%)** | **324 (69.2%)** | **352 (75.2%)** |
+| **Graph Break** | **95 (20.3%)** | **99 (21.2%)** | **92 (19.7%)** |
+| Eager Error | 48 (10.3%) | 17 (3.6%) | 14 (3.0%) |
+| Create Error | 27 (5.8%) | 27 (5.8%) | 7 (1.5%) |
+| Timeout | 0 | 1 (0.2%) | 3 (0.6%) |
+
+#### Train Mode
+
+| Status | v2.8 | v2.9 | v2.10 |
+|--------|------|------|-------|
+| **Clean** | **288 (61.5%)** | **314 (67.1%)** | **337 (72.0%)** |
+| **Graph Break** | **104 (22.2%)** | **108 (23.1%)** | **106 (22.6%)** |
+| Eager Error | 49 (10.5%) | 18 (3.8%) | 15 (3.2%) |
+| Create Error | 27 (5.8%) | 27 (5.8%) | 7 (1.5%) |
+| Timeout | 0 | 1 (0.2%) | 3 (0.6%) |
+
+#### Key Findings
+
+1. **12 graph breaks fixed in v2.10** — BltModel, FlaubertModel, HiggsAudioV2Model, Idefics2Model, Phi4MultimodalAudioModel, Phi4MultimodalVisionModel, PixtralVisionModel, Sam3Model, TapasModel, VJEPA2Model, XLMModel, XmodModel. All were graph_break in both v2.8 and v2.9, fixed only in v2.10.
+2. **0 new graph breaks introduced** — no regressions across two major PyTorch releases.
+3. **Graph break count increased in v2.9 (95→99)** — not regressions. 6 models moved from eager_error→graph_break (became testable, revealing pre-existing breaks) and 3 from create_error→graph_break. No clean→graph_break transitions in any version.
+4. **Massive eager error cleanup** — 48→17→14 (eval). Models that were untestable in v2.8 due to PyTorch/library compatibility issues became testable as PyTorch improved. 28 models moved from eager_error→clean between v2.8 and v2.10.
+5. **Create error reduction** — 27→27→7. Config/constructor compatibility improved significantly in v2.10.
+
+#### Net Movement (Eval, v2.8 → v2.10)
+
+| Transition | Count |
+|-----------|-------|
+| eager_error → clean | 28 |
+| create_error → clean | 14 |
+| graph_break → clean | 12 |
+| eager_error → graph_break | 6 |
+| create_error → graph_break | 3 |
+| create_error → timeout | 2 |
+
+**Bottom line:** PyTorch Dynamo is steadily improving. Clean compile rate grew from 64% to 75% across two releases, driven primarily by 12 graph break fixes and improved model compatibility. Zero regressions.
+
 ## 5. Repository Guide
 
 The GitHub repo at `~/projects/oss-model-graph-break-corpus/` serves two audiences:
@@ -318,12 +383,32 @@ python sweep/run_sweep.py --source hf+diffusers --device cuda --workers 4 \
 | Item | Description | Priority |
 |------|-------------|----------|
 | **Diffusers expansion** | ~110 models with per-family constructor args and inputs | High |
-| **Multi-version comparison** | Run corpus across PyTorch 2.8, 2.9, 2.10 to track Dynamo progress | Medium |
+| **~~Multi-version comparison~~** | ~~Run corpus across PyTorch 2.8, 2.9, 2.10~~ | ✅ Done (Section 4.6) |
 | **aot_eager sweep** | Catch AOTAutograd-specific training failures | Medium |
 | **Gradient checkpointing mode** | Test `model.gradient_checkpointing_enable()` | Medium |
 | **Autocast mode** | Test `torch.autocast('cuda', dtype=torch.float16)` | Medium |
 | **torchaudio, ultralytics** | Additional model sources (~25 models) | Low |
 | **OSS long-tail discovery** | Crawl GitHub for wild PyTorch modules (separate project) | Deferred |
+
+### 6.1 Graph Break Fix Study (V2 Use Case)
+
+**Goal:** Enable engineers to study graph breaks in pip-installed HuggingFace models, develop workarounds in user code, and validate fixes — without modifying the library source.
+
+**Challenge:** Graph breaks occur inside library code (e.g., `copy.deepcopy()` in transformers encoder-decoder models). Fixing the library is one path, but users also want to know: *can I work around this break by changing how I call the model?*
+
+**Workflow:**
+1. **Select a broken model** from the corpus (e.g., `T5Model` — breaks on `copy.deepcopy()`)
+2. **Reproduce the break** using `worker.py` with TORCH_TRACE enabled
+3. **Study the break** using tlparse output — identify the exact op and location
+4. **Develop a workaround** — e.g., monkey-patch the forward method, wrap with `torch._dynamo.allow_in_graph`, or restructure the calling code
+5. **Validate** — re-run the model with the workaround applied, confirm graph break is eliminated
+
+**What needs to be built (V2):**
+- Workaround templates for common break categories (deepcopy, data-dependent, skipped callable)
+- A `--workaround` flag in worker.py that applies known patches before compile
+- Documentation of which workarounds are user-side vs require library PRs
+
+**Priority:** After initial corpus + version trend data is complete.
 
 ## 7. Open Questions
 
@@ -478,3 +563,4 @@ Benchmarked on PyTorch 2.8.0a0 (CPU, first-compile cost):
 | 27 | 2026-04-01 | Dynamic=mark sweep results. 329 clean (70%, down from 75% static). 8 new constraint-violation graph breaks. Updated Section 4.5, Appendix C. |
 | 28 | 2026-04-02 | Dynamic=true sweep results. Key finding: mark is stricter than true (329 vs 339 clean). Three-mode comparison table. Both dynamic sweeps complete. |
 | 29 | 2026-04-02 | Data gap fill + sweep code fixes. Merged dynamic_true into corpus. Added root_cause to all graph_break entries. Backfilled error text for 57 static entries. Fixed Gemma3nModel (graph_break→create_error, 93→92 eval). Resolved 6 mark worker_errors to clean (329→335). Fixed worker.py exception handler (bare except→type checking) and run_sweep.py subprocess command leak. |
+| 30 | 2026-04-02 | **Explain deep dive + version trend.** Added all-breaks taxonomy from Pass 2 explain (1,275 breaks, 11 categories, 661 classified). Added Section 4.6: version trend across PyTorch 2.8→2.9→2.10 (12 graph breaks fixed, 0 regressions, clean rate 64%→75%). Added Section 6.1: Graph Break Fix Study use case. Fixed 8 explain-error models. |

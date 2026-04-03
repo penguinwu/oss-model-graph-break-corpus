@@ -555,10 +555,9 @@ def _log_versions(python_bin, output_dir):
     script = (
         "import json, sys; d = {}; "
         "import torch; d['torch'] = torch.__version__; d['torch_git'] = torch.version.git_version; "
-        "try:\n import transformers; d['transformers'] = transformers.__version__\n"
-        "except ImportError: d['transformers'] = None\n"
-        "try:\n import diffusers; d['diffusers'] = diffusers.__version__\n"
-        "except ImportError: d['diffusers'] = None\n"
+        "d['transformers'] = None; d['diffusers'] = None; "
+        "exec('try:\\n import transformers\\n d[\"transformers\"] = transformers.__version__\\nexcept ImportError: pass'); "
+        "exec('try:\\n import diffusers\\n d[\"diffusers\"] = diffusers.__version__\\nexcept ImportError: pass'); "
         "d['python'] = sys.version; print(json.dumps(d))"
     )
     try:

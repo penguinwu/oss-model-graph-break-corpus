@@ -107,5 +107,12 @@
     "source": "hf",
     "timeout_tier": "large",
     "wall_time_s": 220.01
+  },
+  "xLSTMModel": {
+    "discovered": "2026-04-02",
+    "resolved_status": "eager_error",
+    "source": "hf",
+    "timeout_tier": "large",
+    "wall_time_s": 125.01
   }
 }
