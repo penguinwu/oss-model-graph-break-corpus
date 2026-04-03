@@ -349,7 +349,13 @@ def main():
                         help="Show passing checks too")
     parser.add_argument("--skip-tools", action="store_true",
                         help="Skip tool output checks (faster)")
+    parser.add_argument("--corpus", default=None,
+                        help="Path to corpus.json (default: corpus/corpus.json)")
     args = parser.parse_args()
+
+    global CORPUS_PATH
+    if args.corpus:
+        CORPUS_PATH = Path(args.corpus).resolve()
 
     if not CORPUS_PATH.exists():
         print(f"ERROR: Corpus not found at {CORPUS_PATH}")
