@@ -4,46 +4,46 @@
     {
       "name": "BertModel",
       "eval": {
-        "status": "clean"
+        "status": "full_graph"
       },
       "train": {
-        "status": "clean"
+        "status": "full_graph"
       }
     },
     {
       "name": "LlamaModel",
       "eval": {
-        "status": "clean"
+        "status": "full_graph"
       },
       "train": {
-        "status": "clean"
+        "status": "full_graph"
       }
     },
     {
       "name": "GPT2Model",
       "eval": {
-        "status": "clean"
+        "status": "full_graph"
       },
       "train": {
-        "status": "clean"
+        "status": "full_graph"
       }
     },
     {
       "name": "ViTModel",
       "eval": {
-        "status": "clean"
+        "status": "full_graph"
       },
       "train": {
-        "status": "clean"
+        "status": "full_graph"
       }
     },
     {
       "name": "AutoencoderKL",
       "eval": {
-        "status": "clean"
+        "status": "full_graph"
       },
       "train": {
-        "status": "clean"
+        "status": "full_graph"
       }
     },
     {
@@ -90,13 +90,13 @@
         "status": "graph_break"
       },
       "train": {
-        "status": "clean"
+        "status": "full_graph"
       }
     },
     {
       "name": "BioGptModel",
       "eval": {
-        "status": "clean"
+        "status": "full_graph"
       },
       "train": {
         "status": "graph_break"
@@ -132,55 +132,55 @@
     {
       "name": "BrosModel",
       "eval": {
-        "status": "clean"
+        "status": "full_graph"
       },
       "train": {
-        "status": "clean"
+        "status": "full_graph"
       }
     },
     {
       "name": "AlbertModel",
       "eval": {
-        "status": "clean"
+        "status": "full_graph"
       },
       "train": {
-        "status": "clean"
+        "status": "full_graph"
       }
     },
     {
       "name": "RobertaModel",
       "eval": {
-        "status": "clean"
+        "status": "full_graph"
       },
       "train": {
-        "status": "clean"
+        "status": "full_graph"
       }
     },
     {
       "name": "XLNetModel",
       "eval": {
-        "status": "clean"
+        "status": "full_graph"
       },
       "train": {
-        "status": "clean"
+        "status": "full_graph"
       }
     },
     {
       "name": "ElectraModel",
       "eval": {
-        "status": "clean"
+        "status": "full_graph"
       },
       "train": {
-        "status": "clean"
+        "status": "full_graph"
       }
     },
     {
       "name": "DebertaV2Model",
       "eval": {
-        "status": "clean"
+        "status": "full_graph"
       },
       "train": {
-        "status": "clean"
+        "status": "full_graph"
       }
     }
   ]

@@ -37,18 +37,18 @@
   "summary": {
     "total_models": 468,
     "eval": {
-      "clean": 337,
       "graph_break": 90,
       "eager_error": 17,
       "worker_error": 6,
-      "create_error": 18
+      "create_error": 18,
+      "full_graph": 337
     },
     "train": {
-      "clean": 323,
       "graph_break": 105,
       "eager_error": 17,
       "worker_error": 5,
-      "create_error": 18
+      "create_error": 18,
+      "full_graph": 323
     },
     "has_graph_break": 116,
     "eval_status": {
@@ -72,7 +72,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.12,
         "compile_time_s": 1.747,
@@ -91,7 +91,7 @@
         "eager_time_s": 0.591
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.08,
         "compile_time_s": 1.766,
@@ -115,7 +115,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 12.492,
         "eager_time_s": 0.61,
         "compile_time_s": 2.283,
@@ -135,7 +135,7 @@
         "wall_time_s": 25.26
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 11.935,
         "eager_time_s": 0.763,
         "compile_time_s": 2.251,
@@ -160,7 +160,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.19,
         "compile_time_s": 2.457,
@@ -179,7 +179,7 @@
         "eager_time_s": 0.662
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.15,
         "compile_time_s": 2.376,
@@ -203,7 +203,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.19,
         "compile_time_s": 1.676,
@@ -222,7 +222,7 @@
         "eager_time_s": 0.415
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.15,
         "compile_time_s": 1.833,
@@ -246,7 +246,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.19,
         "compile_time_s": 1.529,
@@ -265,7 +265,7 @@
         "eager_time_s": 0.472
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.14,
         "compile_time_s": 1.551,
@@ -289,7 +289,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.17,
         "compile_time_s": 1.88,
@@ -308,7 +308,7 @@
         "eager_time_s": 0.331
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.12,
         "compile_time_s": 1.845,
@@ -332,7 +332,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 30.17,
         "compile_time_s": 12.868,
@@ -351,7 +351,7 @@
         "eager_time_s": 0.878
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 30.13,
         "compile_time_s": 13.535,
@@ -375,7 +375,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.04,
         "compile_time_s": 1.93,
@@ -394,7 +394,7 @@
         "eager_time_s": 0.286
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.0,
         "compile_time_s": 1.981,
@@ -418,7 +418,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 25.23,
         "compile_time_s": 10.767,
@@ -437,7 +437,7 @@
         "eager_time_s": 0.543
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 25.19,
         "compile_time_s": 12.873,
@@ -461,7 +461,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.04,
         "compile_time_s": 2.764,
@@ -480,7 +480,7 @@
         "eager_time_s": 0.613
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.0,
         "compile_time_s": 2.551,
@@ -504,7 +504,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.14,
         "compile_time_s": 1.924,
@@ -523,7 +523,7 @@
         "eager_time_s": 0.427
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.12,
         "compile_time_s": 2.098,
@@ -547,7 +547,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.04,
         "compile_time_s": 1.569,
@@ -566,7 +566,7 @@
         "eager_time_s": 0.39
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.0,
         "compile_time_s": 1.532,
@@ -590,7 +590,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 18.958,
         "eager_time_s": 0.45,
         "compile_time_s": 2.021,
@@ -610,7 +610,7 @@
         "wall_time_s": 30.24
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 18.329,
         "eager_time_s": 0.486,
         "compile_time_s": 2.103,
@@ -635,7 +635,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.04,
         "compile_time_s": 1.868,
@@ -654,7 +654,7 @@
         "eager_time_s": 0.427
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.0,
         "compile_time_s": 1.818,
@@ -1068,7 +1068,7 @@
       "source": "diffusers",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.04,
         "compile_time_s": 3.319,
@@ -1087,7 +1087,7 @@
         "eager_time_s": 0.805
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.0,
         "compile_time_s": 3.377,
@@ -1111,7 +1111,7 @@
       "source": "diffusers",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.04,
         "compile_time_s": 1.552,
@@ -1130,7 +1130,7 @@
         "eager_time_s": 0.653
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.0,
         "compile_time_s": 1.62,
@@ -1213,7 +1213,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 10.051,
         "eager_time_s": 0.407,
         "fullgraph_ok": true,
@@ -1233,7 +1233,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 9.882,
         "eager_time_s": 0.402,
         "fullgraph_ok": true,
@@ -1353,7 +1353,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.04,
         "compile_time_s": 1.935,
@@ -1372,7 +1372,7 @@
         "eager_time_s": 0.426
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.0,
         "compile_time_s": 1.91,
@@ -1396,7 +1396,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 5.19,
         "eager_time_s": 0.305,
         "fullgraph_ok": true,
@@ -1416,7 +1416,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 4.959,
         "eager_time_s": 0.332,
         "fullgraph_ok": true,
@@ -1478,7 +1478,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.16,
         "compile_time_s": 1.795,
@@ -1497,7 +1497,7 @@
         "eager_time_s": 0.475
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.09,
         "compile_time_s": 1.77,
@@ -1636,7 +1636,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.18,
         "compile_time_s": 1.485,
@@ -1655,7 +1655,7 @@
         "eager_time_s": 0.384
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.13,
         "compile_time_s": 1.711,
@@ -1679,7 +1679,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.09,
         "compile_time_s": 2.209,
@@ -1698,7 +1698,7 @@
         "eager_time_s": 0.305
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.25,
         "compile_time_s": 1.953,
@@ -1722,7 +1722,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.16,
         "compile_time_s": 2.091,
@@ -1741,7 +1741,7 @@
         "eager_time_s": 0.374
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.12,
         "compile_time_s": 2.138,
@@ -1848,7 +1848,7 @@
       "source": "hf",
       "has_graph_break": true,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.25,
         "compile_time_s": 1.714,
@@ -1901,7 +1901,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.24,
         "compile_time_s": 3.567,
@@ -1920,7 +1920,7 @@
         "eager_time_s": 0.554
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.23,
         "compile_time_s": 4.072,
@@ -1944,7 +1944,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.23,
         "compile_time_s": 2.017,
@@ -1963,7 +1963,7 @@
         "eager_time_s": 0.48
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 25.27,
         "compile_time_s": 2.17,
@@ -2143,7 +2143,7 @@
       "source": "hf",
       "has_graph_break": true,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 7.434,
         "eager_time_s": 0.698,
         "fullgraph_ok": true,
@@ -2205,7 +2205,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.1,
         "compile_time_s": 1.56,
@@ -2224,7 +2224,7 @@
         "eager_time_s": 0.41
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.14,
         "compile_time_s": 1.667,
@@ -2248,7 +2248,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.2,
         "compile_time_s": 2.843,
@@ -2267,7 +2267,7 @@
         "eager_time_s": 0.571
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.16,
         "compile_time_s": 2.831,
@@ -2291,7 +2291,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.18,
         "compile_time_s": 1.956,
@@ -2310,7 +2310,7 @@
         "eager_time_s": 0.442
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.14,
         "compile_time_s": 2.149,
@@ -2334,7 +2334,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.19,
         "compile_time_s": 1.46,
@@ -2353,7 +2353,7 @@
         "eager_time_s": 0.398
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.14,
         "compile_time_s": 1.521,
@@ -2377,7 +2377,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.2,
         "compile_time_s": 1.629,
@@ -2396,7 +2396,7 @@
         "eager_time_s": 0.389
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.16,
         "compile_time_s": 1.924,
@@ -2420,7 +2420,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 192.42,
         "compile_time_s": 18.143,
@@ -2439,7 +2439,7 @@
         "eager_time_s": 0.911
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 192.36,
         "compile_time_s": 18.629,
@@ -2463,7 +2463,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.05,
         "compile_time_s": 4.247,
@@ -2482,7 +2482,7 @@
         "eager_time_s": 0.623
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.0,
         "compile_time_s": 4.667,
@@ -2506,7 +2506,7 @@
       "source": "hf",
       "has_graph_break": true,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 3.754,
         "eager_time_s": 0.344,
         "compile_time_s": 2.449,
@@ -2528,7 +2528,7 @@
         "wall_time_s": 15.09
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 3.634,
         "eager_time_s": 0.502,
         "compile_time_s": 2.407,
@@ -2555,7 +2555,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.05,
         "compile_time_s": 2.46,
@@ -2574,7 +2574,7 @@
         "eager_time_s": 0.707
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.0,
         "compile_time_s": 2.285,
@@ -2598,7 +2598,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.08,
         "compile_time_s": 2.256,
@@ -2617,7 +2617,7 @@
         "eager_time_s": 0.628
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.01,
         "compile_time_s": 2.261,
@@ -2641,7 +2641,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.11,
         "compile_time_s": 1.673,
@@ -2660,7 +2660,7 @@
         "eager_time_s": 0.364
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.0,
         "compile_time_s": 1.719,
@@ -2684,7 +2684,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.06,
         "compile_time_s": 1.564,
@@ -2703,7 +2703,7 @@
         "eager_time_s": 0.465
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.01,
         "compile_time_s": 1.578,
@@ -2727,7 +2727,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.04,
         "compile_time_s": 1.696,
@@ -2746,7 +2746,7 @@
         "eager_time_s": 0.314
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.0,
         "compile_time_s": 1.718,
@@ -2770,7 +2770,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.08,
         "compile_time_s": 1.643,
@@ -2789,7 +2789,7 @@
         "eager_time_s": 0.51
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.0,
         "compile_time_s": 1.628,
@@ -2813,7 +2813,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.04,
         "compile_time_s": 1.631,
@@ -2832,7 +2832,7 @@
         "eager_time_s": 0.306
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.0,
         "compile_time_s": 1.941,
@@ -2856,7 +2856,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.04,
         "compile_time_s": 2.331,
@@ -2875,7 +2875,7 @@
         "eager_time_s": 0.317
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.0,
         "compile_time_s": 2.4,
@@ -2899,7 +2899,7 @@
       "source": "hf",
       "has_graph_break": true,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.04,
         "compile_time_s": 3.424,
@@ -2920,7 +2920,7 @@
         "eager_time_s": 0.543
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.0,
         "compile_time_s": 3.493,
@@ -3014,7 +3014,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.21,
         "compile_time_s": 1.953,
@@ -3033,7 +3033,7 @@
         "eager_time_s": 0.298
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.17,
         "compile_time_s": 2.008,
@@ -3156,7 +3156,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.16,
         "compile_time_s": 1.932,
@@ -3175,7 +3175,7 @@
         "eager_time_s": 0.338
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.26,
         "compile_time_s": 1.918,
@@ -3234,7 +3234,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 25.27,
         "compile_time_s": 1.891,
@@ -3253,7 +3253,7 @@
         "eager_time_s": 0.431
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 25.23,
         "compile_time_s": 1.93,
@@ -3347,7 +3347,7 @@
       "source": "hf",
       "has_graph_break": true,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 36.83,
         "eager_time_s": 0.759,
         "fullgraph_ok": true,
@@ -3417,7 +3417,7 @@
         "wall_time_s": 15.07
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 7.594,
         "eager_time_s": 0.339,
         "compile_time_s": 1.853,
@@ -3442,7 +3442,7 @@
       "source": "hf",
       "has_graph_break": true,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.1,
         "compile_time_s": 5.747,
@@ -3517,7 +3517,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.07,
         "compile_time_s": 1.99,
@@ -3536,7 +3536,7 @@
         "eager_time_s": 0.444
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.38,
         "compile_time_s": 2.247,
@@ -3560,7 +3560,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.34,
         "compile_time_s": 2.578,
@@ -3579,7 +3579,7 @@
         "eager_time_s": 3.174
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.31,
         "compile_time_s": 2.587,
@@ -3603,7 +3603,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.3,
         "compile_time_s": 2.759,
@@ -3622,7 +3622,7 @@
         "eager_time_s": 3.056
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.26,
         "compile_time_s": 2.83,
@@ -3646,7 +3646,7 @@
       "source": "hf",
       "has_graph_break": true,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 11.775,
         "eager_time_s": 0.67,
         "compile_time_s": 1.73,
@@ -3668,7 +3668,7 @@
         "wall_time_s": 25.2
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 12.236,
         "eager_time_s": 0.668,
         "compile_time_s": 1.707,
@@ -3695,7 +3695,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.13,
         "compile_time_s": 2.282,
@@ -3714,7 +3714,7 @@
         "eager_time_s": 0.512
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.09,
         "compile_time_s": 2.428,
@@ -3738,7 +3738,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 25.3,
         "compile_time_s": 5.724,
@@ -3757,7 +3757,7 @@
         "eager_time_s": 3.28
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 25.31,
         "compile_time_s": 6.039,
@@ -3781,7 +3781,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 6.269,
         "eager_time_s": 0.519,
         "compile_time_s": 2.239,
@@ -3801,7 +3801,7 @@
         "wall_time_s": 20.15
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 6.012,
         "eager_time_s": 0.465,
         "compile_time_s": 2.139,
@@ -3934,7 +3934,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.08,
         "compile_time_s": 2.436,
@@ -3953,7 +3953,7 @@
         "eager_time_s": 2.821
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.1,
         "compile_time_s": 2.544,
@@ -3977,7 +3977,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.17,
         "compile_time_s": 1.588,
@@ -3996,7 +3996,7 @@
         "eager_time_s": 0.381
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.17,
         "compile_time_s": 1.655,
@@ -4020,7 +4020,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.13,
         "compile_time_s": 1.588,
@@ -4039,7 +4039,7 @@
         "eager_time_s": 0.386
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.08,
         "compile_time_s": 1.915,
@@ -4063,7 +4063,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.17,
         "compile_time_s": 7.17,
@@ -4082,7 +4082,7 @@
         "eager_time_s": 0.65
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.15,
         "compile_time_s": 6.864,
@@ -4106,7 +4106,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.12,
         "compile_time_s": 3.965,
@@ -4125,7 +4125,7 @@
         "eager_time_s": 0.88
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.08,
         "compile_time_s": 3.872,
@@ -4242,7 +4242,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.14,
         "compile_time_s": 2.122,
@@ -4261,7 +4261,7 @@
         "eager_time_s": 0.307
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.11,
         "compile_time_s": 1.993,
@@ -4285,7 +4285,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.15,
         "compile_time_s": 1.417,
@@ -4304,7 +4304,7 @@
         "eager_time_s": 0.337
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.12,
         "compile_time_s": 1.369,
@@ -4433,7 +4433,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.17,
         "compile_time_s": 1.755,
@@ -4452,7 +4452,7 @@
         "eager_time_s": 0.529
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.13,
         "compile_time_s": 1.788,
@@ -4476,7 +4476,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.14,
         "compile_time_s": 1.651,
@@ -4495,7 +4495,7 @@
         "eager_time_s": 0.516
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.11,
         "compile_time_s": 1.575,
@@ -4519,7 +4519,7 @@
       "source": "hf",
       "has_graph_break": true,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 2.907,
         "eager_time_s": 0.353,
         "compile_time_s": 2.117,
@@ -4541,7 +4541,7 @@
         "wall_time_s": 15.03
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 2.74,
         "eager_time_s": 0.388,
         "compile_time_s": 2.217,
@@ -4605,7 +4605,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 6.028,
         "eager_time_s": 0.438,
         "compile_time_s": 2.222,
@@ -4625,7 +4625,7 @@
         "wall_time_s": 20.14
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 5.957,
         "eager_time_s": 0.398,
         "compile_time_s": 2.02,
@@ -4650,7 +4650,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 16.365,
         "eager_time_s": 0.378,
         "fullgraph_ok": true,
@@ -4670,7 +4670,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 16.595,
         "eager_time_s": 0.42,
         "fullgraph_ok": true,
@@ -4695,7 +4695,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 15.441,
         "eager_time_s": 0.39,
         "fullgraph_ok": true,
@@ -4715,7 +4715,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 14.851,
         "eager_time_s": 0.475,
         "fullgraph_ok": true,
@@ -4868,7 +4868,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.1,
         "compile_time_s": 1.643,
@@ -4887,7 +4887,7 @@
         "eager_time_s": 0.381
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.13,
         "compile_time_s": 1.507,
@@ -4911,7 +4911,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 5.756,
         "eager_time_s": 0.476,
         "fullgraph_ok": true,
@@ -4931,7 +4931,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 5.767,
         "eager_time_s": 0.458,
         "fullgraph_ok": true,
@@ -4956,7 +4956,7 @@
       "source": "hf",
       "has_graph_break": true,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.17,
         "compile_time_s": 5.411,
@@ -5026,7 +5026,7 @@
       "source": "diffusers",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.2,
         "compile_time_s": 2.786,
@@ -5045,7 +5045,7 @@
         "eager_time_s": 0.633
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.17,
         "compile_time_s": 2.78,
@@ -5106,7 +5106,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.05,
         "compile_time_s": 2.052,
@@ -5125,7 +5125,7 @@
         "eager_time_s": 0.4
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.0,
         "compile_time_s": 1.967,
@@ -5184,7 +5184,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.23,
         "compile_time_s": 1.647,
@@ -5203,7 +5203,7 @@
         "eager_time_s": 0.39
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.18,
         "compile_time_s": 1.561,
@@ -5227,7 +5227,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.22,
         "compile_time_s": 1.486,
@@ -5246,7 +5246,7 @@
         "eager_time_s": 0.353
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.14,
         "compile_time_s": 1.509,
@@ -5270,7 +5270,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.16,
         "compile_time_s": 1.717,
@@ -5289,7 +5289,7 @@
         "eager_time_s": 0.231
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.12,
         "compile_time_s": 1.734,
@@ -5313,7 +5313,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.17,
         "compile_time_s": 2.041,
@@ -5332,7 +5332,7 @@
         "eager_time_s": 0.41
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.13,
         "compile_time_s": 2.268,
@@ -5389,7 +5389,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 6.187,
         "eager_time_s": 0.557,
         "compile_time_s": 2.157,
@@ -5409,7 +5409,7 @@
         "wall_time_s": 15.12
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 5.956,
         "eager_time_s": 0.546,
         "compile_time_s": 2.102,
@@ -5541,7 +5541,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.04,
         "compile_time_s": 5.949,
@@ -5560,7 +5560,7 @@
         "eager_time_s": 0.58
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.0,
         "compile_time_s": 6.712,
@@ -5584,7 +5584,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 25.27,
         "compile_time_s": 11.829,
@@ -5603,7 +5603,7 @@
         "eager_time_s": 0.62
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 25.24,
         "compile_time_s": 12.725,
@@ -5627,7 +5627,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.04,
         "compile_time_s": 1.964,
@@ -5646,7 +5646,7 @@
         "eager_time_s": 0.232
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.0,
         "compile_time_s": 1.823,
@@ -5670,7 +5670,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 27.941,
         "eager_time_s": 0.496,
         "compile_time_s": 1.971,
@@ -5690,7 +5690,7 @@
         "wall_time_s": 40.15
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 27.348,
         "eager_time_s": 0.476,
         "compile_time_s": 2.175,
@@ -5715,7 +5715,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 35.03,
         "compile_time_s": 1.921,
@@ -5734,7 +5734,7 @@
         "eager_time_s": 0.461
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 35.0,
         "compile_time_s": 2.008,
@@ -5971,7 +5971,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 5.214,
         "eager_time_s": 0.336,
         "compile_time_s": 3.222,
@@ -5991,7 +5991,7 @@
         "wall_time_s": 20.03
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 5.403,
         "eager_time_s": 0.28,
         "compile_time_s": 3.381,
@@ -6016,7 +6016,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.12,
         "compile_time_s": 1.921,
@@ -6035,7 +6035,7 @@
         "eager_time_s": 0.457
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.08,
         "compile_time_s": 2.018,
@@ -6059,7 +6059,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 10.559,
         "eager_time_s": 0.622,
         "compile_time_s": 2.191,
@@ -6079,7 +6079,7 @@
         "wall_time_s": 20.17
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 10.585,
         "eager_time_s": 0.649,
         "compile_time_s": 2.232,
@@ -6104,7 +6104,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 24.666,
         "eager_time_s": 0.632,
         "fullgraph_ok": true,
@@ -6124,7 +6124,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 25.256,
         "eager_time_s": 0.557,
         "fullgraph_ok": true,
@@ -6149,7 +6149,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 10.664,
         "eager_time_s": 0.617,
         "compile_time_s": 2.359,
@@ -6169,7 +6169,7 @@
         "wall_time_s": 20.03
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 10.741,
         "eager_time_s": 0.603,
         "compile_time_s": 2.174,
@@ -6194,7 +6194,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 25.442,
         "eager_time_s": 0.741,
         "fullgraph_ok": true,
@@ -6214,7 +6214,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 25.012,
         "eager_time_s": 0.683,
         "fullgraph_ok": true,
@@ -6239,7 +6239,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 10.771,
         "eager_time_s": 0.655,
         "compile_time_s": 2.235,
@@ -6259,7 +6259,7 @@
         "wall_time_s": 20.05
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 10.834,
         "eager_time_s": 0.584,
         "compile_time_s": 2.195,
@@ -6284,7 +6284,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.17,
         "compile_time_s": 1.973,
@@ -6303,7 +6303,7 @@
         "eager_time_s": 0.297
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.17,
         "compile_time_s": 1.953,
@@ -6327,7 +6327,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 3.344,
         "eager_time_s": 0.338,
         "fullgraph_ok": true,
@@ -6347,7 +6347,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 3.454,
         "eager_time_s": 0.346,
         "fullgraph_ok": true,
@@ -6372,7 +6372,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.16,
         "compile_time_s": 1.693,
@@ -6391,7 +6391,7 @@
         "eager_time_s": 0.425
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.16,
         "compile_time_s": 1.737,
@@ -6415,7 +6415,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 39.018,
         "eager_time_s": 0.421,
         "compile_time_s": 1.785,
@@ -6435,7 +6435,7 @@
         "wall_time_s": 50.38
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 39.847,
         "eager_time_s": 0.425,
         "compile_time_s": 1.688,
@@ -6460,7 +6460,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 18.18,
         "eager_time_s": 0.367,
         "compile_time_s": 1.885,
@@ -6480,7 +6480,7 @@
         "wall_time_s": 30.08
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 18.609,
         "eager_time_s": 0.341,
         "compile_time_s": 1.917,
@@ -6505,7 +6505,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 16.629,
         "eager_time_s": 0.611,
         "compile_time_s": 2.205,
@@ -6525,7 +6525,7 @@
         "wall_time_s": 30.41
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 15.853,
         "eager_time_s": 0.722,
         "compile_time_s": 2.119,
@@ -6550,7 +6550,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.03,
         "compile_time_s": 1.509,
@@ -6569,7 +6569,7 @@
         "eager_time_s": 0.307
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.0,
         "compile_time_s": 1.486,
@@ -6773,7 +6773,7 @@
         "explain_error": "Attempt to trace forbidden callable <function mark_static_address at 0x7f43c3cc71a0>\n\nfrom user code:\n   File \"/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/falcon_mamba/modeling_falcon_mamba.py\", line 754, in forward\n    cache_params = FalconMambaCache(\n  File \"/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/torch/_dynamo/polyfills/__init__.py\", line 292, in instantiate_user_defined_class_object\n    obj.__init__(*args, **kwargs)\n  File \""
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.08,
         "compile_time_s": 1.742,
@@ -6803,7 +6803,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 5.717,
         "eager_time_s": 0.378,
         "compile_time_s": 2.249,
@@ -6823,7 +6823,7 @@
         "wall_time_s": 15.24
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 5.818,
         "eager_time_s": 0.374,
         "compile_time_s": 2.15,
@@ -6946,7 +6946,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 29.529,
         "eager_time_s": 0.403,
         "fullgraph_ok": true,
@@ -6966,7 +6966,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 29.915,
         "eager_time_s": 0.408,
         "fullgraph_ok": true,
@@ -6991,7 +6991,7 @@
       "source": "hf",
       "has_graph_break": true,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.12,
         "compile_time_s": 1.83,
@@ -7058,7 +7058,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.09,
         "compile_time_s": 1.538,
@@ -7077,7 +7077,7 @@
         "eager_time_s": 0.456
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.12,
         "compile_time_s": 1.674,
@@ -7101,7 +7101,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.18,
         "compile_time_s": 5.621,
@@ -7120,7 +7120,7 @@
         "eager_time_s": 0.531
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.14,
         "compile_time_s": 5.56,
@@ -7144,7 +7144,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 3.441,
         "eager_time_s": 0.309,
         "compile_time_s": 1.642,
@@ -7164,7 +7164,7 @@
         "wall_time_s": 15.04
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 3.379,
         "eager_time_s": 0.309,
         "compile_time_s": 1.602,
@@ -7189,7 +7189,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.13,
         "compile_time_s": 1.681,
@@ -7208,7 +7208,7 @@
         "eager_time_s": 0.287
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.1,
         "compile_time_s": 1.723,
@@ -7232,7 +7232,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 24.017,
         "eager_time_s": 0.567,
         "compile_time_s": 2.147,
@@ -7252,7 +7252,7 @@
         "wall_time_s": 35.2
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 24.178,
         "eager_time_s": 0.547,
         "compile_time_s": 2.104,
@@ -7387,7 +7387,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.19,
         "compile_time_s": 3.95,
@@ -7406,7 +7406,7 @@
         "eager_time_s": 0.478
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.3,
         "compile_time_s": 4.848,
@@ -7465,7 +7465,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 40.51,
         "compile_time_s": 1.941,
@@ -7484,7 +7484,7 @@
         "eager_time_s": 0.408
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 40.47,
         "compile_time_s": 1.861,
@@ -7508,7 +7508,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.09,
         "compile_time_s": 3.221,
@@ -7527,7 +7527,7 @@
         "eager_time_s": 1.893
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.08,
         "compile_time_s": 3.562,
@@ -7551,7 +7551,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.08,
         "compile_time_s": 1.837,
@@ -7570,7 +7570,7 @@
         "eager_time_s": 0.342
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.08,
         "compile_time_s": 1.766,
@@ -7594,7 +7594,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.22,
         "compile_time_s": 1.76,
@@ -7613,7 +7613,7 @@
         "eager_time_s": 0.362
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.23,
         "compile_time_s": 1.695,
@@ -7637,7 +7637,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 14.117,
         "eager_time_s": 0.467,
         "compile_time_s": 1.81,
@@ -7657,7 +7657,7 @@
         "wall_time_s": 25.23
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 14.154,
         "eager_time_s": 0.409,
         "compile_time_s": 1.695,
@@ -7682,7 +7682,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.1,
         "compile_time_s": 1.746,
@@ -7701,7 +7701,7 @@
         "eager_time_s": 0.403
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.22,
         "compile_time_s": 1.815,
@@ -7725,7 +7725,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 7.122,
         "eager_time_s": 0.415,
         "compile_time_s": 1.729,
@@ -7745,7 +7745,7 @@
         "wall_time_s": 20.31
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 7.222,
         "eager_time_s": 0.433,
         "compile_time_s": 1.81,
@@ -7770,7 +7770,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 4.064,
         "eager_time_s": 0.305,
         "compile_time_s": 1.821,
@@ -7790,7 +7790,7 @@
         "wall_time_s": 15.09
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 4.207,
         "eager_time_s": 0.323,
         "compile_time_s": 1.921,
@@ -7815,7 +7815,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 16.238,
         "eager_time_s": 0.391,
         "compile_time_s": 1.977,
@@ -7835,7 +7835,7 @@
         "wall_time_s": 25.17
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 16.485,
         "eager_time_s": 0.469,
         "compile_time_s": 2.051,
@@ -7860,7 +7860,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 18.629,
         "eager_time_s": 0.458,
         "compile_time_s": 3.606,
@@ -7880,7 +7880,7 @@
         "wall_time_s": 30.21
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 18.211,
         "eager_time_s": 0.483,
         "fullgraph_ok": true,
@@ -7905,7 +7905,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 25.22,
         "compile_time_s": 2.086,
@@ -7924,7 +7924,7 @@
         "eager_time_s": 0.653
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 25.21,
         "compile_time_s": 2.229,
@@ -8018,7 +8018,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 35.33,
         "compile_time_s": 1.806,
@@ -8037,7 +8037,7 @@
         "eager_time_s": 0.345
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 35.29,
         "compile_time_s": 1.873,
@@ -8061,7 +8061,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.08,
         "compile_time_s": 3.008,
@@ -8080,7 +8080,7 @@
         "eager_time_s": 0.382
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.07,
         "compile_time_s": 2.993,
@@ -8104,7 +8104,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.16,
         "compile_time_s": 1.389,
@@ -8123,7 +8123,7 @@
         "eager_time_s": 0.374
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.19,
         "compile_time_s": 1.499,
@@ -8147,7 +8147,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 36.275,
         "eager_time_s": 0.429,
         "fullgraph_ok": true,
@@ -8167,7 +8167,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 34.851,
         "eager_time_s": 0.466,
         "fullgraph_ok": true,
@@ -8192,7 +8192,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 19.996,
         "eager_time_s": 0.444,
         "compile_time_s": 2.028,
@@ -8212,7 +8212,7 @@
         "wall_time_s": 30.1
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 20.51,
         "eager_time_s": 0.394,
         "compile_time_s": 2.106,
@@ -8237,7 +8237,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 10.768,
         "eager_time_s": 0.75,
         "compile_time_s": 2.371,
@@ -8257,7 +8257,7 @@
         "wall_time_s": 20.24
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 10.73,
         "eager_time_s": 0.764,
         "compile_time_s": 2.364,
@@ -8282,7 +8282,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 19.411,
         "eager_time_s": 0.713,
         "compile_time_s": 2.49,
@@ -8302,7 +8302,7 @@
         "wall_time_s": 30.22
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 18.424,
         "eager_time_s": 0.789,
         "compile_time_s": 2.208,
@@ -8327,7 +8327,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 35.441,
         "eager_time_s": 0.46,
         "fullgraph_ok": true,
@@ -8347,7 +8347,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 36.456,
         "eager_time_s": 0.396,
         "fullgraph_ok": true,
@@ -8372,7 +8372,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 34.507,
         "eager_time_s": 0.755,
         "fullgraph_ok": true,
@@ -8392,7 +8392,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 34.564,
         "eager_time_s": 0.74,
         "fullgraph_ok": true,
@@ -8417,7 +8417,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 19.39,
         "eager_time_s": 0.749,
         "fullgraph_ok": true,
@@ -8437,7 +8437,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 19.179,
         "eager_time_s": 0.833,
         "fullgraph_ok": true,
@@ -8597,7 +8597,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 21.167,
         "eager_time_s": 0.42,
         "fullgraph_ok": true,
@@ -8617,7 +8617,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 20.983,
         "eager_time_s": 0.459,
         "fullgraph_ok": true,
@@ -8777,7 +8777,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 44.146,
         "eager_time_s": 0.425,
         "fullgraph_ok": true,
@@ -8797,7 +8797,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 41.858,
         "eager_time_s": 0.452,
         "fullgraph_ok": true,
@@ -8822,7 +8822,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 22.303,
         "eager_time_s": 0.446,
         "fullgraph_ok": true,
@@ -8842,7 +8842,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 22.231,
         "eager_time_s": 0.485,
         "fullgraph_ok": true,
@@ -9002,7 +9002,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 30.09,
         "compile_time_s": 2.021,
@@ -9021,7 +9021,7 @@
         "eager_time_s": 0.417
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 30.23,
         "compile_time_s": 1.99,
@@ -9082,7 +9082,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 12.32,
         "eager_time_s": 0.472,
         "compile_time_s": 2.092,
@@ -9102,7 +9102,7 @@
         "wall_time_s": 25.26
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 12.927,
         "eager_time_s": 0.463,
         "compile_time_s": 2.157,
@@ -9127,7 +9127,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.09,
         "compile_time_s": 1.985,
@@ -9146,7 +9146,7 @@
         "eager_time_s": 0.462
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.13,
         "compile_time_s": 2.018,
@@ -9360,7 +9360,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 16.394,
         "eager_time_s": 0.591,
         "compile_time_s": 2.216,
@@ -9380,7 +9380,7 @@
         "wall_time_s": 25.17
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 16.248,
         "eager_time_s": 0.652,
         "compile_time_s": 2.161,
@@ -9405,7 +9405,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 25.12,
         "compile_time_s": 1.93,
@@ -9424,7 +9424,7 @@
         "eager_time_s": 0.363
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 25.08,
         "compile_time_s": 1.913,
@@ -9563,7 +9563,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 18.961,
         "eager_time_s": 0.622,
         "compile_time_s": 2.48,
@@ -9583,7 +9583,7 @@
         "wall_time_s": 30.15
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 18.787,
         "eager_time_s": 0.719,
         "compile_time_s": 2.609,
@@ -9608,7 +9608,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 19.104,
         "eager_time_s": 0.675,
         "compile_time_s": 2.749,
@@ -9628,7 +9628,7 @@
         "wall_time_s": 30.31
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 19.959,
         "eager_time_s": 0.636,
         "compile_time_s": 2.507,
@@ -9781,7 +9781,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.24,
         "compile_time_s": 5.554,
@@ -9800,7 +9800,7 @@
         "eager_time_s": 0.781
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.23,
         "compile_time_s": 6.226,
@@ -9824,7 +9824,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.15,
         "compile_time_s": 1.547,
@@ -9843,7 +9843,7 @@
         "eager_time_s": 0.352
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.11,
         "compile_time_s": 1.719,
@@ -9867,7 +9867,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.18,
         "compile_time_s": 4.645,
@@ -9886,7 +9886,7 @@
         "eager_time_s": 0.563
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.16,
         "compile_time_s": 5.234,
@@ -9910,7 +9910,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.12,
         "compile_time_s": 1.924,
@@ -9929,7 +9929,7 @@
         "eager_time_s": 0.407
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.08,
         "compile_time_s": 1.983,
@@ -9953,7 +9953,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.16,
         "compile_time_s": 4.968,
@@ -9972,7 +9972,7 @@
         "eager_time_s": 0.48
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.58,
         "compile_time_s": 4.765,
@@ -9996,7 +9996,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 17.441,
         "eager_time_s": 0.598,
         "compile_time_s": 2.363,
@@ -10016,7 +10016,7 @@
         "wall_time_s": 30.72
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 17.504,
         "eager_time_s": 0.634,
         "compile_time_s": 2.592,
@@ -10134,7 +10134,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 30.964,
         "eager_time_s": 0.37,
         "compile_time_s": 1.939,
@@ -10154,7 +10154,7 @@
         "wall_time_s": 40.21
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 30.682,
         "eager_time_s": 0.357,
         "compile_time_s": 2.196,
@@ -10179,7 +10179,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 33.803,
         "eager_time_s": 0.606,
         "compile_time_s": 2.239,
@@ -10199,7 +10199,7 @@
         "wall_time_s": 45.24
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 33.448,
         "eager_time_s": 0.553,
         "compile_time_s": 2.052,
@@ -10224,7 +10224,7 @@
       "source": "hf",
       "has_graph_break": true,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.16,
         "compile_time_s": 1.772,
@@ -10359,7 +10359,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.19,
         "compile_time_s": 1.549,
@@ -10378,7 +10378,7 @@
         "eager_time_s": 0.412
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.2,
         "compile_time_s": 1.422,
@@ -10402,7 +10402,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 24.797,
         "eager_time_s": 0.916,
         "compile_time_s": 5.194,
@@ -10422,7 +10422,7 @@
         "wall_time_s": 40.26
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 25.032,
         "eager_time_s": 0.77,
         "compile_time_s": 6.332,
@@ -10447,7 +10447,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 19.033,
         "eager_time_s": 0.391,
         "fullgraph_ok": true,
@@ -10467,7 +10467,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 19.806,
         "eager_time_s": 0.389,
         "fullgraph_ok": true,
@@ -10492,7 +10492,7 @@
       "source": "hf",
       "has_graph_break": true,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 22.382,
         "eager_time_s": 0.596,
         "fullgraph_ok": true,
@@ -10514,7 +10514,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 22.644,
         "eager_time_s": 0.628,
         "fullgraph_ok": true,
@@ -10541,7 +10541,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.06,
         "compile_time_s": 1.846,
@@ -10560,7 +10560,7 @@
         "eager_time_s": 0.405
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.0,
         "compile_time_s": 1.99,
@@ -10643,7 +10643,7 @@
       "source": "hf",
       "has_graph_break": true,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 9.362,
         "eager_time_s": 0.573,
         "fullgraph_ok": true,
@@ -10705,7 +10705,7 @@
       "source": "hf",
       "has_graph_break": true,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 8.783,
         "eager_time_s": 0.662,
         "fullgraph_ok": true,
@@ -10767,7 +10767,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.16,
         "compile_time_s": 1.471,
@@ -10786,7 +10786,7 @@
         "eager_time_s": 0.424
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.1,
         "compile_time_s": 1.526,
@@ -10810,7 +10810,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.06,
         "compile_time_s": 1.496,
@@ -10829,7 +10829,7 @@
         "eager_time_s": 0.388
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.0,
         "compile_time_s": 1.621,
@@ -10938,7 +10938,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.04,
         "compile_time_s": 1.522,
@@ -10957,7 +10957,7 @@
         "eager_time_s": 0.417
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.0,
         "compile_time_s": 1.49,
@@ -10981,7 +10981,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 30.29,
         "compile_time_s": 1.887,
@@ -11000,7 +11000,7 @@
         "eager_time_s": 0.423
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 30.25,
         "compile_time_s": 1.832,
@@ -11109,7 +11109,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 15.318,
         "eager_time_s": 0.434,
         "fullgraph_ok": true,
@@ -11129,7 +11129,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 14.851,
         "eager_time_s": 0.376,
         "fullgraph_ok": true,
@@ -11154,7 +11154,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.15,
         "compile_time_s": 1.478,
@@ -11173,7 +11173,7 @@
         "eager_time_s": 0.366
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.15,
         "compile_time_s": 1.531,
@@ -11197,7 +11197,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.21,
         "compile_time_s": 3.224,
@@ -11216,7 +11216,7 @@
         "eager_time_s": 0.659
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.18,
         "compile_time_s": 2.986,
@@ -11240,7 +11240,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.23,
         "compile_time_s": 1.916,
@@ -11259,7 +11259,7 @@
         "eager_time_s": 0.343
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.24,
         "compile_time_s": 1.989,
@@ -11283,7 +11283,7 @@
       "source": "hf",
       "has_graph_break": true,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 8.371,
         "eager_time_s": 0.391,
         "fullgraph_ok": true,
@@ -11338,7 +11338,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.23,
         "compile_time_s": 1.958,
@@ -11357,7 +11357,7 @@
         "eager_time_s": 0.262
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.22,
         "compile_time_s": 2.054,
@@ -11381,7 +11381,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 7.211,
         "eager_time_s": 0.493,
         "fullgraph_ok": true,
@@ -11401,7 +11401,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 7.331,
         "eager_time_s": 0.494,
         "fullgraph_ok": true,
@@ -11519,7 +11519,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.24,
         "compile_time_s": 2.005,
@@ -11538,7 +11538,7 @@
         "eager_time_s": 0.316
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.19,
         "compile_time_s": 2.068,
@@ -11597,7 +11597,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.19,
         "compile_time_s": 2.425,
@@ -11616,7 +11616,7 @@
         "eager_time_s": 0.489
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.15,
         "compile_time_s": 2.328,
@@ -11640,7 +11640,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.23,
         "compile_time_s": 4.942,
@@ -11659,7 +11659,7 @@
         "eager_time_s": 0.571
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.44,
         "compile_time_s": 5.624,
@@ -11683,7 +11683,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 9.114,
         "eager_time_s": 0.484,
         "fullgraph_ok": true,
@@ -11703,7 +11703,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 9.015,
         "eager_time_s": 0.474,
         "fullgraph_ok": true,
@@ -11728,7 +11728,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 7.159,
         "eager_time_s": 0.473,
         "fullgraph_ok": true,
@@ -11748,7 +11748,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 7.398,
         "eager_time_s": 0.463,
         "fullgraph_ok": true,
@@ -11773,7 +11773,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 10.598,
         "eager_time_s": 0.462,
         "fullgraph_ok": true,
@@ -11793,7 +11793,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 11.158,
         "eager_time_s": 0.414,
         "fullgraph_ok": true,
@@ -11818,7 +11818,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 7.19,
         "eager_time_s": 0.43,
         "compile_time_s": 2.22,
@@ -11838,7 +11838,7 @@
         "wall_time_s": 20.24
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 7.407,
         "eager_time_s": 0.419,
         "compile_time_s": 2.009,
@@ -11863,7 +11863,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.18,
         "compile_time_s": 2.53,
@@ -11882,7 +11882,7 @@
         "eager_time_s": 0.336
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.15,
         "compile_time_s": 2.661,
@@ -11906,7 +11906,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 7.718,
         "eager_time_s": 0.519,
         "compile_time_s": 2.338,
@@ -11926,7 +11926,7 @@
         "wall_time_s": 20.21
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 7.56,
         "eager_time_s": 0.529,
         "compile_time_s": 2.438,
@@ -11951,7 +11951,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 3.843,
         "eager_time_s": 0.233,
         "fullgraph_ok": true,
@@ -11971,7 +11971,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 3.915,
         "eager_time_s": 0.214,
         "fullgraph_ok": true,
@@ -11996,7 +11996,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 12.185,
         "eager_time_s": 0.361,
         "compile_time_s": 1.887,
@@ -12016,7 +12016,7 @@
         "wall_time_s": 25.15
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 11.973,
         "eager_time_s": 0.44,
         "compile_time_s": 1.981,
@@ -12041,7 +12041,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 13.319,
         "eager_time_s": 0.343,
         "fullgraph_ok": true,
@@ -12061,7 +12061,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 12.979,
         "eager_time_s": 0.35,
         "fullgraph_ok": true,
@@ -12086,7 +12086,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 12.487,
         "eager_time_s": 0.348,
         "fullgraph_ok": true,
@@ -12106,7 +12106,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 12.965,
         "eager_time_s": 0.37,
         "fullgraph_ok": true,
@@ -12131,7 +12131,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 12.433,
         "eager_time_s": 0.414,
         "compile_time_s": 1.97,
@@ -12151,7 +12151,7 @@
         "wall_time_s": 25.11
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 12.995,
         "eager_time_s": 0.403,
         "compile_time_s": 2.108,
@@ -12176,7 +12176,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 27.479,
         "eager_time_s": 0.389,
         "fullgraph_ok": true,
@@ -12196,7 +12196,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 27.37,
         "eager_time_s": 0.371,
         "fullgraph_ok": true,
@@ -12478,7 +12478,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.27,
         "compile_time_s": 2.181,
@@ -12497,7 +12497,7 @@
         "eager_time_s": 0.405
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.26,
         "compile_time_s": 2.293,
@@ -12626,7 +12626,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 6.419,
         "eager_time_s": 0.307,
         "compile_time_s": 6.044,
@@ -12646,7 +12646,7 @@
         "wall_time_s": 20.17
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 6.214,
         "eager_time_s": 0.382,
         "compile_time_s": 6.033,
@@ -12827,7 +12827,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.16,
         "compile_time_s": 1.72,
@@ -12846,7 +12846,7 @@
         "eager_time_s": 0.465
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.12,
         "compile_time_s": 1.707,
@@ -12998,7 +12998,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.04,
         "compile_time_s": 1.863,
@@ -13017,7 +13017,7 @@
         "eager_time_s": 0.332
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.0,
         "compile_time_s": 1.788,
@@ -13124,7 +13124,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.08,
         "compile_time_s": 1.803,
@@ -13143,7 +13143,7 @@
         "eager_time_s": 0.434
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.18,
         "compile_time_s": 1.712,
@@ -13193,7 +13193,7 @@
         "explain_error": "Attempt to trace forbidden callable <function mark_static_address at 0x7f17130bf1a0>\n\nfrom user code:\n   File \"/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/transformers/models/mamba/modeling_mamba.py\", line 688, in forward\n    cache_params = MambaCache(\n  File \"/home/pengwu/envs/graph-break-corpus/lib/python3.12/site-packages/torch/_dynamo/polyfills/__init__.py\", line 292, in instantiate_user_defined_class_object\n    obj.__init__(*args, **kwargs)\n  File \"/home/pengwu/envs/gr"
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.22,
         "compile_time_s": 1.83,
@@ -13301,7 +13301,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.16,
         "compile_time_s": 3.366,
@@ -13320,7 +13320,7 @@
         "eager_time_s": 0.345
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.21,
         "compile_time_s": 3.777,
@@ -13344,7 +13344,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.21,
         "compile_time_s": 1.729,
@@ -13363,7 +13363,7 @@
         "eager_time_s": 0.272
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.2,
         "compile_time_s": 1.989,
@@ -13387,7 +13387,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.17,
         "compile_time_s": 2.743,
@@ -13406,7 +13406,7 @@
         "eager_time_s": 0.69
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.21,
         "compile_time_s": 2.233,
@@ -13430,7 +13430,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.22,
         "compile_time_s": 1.68,
@@ -13449,7 +13449,7 @@
         "eager_time_s": 0.384
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.22,
         "compile_time_s": 1.62,
@@ -13473,7 +13473,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.17,
         "compile_time_s": 1.381,
@@ -13492,7 +13492,7 @@
         "eager_time_s": 0.382
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.21,
         "compile_time_s": 1.495,
@@ -13516,7 +13516,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.22,
         "compile_time_s": 1.421,
@@ -13535,7 +13535,7 @@
         "eager_time_s": 0.421
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.19,
         "compile_time_s": 1.446,
@@ -13732,7 +13732,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 15.831,
         "eager_time_s": 0.661,
         "compile_time_s": 2.173,
@@ -13752,7 +13752,7 @@
         "wall_time_s": 25.16
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 15.31,
         "eager_time_s": 0.582,
         "compile_time_s": 2.187,
@@ -13777,7 +13777,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 22.674,
         "eager_time_s": 0.633,
         "compile_time_s": 2.174,
@@ -13797,7 +13797,7 @@
         "wall_time_s": 35.27
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 23.457,
         "eager_time_s": 0.723,
         "compile_time_s": 2.104,
@@ -13822,7 +13822,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 30.3,
         "compile_time_s": 1.804,
@@ -13841,7 +13841,7 @@
         "eager_time_s": 0.475
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 30.25,
         "compile_time_s": 1.905,
@@ -13865,7 +13865,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 12.382,
         "eager_time_s": 0.439,
         "compile_time_s": 2.066,
@@ -13885,7 +13885,7 @@
         "wall_time_s": 25.23
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 12.649,
         "eager_time_s": 0.435,
         "compile_time_s": 1.968,
@@ -13910,7 +13910,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 6.861,
         "eager_time_s": 0.433,
         "fullgraph_ok": true,
@@ -13930,7 +13930,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 6.93,
         "eager_time_s": 0.5,
         "fullgraph_ok": true,
@@ -13955,7 +13955,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 15.89,
         "eager_time_s": 0.668,
         "compile_time_s": 2.527,
@@ -13975,7 +13975,7 @@
         "wall_time_s": 25.18
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 16.506,
         "eager_time_s": 0.644,
         "compile_time_s": 2.327,
@@ -14000,7 +14000,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 12.394,
         "eager_time_s": 0.396,
         "compile_time_s": 1.827,
@@ -14020,7 +14020,7 @@
         "wall_time_s": 25.16
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 12.96,
         "eager_time_s": 0.424,
         "compile_time_s": 1.827,
@@ -14045,7 +14045,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 21.365,
         "eager_time_s": 0.534,
         "compile_time_s": 2.133,
@@ -14065,7 +14065,7 @@
         "wall_time_s": 30.28
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 20.694,
         "eager_time_s": 0.604,
         "compile_time_s": 2.283,
@@ -14090,7 +14090,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 24.387,
         "eager_time_s": 0.416,
         "fullgraph_ok": true,
@@ -14110,7 +14110,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 24.961,
         "eager_time_s": 0.406,
         "fullgraph_ok": true,
@@ -14135,7 +14135,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.09,
         "compile_time_s": 2.179,
@@ -14154,7 +14154,7 @@
         "eager_time_s": 0.301
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.11,
         "compile_time_s": 2.267,
@@ -14178,7 +14178,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.15,
         "compile_time_s": 2.384,
@@ -14197,7 +14197,7 @@
         "eager_time_s": 0.366
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.12,
         "compile_time_s": 2.48,
@@ -14221,7 +14221,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.15,
         "compile_time_s": 3.977,
@@ -14240,7 +14240,7 @@
         "eager_time_s": 0.408
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.11,
         "compile_time_s": 4.335,
@@ -14264,7 +14264,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.15,
         "compile_time_s": 4.605,
@@ -14283,7 +14283,7 @@
         "eager_time_s": 0.51
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.11,
         "compile_time_s": 4.957,
@@ -14307,7 +14307,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.16,
         "compile_time_s": 3.872,
@@ -14326,7 +14326,7 @@
         "eager_time_s": 0.573
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.13,
         "compile_time_s": 3.946,
@@ -14350,7 +14350,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.17,
         "compile_time_s": 1.921,
@@ -14369,7 +14369,7 @@
         "eager_time_s": 0.293
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.13,
         "compile_time_s": 2.133,
@@ -14393,7 +14393,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.18,
         "compile_time_s": 1.655,
@@ -14412,7 +14412,7 @@
         "eager_time_s": 0.273
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.14,
         "compile_time_s": 1.672,
@@ -14436,7 +14436,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 7.009,
         "eager_time_s": 0.292,
         "compile_time_s": 1.751,
@@ -14456,7 +14456,7 @@
         "wall_time_s": 15.16
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 7.018,
         "eager_time_s": 0.291,
         "compile_time_s": 1.78,
@@ -14649,7 +14649,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.19,
         "compile_time_s": 1.716,
@@ -14668,7 +14668,7 @@
         "eager_time_s": 0.333
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.14,
         "compile_time_s": 1.678,
@@ -14692,7 +14692,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.17,
         "compile_time_s": 1.435,
@@ -14711,7 +14711,7 @@
         "eager_time_s": 0.498
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.12,
         "compile_time_s": 1.508,
@@ -14828,7 +14828,7 @@
       "source": "hf",
       "has_graph_break": true,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 3.609,
         "eager_time_s": 0.198,
         "fullgraph_ok": true,
@@ -14890,7 +14890,7 @@
       "source": "hf",
       "has_graph_break": true,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 3.993,
         "eager_time_s": 0.217,
         "fullgraph_ok": true,
@@ -15030,7 +15030,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.15,
         "compile_time_s": 2.015,
@@ -15049,7 +15049,7 @@
         "eager_time_s": 0.42
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.13,
         "compile_time_s": 1.959,
@@ -15156,7 +15156,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 7.676,
         "eager_time_s": 0.332,
         "compile_time_s": 1.685,
@@ -15176,7 +15176,7 @@
         "wall_time_s": 20.03
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 7.654,
         "eager_time_s": 0.312,
         "compile_time_s": 1.596,
@@ -15289,7 +15289,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.05,
         "compile_time_s": 1.711,
@@ -15308,7 +15308,7 @@
         "eager_time_s": 0.28
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.0,
         "compile_time_s": 1.755,
@@ -15332,7 +15332,7 @@
       "source": "hf",
       "has_graph_break": true,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.15,
         "compile_time_s": 1.693,
@@ -15385,7 +15385,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 4.357,
         "eager_time_s": 0.376,
         "compile_time_s": 1.854,
@@ -15405,7 +15405,7 @@
         "wall_time_s": 15.06
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 4.355,
         "eager_time_s": 0.375,
         "compile_time_s": 1.773,
@@ -15430,7 +15430,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 3.866,
         "eager_time_s": 0.414,
         "compile_time_s": 1.916,
@@ -15450,7 +15450,7 @@
         "wall_time_s": 15.13
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 3.822,
         "eager_time_s": 0.416,
         "compile_time_s": 2.056,
@@ -15559,7 +15559,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 25.25,
         "compile_time_s": 1.688,
@@ -15578,7 +15578,7 @@
         "eager_time_s": 0.25
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 25.2,
         "compile_time_s": 1.736,
@@ -15602,7 +15602,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.04,
         "compile_time_s": 2.064,
@@ -15621,7 +15621,7 @@
         "eager_time_s": 0.469
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.0,
         "compile_time_s": 1.977,
@@ -15645,7 +15645,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.16,
         "compile_time_s": 1.33,
@@ -15664,7 +15664,7 @@
         "eager_time_s": 0.289
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.13,
         "compile_time_s": 1.456,
@@ -15688,7 +15688,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 27.078,
         "eager_time_s": 0.382,
         "fullgraph_ok": true,
@@ -15708,7 +15708,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 25.956,
         "eager_time_s": 0.421,
         "fullgraph_ok": true,
@@ -15733,7 +15733,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 3.978,
         "eager_time_s": 0.571,
         "compile_time_s": 2.277,
@@ -15753,7 +15753,7 @@
         "wall_time_s": 15.04
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 3.909,
         "eager_time_s": 0.648,
         "compile_time_s": 2.267,
@@ -15778,7 +15778,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 3.915,
         "eager_time_s": 0.386,
         "compile_time_s": 1.687,
@@ -15798,7 +15798,7 @@
         "wall_time_s": 15.04
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 3.849,
         "eager_time_s": 0.389,
         "compile_time_s": 1.724,
@@ -15823,7 +15823,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.18,
         "compile_time_s": 1.538,
@@ -15842,7 +15842,7 @@
         "eager_time_s": 0.48
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.14,
         "compile_time_s": 1.439,
@@ -15866,7 +15866,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 3.829,
         "eager_time_s": 0.658,
         "compile_time_s": 2.177,
@@ -15886,7 +15886,7 @@
         "wall_time_s": 15.11
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 3.938,
         "eager_time_s": 0.666,
         "compile_time_s": 2.214,
@@ -15911,7 +15911,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 3.906,
         "eager_time_s": 0.383,
         "compile_time_s": 1.712,
@@ -15931,7 +15931,7 @@
         "wall_time_s": 15.18
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 3.591,
         "eager_time_s": 0.385,
         "compile_time_s": 1.568,
@@ -15956,7 +15956,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.09,
         "compile_time_s": 1.427,
@@ -15975,7 +15975,7 @@
         "eager_time_s": 0.395
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.17,
         "compile_time_s": 1.449,
@@ -16330,7 +16330,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 3.204,
         "eager_time_s": 0.528,
         "fullgraph_ok": true,
@@ -16350,7 +16350,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 3.215,
         "eager_time_s": 0.587,
         "fullgraph_ok": true,
@@ -16375,7 +16375,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.29,
         "compile_time_s": 8.415,
@@ -16394,7 +16394,7 @@
         "eager_time_s": 0.406
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.25,
         "compile_time_s": 9.669,
@@ -16453,7 +16453,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.17,
         "compile_time_s": 5.443,
@@ -16472,7 +16472,7 @@
         "eager_time_s": 0.508
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.13,
         "compile_time_s": 5.737,
@@ -16496,7 +16496,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 5.296,
         "eager_time_s": 0.382,
         "compile_time_s": 1.878,
@@ -16516,7 +16516,7 @@
         "wall_time_s": 15.04
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 5.099,
         "eager_time_s": 0.4,
         "compile_time_s": 1.815,
@@ -16541,7 +16541,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 6.326,
         "eager_time_s": 0.395,
         "compile_time_s": 2.029,
@@ -16561,7 +16561,7 @@
         "wall_time_s": 15.11
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 6.244,
         "eager_time_s": 0.396,
         "compile_time_s": 1.969,
@@ -16776,7 +16776,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.03,
         "compile_time_s": 1.572,
@@ -16795,7 +16795,7 @@
         "eager_time_s": 0.396
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.0,
         "compile_time_s": 1.606,
@@ -16819,7 +16819,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.05,
         "compile_time_s": 1.665,
@@ -16838,7 +16838,7 @@
         "eager_time_s": 0.389
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.0,
         "compile_time_s": 1.634,
@@ -16974,7 +16974,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 50.1,
         "compile_time_s": 10.217,
@@ -16993,7 +16993,7 @@
         "eager_time_s": 1.079
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 55.11,
         "compile_time_s": 10.318,
@@ -17173,7 +17173,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 7.74,
         "eager_time_s": 0.306,
         "compile_time_s": 7.848,
@@ -17193,7 +17193,7 @@
         "wall_time_s": 25.28
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 7.637,
         "eager_time_s": 0.348,
         "compile_time_s": 7.608,
@@ -17253,7 +17253,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 40.29,
         "compile_time_s": 1.826,
@@ -17272,7 +17272,7 @@
         "eager_time_s": 0.382
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 40.25,
         "compile_time_s": 1.916,
@@ -17296,7 +17296,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.04,
         "compile_time_s": 1.86,
@@ -17315,7 +17315,7 @@
         "eager_time_s": 0.356
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.0,
         "compile_time_s": 1.91,
@@ -17339,7 +17339,7 @@
       "source": "hf",
       "has_graph_break": true,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 11.024,
         "eager_time_s": 0.654,
         "fullgraph_ok": true,
@@ -17433,7 +17433,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 28.599,
         "eager_time_s": 0.48,
         "compile_time_s": 2.05,
@@ -17453,7 +17453,7 @@
         "wall_time_s": 40.51
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 27.998,
         "eager_time_s": 0.493,
         "compile_time_s": 2.045,
@@ -17478,7 +17478,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.14,
         "compile_time_s": 1.99,
@@ -17497,7 +17497,7 @@
         "eager_time_s": 0.65
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.08,
         "compile_time_s": 2.111,
@@ -17521,7 +17521,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.1,
         "compile_time_s": 1.9,
@@ -17540,7 +17540,7 @@
         "eager_time_s": 0.37
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.21,
         "compile_time_s": 1.935,
@@ -17564,7 +17564,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 13.568,
         "eager_time_s": 0.824,
         "compile_time_s": 2.365,
@@ -17584,7 +17584,7 @@
         "wall_time_s": 25.31
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 14.447,
         "eager_time_s": 0.855,
         "compile_time_s": 2.608,
@@ -17609,7 +17609,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 6.025,
         "eager_time_s": 0.51,
         "compile_time_s": 1.722,
@@ -17629,7 +17629,7 @@
         "wall_time_s": 15.08
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 6.514,
         "eager_time_s": 0.564,
         "compile_time_s": 1.67,
@@ -17691,7 +17691,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.12,
         "compile_time_s": 1.594,
@@ -17710,7 +17710,7 @@
         "eager_time_s": 0.356
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.18,
         "compile_time_s": 1.842,
@@ -17734,7 +17734,7 @@
       "source": "hf",
       "has_graph_break": true,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.15,
         "compile_time_s": 1.586,
@@ -17755,7 +17755,7 @@
         "eager_time_s": 0.536
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.25,
         "compile_time_s": 1.701,
@@ -17816,7 +17816,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.21,
         "compile_time_s": 3.457,
@@ -17835,7 +17835,7 @@
         "eager_time_s": 0.44
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.21,
         "compile_time_s": 3.664,
@@ -17859,7 +17859,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.21,
         "compile_time_s": 3.248,
@@ -17878,7 +17878,7 @@
         "eager_time_s": 1.926
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.17,
         "compile_time_s": 3.212,
@@ -17902,7 +17902,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 25.718,
         "eager_time_s": 0.434,
         "compile_time_s": 1.977,
@@ -17922,7 +17922,7 @@
         "wall_time_s": 35.36
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 24.688,
         "eager_time_s": 0.419,
         "compile_time_s": 1.968,
@@ -17947,7 +17947,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 10.726,
         "eager_time_s": 0.59,
         "compile_time_s": 2.212,
@@ -17967,7 +17967,7 @@
         "wall_time_s": 20.04
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 10.659,
         "eager_time_s": 0.579,
         "compile_time_s": 2.232,
@@ -17992,7 +17992,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 18.616,
         "eager_time_s": 0.423,
         "fullgraph_ok": true,
@@ -18012,7 +18012,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 18.499,
         "eager_time_s": 0.417,
         "fullgraph_ok": true,
@@ -18037,7 +18037,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 6.137,
         "eager_time_s": 0.386,
         "compile_time_s": 2.015,
@@ -18057,7 +18057,7 @@
         "wall_time_s": 15.09
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 6.12,
         "eager_time_s": 0.477,
         "compile_time_s": 1.932,
@@ -18082,7 +18082,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 11.714,
         "eager_time_s": 0.485,
         "compile_time_s": 2.153,
@@ -18102,7 +18102,7 @@
         "wall_time_s": 25.23
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 12.09,
         "eager_time_s": 0.478,
         "compile_time_s": 1.954,
@@ -18164,7 +18164,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 58.215,
         "eager_time_s": 0.373,
         "fullgraph_ok": true,
@@ -18184,7 +18184,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 60.713,
         "eager_time_s": 0.362,
         "fullgraph_ok": true,
@@ -18209,7 +18209,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 5.892,
         "eager_time_s": 0.369,
         "compile_time_s": 1.915,
@@ -18229,7 +18229,7 @@
         "wall_time_s": 15.03
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 5.909,
         "eager_time_s": 0.342,
         "compile_time_s": 1.942,
@@ -18254,7 +18254,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 25.029,
         "eager_time_s": 0.385,
         "compile_time_s": 1.839,
@@ -18274,7 +18274,7 @@
         "wall_time_s": 35.03
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 25.929,
         "eager_time_s": 0.392,
         "compile_time_s": 1.918,
@@ -18299,7 +18299,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 9.425,
         "eager_time_s": 0.564,
         "compile_time_s": 2.015,
@@ -18319,7 +18319,7 @@
         "wall_time_s": 20.12
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 9.051,
         "eager_time_s": 0.566,
         "compile_time_s": 2.059,
@@ -18464,7 +18464,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 34.858,
         "eager_time_s": 0.426,
         "fullgraph_ok": true,
@@ -18484,7 +18484,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 34.958,
         "eager_time_s": 0.385,
         "fullgraph_ok": true,
@@ -18509,7 +18509,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 18.853,
         "eager_time_s": 0.548,
         "fullgraph_ok": true,
@@ -18529,7 +18529,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 19.905,
         "eager_time_s": 0.545,
         "fullgraph_ok": true,
@@ -18554,7 +18554,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 9.963,
         "eager_time_s": 0.571,
         "compile_time_s": 2.073,
@@ -18574,7 +18574,7 @@
         "wall_time_s": 20.22
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 9.766,
         "eager_time_s": 0.567,
         "compile_time_s": 2.189,
@@ -18599,7 +18599,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 25.67,
         "eager_time_s": 0.402,
         "compile_time_s": 2.052,
@@ -18619,7 +18619,7 @@
         "wall_time_s": 35.21
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 25.582,
         "eager_time_s": 0.391,
         "compile_time_s": 2.051,
@@ -19457,7 +19457,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.2,
         "compile_time_s": 5.26,
@@ -19476,7 +19476,7 @@
         "eager_time_s": 0.708
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.27,
         "compile_time_s": 5.801,
@@ -19500,7 +19500,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.15,
         "compile_time_s": 1.985,
@@ -19519,7 +19519,7 @@
         "eager_time_s": 0.34
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.15,
         "compile_time_s": 1.906,
@@ -19543,7 +19543,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.23,
         "compile_time_s": 3.868,
@@ -19562,7 +19562,7 @@
         "eager_time_s": 0.474
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.25,
         "compile_time_s": 4.192,
@@ -19586,7 +19586,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.23,
         "compile_time_s": 2.051,
@@ -19605,7 +19605,7 @@
         "eager_time_s": 0.323
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.19,
         "compile_time_s": 2.079,
@@ -19629,7 +19629,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.22,
         "compile_time_s": 2.144,
@@ -19648,7 +19648,7 @@
         "eager_time_s": 0.355
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.23,
         "compile_time_s": 2.206,
@@ -19672,7 +19672,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.24,
         "compile_time_s": 2.162,
@@ -19691,7 +19691,7 @@
         "eager_time_s": 0.344
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.2,
         "compile_time_s": 2.201,
@@ -19776,7 +19776,7 @@
       "source": "hf",
       "has_graph_break": true,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.19,
         "compile_time_s": 3.717,
@@ -19939,7 +19939,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.14,
         "compile_time_s": 5.11,
@@ -19956,7 +19956,7 @@
         "eager_time_s": 1.17
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.19,
         "compile_time_s": 4.226,
@@ -19978,7 +19978,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.17,
         "compile_time_s": 8.238,
@@ -19995,7 +19995,7 @@
         "eager_time_s": 1.112
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 25.11,
         "compile_time_s": 7.024,
@@ -20054,7 +20054,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.17,
         "compile_time_s": 5.379,
@@ -20071,7 +20071,7 @@
         "eager_time_s": 1.249
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.23,
         "compile_time_s": 4.841,
@@ -20093,7 +20093,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 75.22,
         "compile_time_s": 25.214,
@@ -20112,7 +20112,7 @@
         "eager_time_s": 1.883
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 80.24,
         "compile_time_s": 25.343,
@@ -20136,7 +20136,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 55.13,
         "compile_time_s": 13.096,
@@ -20155,7 +20155,7 @@
         "eager_time_s": 1.948
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 60.17,
         "compile_time_s": 13.665,
@@ -20216,7 +20216,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.03,
         "compile_time_s": 2.857,
@@ -20235,7 +20235,7 @@
         "eager_time_s": 1.584
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.21,
         "compile_time_s": 1.771,
@@ -20296,7 +20296,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 40.24,
         "compile_time_s": 9.146,
@@ -20315,7 +20315,7 @@
         "eager_time_s": 1.287
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 40.22,
         "compile_time_s": 9.159,
@@ -20339,7 +20339,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.12,
         "compile_time_s": 3.806,
@@ -20358,7 +20358,7 @@
         "eager_time_s": 0.753
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.08,
         "compile_time_s": 3.645,
@@ -20382,7 +20382,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.16,
         "compile_time_s": 1.763,
@@ -20401,7 +20401,7 @@
         "eager_time_s": 0.394
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.16,
         "compile_time_s": 1.834,
@@ -20425,7 +20425,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.12,
         "compile_time_s": 3.475,
@@ -20444,7 +20444,7 @@
         "eager_time_s": 0.584
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.08,
         "compile_time_s": 3.608,
@@ -20468,7 +20468,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.15,
         "compile_time_s": 1.713,
@@ -20487,7 +20487,7 @@
         "eager_time_s": 0.425
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.15,
         "compile_time_s": 1.745,
@@ -20667,7 +20667,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 26.041,
         "eager_time_s": 0.484,
         "compile_time_s": 1.999,
@@ -20687,7 +20687,7 @@
         "wall_time_s": 35.36
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 25.811,
         "eager_time_s": 0.476,
         "compile_time_s": 1.896,
@@ -20712,7 +20712,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 3.52,
         "eager_time_s": 0.434,
         "fullgraph_ok": true,
@@ -20732,7 +20732,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 3.587,
         "eager_time_s": 0.431,
         "fullgraph_ok": true,
@@ -20757,7 +20757,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.08,
         "compile_time_s": 3.18,
@@ -20776,7 +20776,7 @@
         "eager_time_s": 1.841
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.19,
         "compile_time_s": 3.869,
@@ -20875,7 +20875,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.09,
         "compile_time_s": 1.719,
@@ -20894,7 +20894,7 @@
         "eager_time_s": 0.252
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.2,
         "compile_time_s": 1.735,
@@ -20993,7 +20993,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.23,
         "compile_time_s": 2.43,
@@ -21012,7 +21012,7 @@
         "eager_time_s": 0.522
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.22,
         "compile_time_s": 2.587,
@@ -21036,7 +21036,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.21,
         "compile_time_s": 1.781,
@@ -21055,7 +21055,7 @@
         "eager_time_s": 0.286
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.17,
         "compile_time_s": 1.753,
@@ -21079,7 +21079,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.21,
         "compile_time_s": 1.686,
@@ -21098,7 +21098,7 @@
         "eager_time_s": 0.46
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.22,
         "compile_time_s": 1.729,
@@ -21122,7 +21122,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.23,
         "compile_time_s": 1.82,
@@ -21141,7 +21141,7 @@
         "eager_time_s": 0.442
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.19,
         "compile_time_s": 1.807,
@@ -21165,7 +21165,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 19.856,
         "eager_time_s": 0.397,
         "fullgraph_ok": true,
@@ -21185,7 +21185,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 20.161,
         "eager_time_s": 0.382,
         "fullgraph_ok": true,
@@ -21210,7 +21210,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 21.834,
         "eager_time_s": 0.843,
         "compile_time_s": 2.259,
@@ -21230,7 +21230,7 @@
         "wall_time_s": 35.32
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 22.196,
         "eager_time_s": 0.909,
         "compile_time_s": 2.326,
@@ -21511,7 +21511,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.18,
         "compile_time_s": 1.901,
@@ -21530,7 +21530,7 @@
         "eager_time_s": 0.28
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.2,
         "compile_time_s": 1.969,
@@ -21554,7 +21554,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.16,
         "compile_time_s": 1.786,
@@ -21573,7 +21573,7 @@
         "eager_time_s": 0.525
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.11,
         "compile_time_s": 1.905,
@@ -21597,7 +21597,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.18,
         "compile_time_s": 1.984,
@@ -21616,7 +21616,7 @@
         "eager_time_s": 0.339
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.17,
         "compile_time_s": 1.849,
@@ -21640,7 +21640,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.13,
         "compile_time_s": 1.76,
@@ -21659,7 +21659,7 @@
         "eager_time_s": 0.328
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.09,
         "compile_time_s": 2.009,
@@ -21895,7 +21895,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 90.71,
         "compile_time_s": 14.205,
@@ -21914,7 +21914,7 @@
         "eager_time_s": 0.642
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 90.7,
         "compile_time_s": 14.178,
@@ -21938,7 +21938,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 40.04,
         "compile_time_s": 3.56,
@@ -21957,7 +21957,7 @@
         "eager_time_s": 0.434
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 40.01,
         "compile_time_s": 3.406,
@@ -22064,7 +22064,7 @@
       "source": "hf",
       "has_graph_break": true,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.04,
         "compile_time_s": 5.591,
@@ -22134,7 +22134,7 @@
       "source": "hf",
       "has_graph_break": true,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.21,
         "compile_time_s": 2.371,
@@ -22155,7 +22155,7 @@
         "eager_time_s": 0.384
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.17,
         "compile_time_s": 2.313,
@@ -22181,7 +22181,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.2,
         "compile_time_s": 2.881,
@@ -22200,7 +22200,7 @@
         "eager_time_s": 0.492
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.21,
         "compile_time_s": 3.17,
@@ -22304,7 +22304,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 50.49,
         "compile_time_s": 39.492,
@@ -22323,7 +22323,7 @@
         "eager_time_s": 0.98
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 55.62,
         "compile_time_s": 41.685,
@@ -22347,7 +22347,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 3.418,
         "eager_time_s": 0.67,
         "fullgraph_ok": true,
@@ -22367,7 +22367,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 3.463,
         "eager_time_s": 0.599,
         "fullgraph_ok": true,
@@ -22392,7 +22392,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.05,
         "compile_time_s": 1.857,
@@ -22411,7 +22411,7 @@
         "eager_time_s": 0.405
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.0,
         "compile_time_s": 1.924,
@@ -22435,7 +22435,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.13,
         "compile_time_s": 3.968,
@@ -22454,7 +22454,7 @@
         "eager_time_s": 0.441
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.09,
         "compile_time_s": 3.978,
@@ -22478,7 +22478,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 4.61,
         "eager_time_s": 0.736,
         "fullgraph_ok": true,
@@ -22498,7 +22498,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 4.655,
         "eager_time_s": 0.828,
         "fullgraph_ok": true,
@@ -22606,7 +22606,7 @@
       "source": "diffusers",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.2,
         "compile_time_s": 7.169,
@@ -22625,7 +22625,7 @@
         "eager_time_s": 0.642
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.11,
         "compile_time_s": 7.123,
@@ -22649,7 +22649,7 @@
       "source": "diffusers",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.03,
         "compile_time_s": 4.186,
@@ -22668,7 +22668,7 @@
         "eager_time_s": 0.612
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.0,
         "compile_time_s": 3.961,
@@ -22692,7 +22692,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 3.168,
         "eager_time_s": 0.494,
         "fullgraph_ok": true,
@@ -22712,7 +22712,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 2.9,
         "eager_time_s": 0.526,
         "fullgraph_ok": true,
@@ -22984,7 +22984,7 @@
       "source": "hf",
       "has_graph_break": true,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.2,
         "compile_time_s": 2.756,
@@ -23007,7 +23007,7 @@
         "eager_time_s": 0.494
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.3,
         "compile_time_s": 2.764,
@@ -23035,7 +23035,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 25.41,
         "compile_time_s": 6.915,
@@ -23054,7 +23054,7 @@
         "eager_time_s": 0.979
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 25.42,
         "compile_time_s": 6.98,
@@ -23078,7 +23078,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 25.31,
         "compile_time_s": 1.941,
@@ -23097,7 +23097,7 @@
         "eager_time_s": 0.434
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 25.25,
         "compile_time_s": 1.964,
@@ -23121,7 +23121,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.15,
         "compile_time_s": 1.558,
@@ -23140,7 +23140,7 @@
         "eager_time_s": 0.48
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.18,
         "compile_time_s": 1.444,
@@ -23164,7 +23164,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.19,
         "compile_time_s": 1.465,
@@ -23183,7 +23183,7 @@
         "eager_time_s": 0.332
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.21,
         "compile_time_s": 1.472,
@@ -23207,7 +23207,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.17,
         "compile_time_s": 1.397,
@@ -23226,7 +23226,7 @@
         "eager_time_s": 0.333
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.22,
         "compile_time_s": 1.538,
@@ -23250,7 +23250,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 5.934,
         "eager_time_s": 0.575,
         "fullgraph_ok": true,
@@ -23270,7 +23270,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 6.018,
         "eager_time_s": 0.602,
         "fullgraph_ok": true,
@@ -23295,7 +23295,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 8.681,
         "eager_time_s": 0.558,
         "fullgraph_ok": true,
@@ -23315,7 +23315,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 8.565,
         "eager_time_s": 0.662,
         "fullgraph_ok": true,
@@ -23340,7 +23340,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 15.148,
         "eager_time_s": 0.641,
         "fullgraph_ok": true,
@@ -23360,7 +23360,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 14.719,
         "eager_time_s": 0.63,
         "fullgraph_ok": true,
@@ -23385,7 +23385,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 26.486,
         "eager_time_s": 0.395,
         "fullgraph_ok": true,
@@ -23405,7 +23405,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 26.534,
         "eager_time_s": 0.401,
         "fullgraph_ok": true,
@@ -23555,7 +23555,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 25.31,
         "compile_time_s": 2.052,
@@ -23574,7 +23574,7 @@
         "eager_time_s": 0.393
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 25.35,
         "compile_time_s": 2.059,
@@ -23598,7 +23598,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.1,
         "compile_time_s": 1.513,
@@ -23617,7 +23617,7 @@
         "eager_time_s": 0.372
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.09,
         "compile_time_s": 1.542,
@@ -23736,7 +23736,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 13.866,
         "eager_time_s": 0.141,
         "fullgraph_ok": true,
@@ -23756,7 +23756,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 13.853,
         "eager_time_s": 0.131,
         "fullgraph_ok": true,
@@ -23781,7 +23781,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 5.404,
         "eager_time_s": 0.437,
         "fullgraph_ok": true,
@@ -23801,7 +23801,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 5.492,
         "eager_time_s": 0.466,
         "fullgraph_ok": true,
@@ -23826,7 +23826,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 5.101,
         "eager_time_s": 0.492,
         "compile_time_s": 2.429,
@@ -23846,7 +23846,7 @@
         "wall_time_s": 15.15
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 5.049,
         "eager_time_s": 0.498,
         "compile_time_s": 2.579,
@@ -23871,7 +23871,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.16,
         "compile_time_s": 1.704,
@@ -23890,7 +23890,7 @@
         "eager_time_s": 0.25
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.12,
         "compile_time_s": 1.756,
@@ -23914,7 +23914,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.17,
         "compile_time_s": 1.389,
@@ -23933,7 +23933,7 @@
         "eager_time_s": 0.362
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.13,
         "compile_time_s": 1.351,
@@ -24175,7 +24175,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.13,
         "compile_time_s": 1.449,
@@ -24194,7 +24194,7 @@
         "eager_time_s": 0.39
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.09,
         "compile_time_s": 1.441,
@@ -24663,7 +24663,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.16,
         "compile_time_s": 3.572,
@@ -24682,7 +24682,7 @@
         "eager_time_s": 0.621
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.12,
         "compile_time_s": 3.632,
@@ -24706,7 +24706,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.23,
         "compile_time_s": 1.517,
@@ -24725,7 +24725,7 @@
         "eager_time_s": 0.312
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.19,
         "compile_time_s": 1.575,
@@ -24749,7 +24749,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 3.722,
         "eager_time_s": 0.426,
         "fullgraph_ok": true,
@@ -24769,7 +24769,7 @@
         }
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 4.056,
         "eager_time_s": 0.393,
         "fullgraph_ok": true,
@@ -24794,7 +24794,7 @@
       "source": "hf",
       "has_graph_break": true,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.17,
         "compile_time_s": 1.64,
@@ -24847,7 +24847,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.17,
         "compile_time_s": 1.765,
@@ -24866,7 +24866,7 @@
         "eager_time_s": 0.397
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.14,
         "compile_time_s": 1.657,
@@ -24890,7 +24890,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.19,
         "compile_time_s": 2.029,
@@ -24909,7 +24909,7 @@
         "eager_time_s": 0.333
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.15,
         "compile_time_s": 2.093,
@@ -24933,7 +24933,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 30.39,
         "compile_time_s": 1.947,
@@ -24952,7 +24952,7 @@
         "eager_time_s": 0.303
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 30.35,
         "compile_time_s": 1.957,
@@ -24976,7 +24976,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.05,
         "compile_time_s": 1.89,
@@ -24995,7 +24995,7 @@
         "eager_time_s": 0.432
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.0,
         "compile_time_s": 1.931,
@@ -25122,7 +25122,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 4.062,
         "eager_time_s": 0.478,
         "compile_time_s": 2.751,
@@ -25142,7 +25142,7 @@
         "wall_time_s": 15.04
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "create_time_s": 4.127,
         "eager_time_s": 0.404,
         "compile_time_s": 2.734,
@@ -25167,7 +25167,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.12,
         "compile_time_s": 1.793,
@@ -25186,7 +25186,7 @@
         "eager_time_s": 0.442
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.1,
         "compile_time_s": 1.785,
@@ -25210,7 +25210,7 @@
       "source": "hf",
       "has_graph_break": true,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.14,
         "compile_time_s": 1.66,
@@ -25229,7 +25229,7 @@
         "eager_time_s": 0.37
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 15.11,
         "compile_time_s": 1.902,
@@ -25255,7 +25255,7 @@
       "source": "hf",
       "has_graph_break": false,
       "eval": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.15,
         "compile_time_s": 2.174,
@@ -25274,7 +25274,7 @@
         "eager_time_s": 0.395
       },
       "train": {
-        "status": "clean",
+        "status": "full_graph",
         "fullgraph_ok": true,
         "wall_time_s": 20.11,
         "compile_time_s": 2.206,
