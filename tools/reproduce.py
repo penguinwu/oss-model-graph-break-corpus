@@ -7,6 +7,8 @@ Usage:
     python reproduce.py BartModel --mode train --device cpu
     python reproduce.py BartModel --explain          # show ALL graph breaks
     python reproduce.py BartModel --explain --verbose # include user stack traces
+    python reproduce.py BartModel --dynamic mark     # dynamic shapes (realistic dims)
+    python reproduce.py BartModel --dynamic true     # dynamic shapes (all dims)
 """
 import argparse
 import json
@@ -30,6 +32,8 @@ def main():
                         help="Run torch._dynamo.explain() to show ALL graph breaks")
     parser.add_argument("--verbose", action="store_true",
                         help="Show user stack traces for each break (with --explain)")
+    parser.add_argument("--dynamic", choices=["mark", "true"],
+                        help="Enable dynamic shapes: 'mark' = batch+seq_len, 'true' = all dims")
     args = parser.parse_args()
 
     if args.list:
@@ -59,7 +63,7 @@ def main():
         sys.exit(1)
 
     import torch._dynamo
-    from worker import create_model
+    from worker import create_model, _mark_dynamic_dims
 
     # Look up model in corpus to get source
     corpus_path = os.path.join(REPO_ROOT, "corpus", "corpus.json")
@@ -98,6 +102,8 @@ def main():
     print(f"Model: {spec['name']} (source={spec['source']})")
     print(f"Mode:  {args.mode}")
     print(f"Device: {args.device}")
+    if args.dynamic:
+        print(f"Dynamic: {args.dynamic}")
     print()
 
     # Step 1: Create model
@@ -132,12 +138,24 @@ def main():
         print()
         print("Running torch._dynamo.explain()...")
         torch._dynamo.reset()
+
+        # Apply dynamic shapes if requested
+        if args.dynamic == "mark":
+            _mark_dynamic_dims(inputs_dict, inputs_tuple, spec["source"],
+                               spec.get("input_type", "auto"))
+            print("  (dynamic=mark: batch + seq_len dims marked dynamic)")
+        elif args.dynamic == "true":
+            print("  (dynamic=True: all dims symbolic)")
+
         try:
+            explain_kwargs = {}
+            if args.dynamic == "true":
+                explain_kwargs["dynamic"] = True
             with ctx:
                 if inputs_tuple:
-                    explanation = torch._dynamo.explain(model)(*inputs_tuple)
+                    explanation = torch._dynamo.explain(model, **explain_kwargs)(*inputs_tuple)
                 else:
-                    explanation = torch._dynamo.explain(model)(**inputs_dict)
+                    explanation = torch._dynamo.explain(model, **explain_kwargs)(**inputs_dict)
         except Exception as ex:
             print(f"  explain() failed: {ex}")
             sys.exit(1)
@@ -180,9 +198,19 @@ def main():
         return
 
     # Step 3: Compile with fullgraph=True
-    print("Running torch.compile(fullgraph=True, backend='eager')...")
+    compile_dynamic = None
+    dynamic_label = ""
+    if args.dynamic == "mark":
+        _mark_dynamic_dims(inputs_dict, inputs_tuple, spec["source"],
+                           spec.get("input_type", "auto"))
+        dynamic_label = ", dynamic=mark"
+    elif args.dynamic == "true":
+        compile_dynamic = True
+        dynamic_label = ", dynamic=True"
+
+    print(f"Running torch.compile(fullgraph=True, backend='eager'{dynamic_label})...")
     torch._dynamo.reset()
-    compiled = torch.compile(model, fullgraph=True, backend="eager")
+    compiled = torch.compile(model, fullgraph=True, backend="eager", dynamic=compile_dynamic)
     try:
         with ctx:
             if inputs_tuple:
@@ -198,12 +226,18 @@ def main():
         print()
         print("Running torch._dynamo.explain() for details...")
         torch._dynamo.reset()
+        if args.dynamic == "mark":
+            _mark_dynamic_dims(inputs_dict, inputs_tuple, spec["source"],
+                               spec.get("input_type", "auto"))
         try:
+            explain_kwargs = {}
+            if args.dynamic == "true":
+                explain_kwargs["dynamic"] = True
             with ctx:
                 if inputs_tuple:
-                    explanation = torch._dynamo.explain(model)(*inputs_tuple)
+                    explanation = torch._dynamo.explain(model, **explain_kwargs)(*inputs_tuple)
                 else:
-                    explanation = torch._dynamo.explain(model)(**inputs_dict)
+                    explanation = torch._dynamo.explain(model, **explain_kwargs)(**inputs_dict)
             print(f"  Graphs: {explanation.graph_count}")
             print(f"  Graph breaks: {explanation.graph_break_count}")
             if hasattr(explanation, "break_reasons") and explanation.break_reasons:

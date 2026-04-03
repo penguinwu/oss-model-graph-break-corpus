@@ -1151,6 +1151,42 @@ def run_validation(args):
                   f"max_diff={r.get('max_diff','?')} — {r.get('compare_details','')}")
 
 
+def check_env(args):
+    """Pre-sweep environment validation: check installed versions against corpus."""
+    python_bin = args.python or sys.executable
+    version_check_script = SWEEP_DIR.parent / "tools" / "version_check.py"
+
+    if not version_check_script.exists():
+        print(f"ERROR: version_check.py not found at {version_check_script}")
+        sys.exit(1)
+
+    print("Pre-sweep environment check")
+    print("=" * 50)
+
+    # Run version_check.py with the specified python binary
+    try:
+        result = subprocess.run(
+            [python_bin, str(version_check_script)],
+            capture_output=True, text=True, timeout=30,
+        )
+        print(result.stdout)
+        if result.stderr:
+            print(result.stderr, file=sys.stderr)
+        if result.returncode != 0:
+            print("FAILED: Environment does not match corpus versions.")
+            print("Fix version mismatches before running the sweep.")
+            sys.exit(1)
+        else:
+            print("PASSED: Environment matches corpus versions.")
+            sys.exit(0)
+    except subprocess.TimeoutExpired:
+        print("ERROR: Version check timed out")
+        sys.exit(1)
+    except Exception as e:
+        print(f"ERROR: {e}")
+        sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Two-pass graph break sweep orchestrator",
@@ -1205,10 +1241,14 @@ def main():
                         help="Resume from checkpoint (skip completed models)")
     parser.add_argument("--skip-models",
                         help="JSON file with list of model names to skip (toxic models)")
+    parser.add_argument("--check-env", action="store_true",
+                        help="Check installed versions against corpus and exit (pre-sweep validation)")
 
     args = parser.parse_args()
 
-    if args.validate or args.validate_from:
+    if args.check_env:
+        check_env(args)
+    elif args.validate or args.validate_from:
         run_validation(args)
     else:
         run_sweep(args)

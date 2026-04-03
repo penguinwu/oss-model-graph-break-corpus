@@ -10,6 +10,7 @@ Usage:
     python tools/query.py --top-errors             # Top error categories
     python tools/query.py --mode-diff              # Models that differ between eval/train
     python tools/query.py --json                   # Machine-readable output
+    python tools/query.py --error deepcopy --output models.json  # Export for targeted sweep
 """
 import argparse
 import json
@@ -214,6 +215,7 @@ def main():
     parser.add_argument("--top-errors", action="store_true", help="Show top error categories")
     parser.add_argument("--mode-diff", action="store_true", help="Show models that differ between eval and train")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
+    parser.add_argument("--output", "-o", help="Write matching models to JSON file (for targeted sweeps)")
     args = parser.parse_args()
 
     corpus = load_corpus()
@@ -240,6 +242,15 @@ def main():
 
     results = filter_models(corpus, status=args.status, error=args.error,
                             mode=args.mode, source=args.source)
+
+    if args.output:
+        # Export as sweep-compatible JSON (name + source, for run_sweep.py --models)
+        export = [{"name": m["name"], "source": m.get("source", "hf")} for m in results]
+        with open(args.output, "w") as f:
+            json.dump(export, f, indent=2)
+            f.write("\n")
+        print(f"Wrote {len(export)} models to {args.output}")
+        return
 
     if args.json:
         print(json.dumps([_model_to_json(m, args.mode) for m in results], indent=2))

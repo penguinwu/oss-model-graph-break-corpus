@@ -6,7 +6,7 @@ A corpus of **468 open-source models** tested for `torch.compile(fullgraph=True)
 
 | Status | Eval | Train |
 |--------|------|-------|
-| **Clean** | 352 (75%) | 337 (72%) |
+| **Full Graph** | 352 (75%) | 337 (72%) |
 | **Graph Break** | 92 (20%) | 106 (23%) |
 | Eager Error | 14 (3%) | 15 (3%) |
 | Create Error | 7 (1%) | 7 (1%) |
@@ -14,7 +14,7 @@ A corpus of **468 open-source models** tested for `torch.compile(fullgraph=True)
 
 **109 models** have graph breaks in at least one mode. 3 targeted PRs (deepcopy→clone, un-skip audio callables, Logger support) would fix **44 models (40%)**.
 
-With `mark_dynamic` on batch + seq_len dims, 9 additional models break — primarily from constraint violations where models specialize on dimensions marked as dynamic. Counterintuitively, `mark_dynamic` (335 clean eval) is stricter than `dynamic=true` (339 clean eval).
+With `mark_dynamic` on batch + seq_len dims, 9 additional models break — primarily from constraint violations where models specialize on dimensions marked as dynamic. Counterintuitively, `mark_dynamic` (335 full_graph eval) is stricter than `dynamic=true` (339 full_graph eval).
 
 ## Quick Start (Corpus Consumers)
 
@@ -43,8 +43,26 @@ pip install torch==2.10.0 transformers==5.4.0 diffusers==0.37.1
 python tools/reproduce.py BartModel
 python tools/reproduce.py BartModel --mode train
 
+# Show ALL graph breaks (not just the first)
+python tools/reproduce.py BartModel --explain
+python tools/reproduce.py BartModel --explain --verbose  # include stack traces
+
+# Test with dynamic shapes
+python tools/reproduce.py BartModel --dynamic mark  # batch + seq_len dims
+python tools/reproduce.py BartModel --dynamic true  # all dims symbolic
+
 # Or explicitly on GPU
 python tools/reproduce.py BartModel --device cuda
+```
+
+### Check your environment
+
+```bash
+# Verify installed versions match the corpus
+python tools/version_check.py
+
+# Pre-sweep environment validation
+python sweep/run_sweep.py --check-env
 ```
 
 ### Compare sweep results
@@ -102,6 +120,47 @@ python sweep/worker.py --model hf/ModelName --device cuda
 | `sweep/sweep_watchdog.py` | Progress monitor + auto-restart on failure |
 
 The sweep uses process-group isolation, non-blocking polling, GPU pressure backoff, and JSONL checkpointing for crash recovery.
+
+## Debugging Graph Breaks
+
+### TORCH_TRACE + tlparse
+
+For deep investigation of graph breaks, capture the full compilation trace:
+
+```bash
+# Capture trace artifacts to a directory
+TORCH_TRACE=/tmp/trace python tools/reproduce.py BartModel
+
+# Parse the trace into a browsable report
+pip install tlparse  # trace visualization tool for torch.compile artifacts
+tlparse /tmp/trace
+
+# Opens an HTML report with:
+#   - Full graph IR for each subgraph
+#   - Guard expressions that caused breaks
+#   - Dynamo decision log
+#   - Performance counters
+```
+
+### Typical debugging workflow
+
+1. **Identify** — find the model in the corpus: `python tools/query.py --error deepcopy`
+2. **Reproduce** — confirm the break: `python tools/reproduce.py ModelName`
+3. **Explain** — see all break reasons: `python tools/reproduce.py ModelName --explain --verbose`
+4. **Trace** — capture full artifacts: `TORCH_TRACE=/tmp/trace python tools/reproduce.py ModelName`
+5. **Parse** — browse the trace: `tlparse /tmp/trace`
+6. **Fix** — patch the model or upstream (see "Fix a model" above)
+7. **Verify** — re-run: `python tools/reproduce.py ModelName`
+
+### Export models for batch investigation
+
+```bash
+# Export all deepcopy-broken models for a targeted sweep
+python tools/query.py --error deepcopy --output deepcopy_models.json
+
+# Run a sweep on just those models
+python sweep/run_sweep.py --models deepcopy_models.json --device cuda
+```
 
 ## Environment
 
