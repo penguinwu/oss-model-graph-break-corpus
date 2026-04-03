@@ -74,8 +74,8 @@
     },
     {
       "name": "EdgeTamModel",
-      "eval": { "status": "timeout" },
-      "train": { "status": "timeout" }
+      "eval": { "status": "create_error" },
+      "train": { "status": "create_error" }
     },
     {
       "name": "BrosModel",

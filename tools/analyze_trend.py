@@ -80,11 +80,18 @@ def find_version_dirs(args):
                 sys.exit(1)
             versions.append({"label": label, "identify": p1, "explain": p2, "dir": d})
     else:
-        # Auto-discover: sweep_results/v2.* directories + main corpus
+        # Auto-discover: sweep_results/v2.* directories
         sweep_dir = os.path.join(REPO_ROOT, "sweep_results")
+
+        def version_key(name):
+            """Sort v2.8, v2.9, v2.10 by numeric version."""
+            parts = name.lstrip("v").split(".")
+            return tuple(int(p) for p in parts if p.isdigit())
+
         version_dirs = sorted(
-            d for d in os.listdir(sweep_dir)
-            if d.startswith("v") and os.path.isfile(os.path.join(sweep_dir, d, "identify_results.json"))
+            (d for d in os.listdir(sweep_dir)
+             if d.startswith("v") and os.path.isfile(os.path.join(sweep_dir, d, "identify_results.json"))),
+            key=version_key,
         )
         for vd in version_dirs:
             vpath = os.path.join(sweep_dir, vd)
@@ -93,18 +100,6 @@ def find_version_dirs(args):
                 "identify": os.path.join(vpath, "identify_results.json"),
                 "explain": os.path.join(vpath, "explain_results.json"),
                 "dir": vpath,
-            })
-        # Add main corpus as latest version
-        corpus_path = os.path.join(REPO_ROOT, "corpus", "corpus.json")
-        explain_path = os.path.join(sweep_dir, "explain", "explain_results.json")
-        if os.path.exists(corpus_path):
-            # Try to detect version from versions.json or metadata
-            label = "v2.10"
-            versions.append({
-                "label": label,
-                "identify": corpus_path,
-                "explain": explain_path,
-                "dir": sweep_dir,
             })
 
     return versions
