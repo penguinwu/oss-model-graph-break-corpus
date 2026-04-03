@@ -62,6 +62,7 @@ Each model is tested under `torch.compile(fullgraph=True, backend="eager")` in b
 **Classification:**
 - **Clean** = fullgraph compile succeeds
 - **Graph break** = Dynamo raises `Unsupported` or similar
+- **Explain error** = model passes eager but `explain()` crashes during tracing (compile-time error — valuable signal for PT2 developers)
 - **Eager error** = model fails in eager mode (input/config issue, not a compile problem)
 - **Create error** = model instantiation fails
 - **Timeout** = exceeds time limit
@@ -141,21 +142,29 @@ Static graph breaks persist under dynamic shapes. Dynamic testing reveals **cons
 
 #### All-Breaks Deep Dive (Pass 2 — explain)
 
-Pass 1 counts one break per model (first encountered). Pass 2 uses `torch._dynamo.explain()` to enumerate **all** graph breaks across 107 broken models (214 model×mode pairs). Total: **1,275 graph breaks**, with 661 break_reasons entries (explain API does not emit a reason for every break).
+Pass 1 counts one break per model (first encountered). Pass 2 uses `torch._dynamo.explain()` to enumerate **all** graph breaks across 106 broken models (209 model×mode pairs). Total: **1,247 graph breaks**, with 649 break_reasons entries (explain API does not emit a reason for every break).
+
+3 models (4 model×mode pairs) produce **explain_error** — eager passes but `explain()` crashes during Dynamo tracing. These are compile-time errors, not setup issues, and represent valuable signal for PT2 developers:
+
+| Model | Mode | Error |
+|-------|------|-------|
+| AutoformerModel | eval, train | FakeTensor symbolic shape bug in FFT autocorrelation (`irfft` + `view` shape divergence) |
+| InformerModel | eval | Conv downsampling (`distil=True`) shrinks hidden_states but mask size stays fixed |
+| MambaModel, FalconMambaModel | eval | `mark_static_address()` forbidden callable during cache initialization |
 
 | Root Cause | Breaks | % | Models | Description |
 |------------|--------|---|--------|-------------|
-| **Data-dependent branching** | 238 | 36.0% | 57 | Control flow depends on tensor values (`if tensor.sum() > 0`, `_local_scalar_dense`) |
-| **as_proxy() missing** | 82 | 12.4% | 10 | Dynamo can't convert arg types to proxy (DETR models pass ValueError/bool) |
-| **Dynamic shape operator** | 77 | 11.6% | 16 | Op output shape depends on data (`aten.nonzero`, `repeat_interleave`) |
-| **copy.deepcopy()** | 77 | 11.6% | 25 | Encoder-decoder models clone layers with `copy.deepcopy()` |
-| **Tensor.item()** | 48 | 7.3% | 7 | Tensor→scalar conversion breaks tracing |
-| **Skipped function call** | 48 | 7.3% | 15 | Dynamo-marked not-traceable (audio `importlib.util.find_spec`) |
-| **Unsupported op/step** | 31 | 4.7% | 12 | Bytecode pattern Dynamo hasn't implemented (Aria/Glm4v vision) |
-| **Tensor requires_grad mutation** | 18 | 2.7% | 12 | In-place `requires_grad_()` mutation |
+| **Data-dependent branching** | 237 | 36.5% | 56 | Control flow depends on tensor values (`if tensor.sum() > 0`, `_local_scalar_dense`) |
+| **as_proxy() missing** | 82 | 12.6% | 10 | Dynamo can't convert arg types to proxy (DETR models pass ValueError/bool) |
+| **Dynamic shape operator** | 77 | 11.9% | 16 | Op output shape depends on data (`aten.nonzero`, `repeat_interleave`) |
+| **copy.deepcopy()** | 76 | 11.7% | 25 | Encoder-decoder models clone layers with `copy.deepcopy()` |
+| **Tensor.item()** | 48 | 7.4% | 7 | Tensor→scalar conversion breaks tracing |
+| **Skipped function call** | 48 | 7.4% | 15 | Dynamo-marked not-traceable (audio `importlib.util.find_spec`) |
+| **Unsupported op/step** | 30 | 4.6% | 11 | Bytecode pattern Dynamo hasn't implemented (Aria/Glm4v vision) |
+| **Tensor requires_grad mutation** | 18 | 2.8% | 12 | In-place `requires_grad_()` mutation |
 | **Unsupported method/builtin** | 15 | 2.3% | 4 | `ContiguousFormat.get()`, RNG `.seed()`, context manager `lock` |
 | **logging.Logger** | 15 | 2.3% | 6 | Logger calls during tracing |
-| **Non-Tensor return** | 11 | 1.7% | 1 | torch ops returning ints/tuples Dynamo can't trace |
+| **Non-Tensor return** | 2 | 0.3% | 1 | torch ops returning ints/tuples Dynamo can't trace |
 
 **Key insight:** Data-dependent branching dominates at the break level (36%) even more than at the model level (25%). A single data-dependent model (e.g., EncodecModel with 29 eval breaks) generates many breaks because each branch point creates a separate graph break. By contrast, `copy.deepcopy()` affects more models (25) but generates fewer total breaks (77) because each model typically has just 2–4 deepcopy calls.
 
@@ -193,7 +202,7 @@ DFineModel, DeformableDetrModel, GroundingDinoModel, LwDetrModel, MMGroundingDin
 DbrxModel, FunnelModel, Glm4vMoeVisionModel, Glm4vVisionModel, GlmImageVisionModel, GlmOcrVisionModel, MimiModel, PaddleOCRVisionModel, Phi4MultimodalAudioModel†, VideoLlama3VisionModel. (†train-only)
 
 **7–10. Other categories (12 models, 11%)**
-Observed exception: LongT5Model, SwitchTransformersModel, UdopModel. Non-Tensor return: InformerModel, NllbMoeModel, PeAudioModel. requires_grad(): MraModel, SEWDModel. Other: AriaModel, AutoformerModel, MusicgenModel†, MusicgenMelodyModel†. (†train-only)
+Observed exception: LongT5Model, SwitchTransformersModel, UdopModel. Non-Tensor return: NllbMoeModel, PeAudioModel. requires_grad(): MraModel, SEWDModel. Explain error: AutoformerModel, InformerModel (eval), MambaModel (eval), FalconMambaModel (eval). Other: AriaModel, MusicgenModel†, MusicgenMelodyModel†. (†train-only)
 
 ### 4.4 Remaining Gaps
 

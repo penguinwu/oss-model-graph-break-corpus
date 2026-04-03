@@ -197,26 +197,6 @@ def _fix_config(model_name, config):
         if not getattr(config, "context_length", None):
             config.context_length = 96
 
-    # --- AutoformerModel: Dynamo FakeTensor bug — context_length must equal head_dim ---
-    # The autocorrelation attention uses irfft(x, n=tgt_len) and later view(bsz, heads, tgt_len, head_dim).
-    # Dynamo's symbolic shape inference incorrectly uses tgt_len for head_dim when they differ,
-    # causing "shape '[2, 2, 96, 96]' invalid for input of size 12288".
-    # Fix: set context_length = head_dim = d_model // encoder_attention_heads = 64 // 2 = 32.
-    if name_lower == "autoformermodel":
-        d_model = getattr(config, "d_model", 64)
-        enc_heads = getattr(config, "encoder_attention_heads", 2)
-        head_dim = d_model // enc_heads if enc_heads > 0 else 32
-        config.context_length = head_dim
-        config.prediction_length = head_dim
-
-    # --- InformerModel: distil=True causes downsampling between encoder layers ---
-    # The attention mask is created for the full sequence length (context_length) but after
-    # InformerConvLayer downsampling, hidden_states shrink (96→48) while mask stays at 96×96.
-    # The attention check raises ValueError which explain() cannot handle as a graph break.
-    # Fix: disable distillation so no conv downsampling occurs.
-    if name_lower == "informermodel":
-        config.distil = False
-
     # --- AyaVisionModel: embed_dim must be divisible by num_heads ---
     if name_lower == "ayavisionmodel":
         vision_cfg = getattr(config, "vision_config", None)
@@ -1153,13 +1133,6 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
             model.set_default_language("en_XX")
         except Exception:
             pass
-
-    # MambaModel / FalconMambaModel: eval mode creates MambaCache / FalconMambaCache,
-    # which calls torch._dynamo.mark_static_address() — a forbidden callable during explain().
-    # In train mode, cache creation is skipped (use_cache=False by default in training).
-    # Fix: pass use_cache=False explicitly to prevent cache initialization.
-    if name_lower in ("mambamodel", "falconmambamodel"):
-        inputs["use_cache"] = False
 
     # ── image_token_mismatch fixes ──
     # Models that check image_token_id in input_ids and count them to match vision encoder output.
