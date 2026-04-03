@@ -197,6 +197,26 @@ def _fix_config(model_name, config):
         if not getattr(config, "context_length", None):
             config.context_length = 96
 
+    # --- AutoformerModel: Dynamo FakeTensor bug — context_length must equal head_dim ---
+    # The autocorrelation attention uses irfft(x, n=tgt_len) and later view(bsz, heads, tgt_len, head_dim).
+    # Dynamo's symbolic shape inference incorrectly uses tgt_len for head_dim when they differ,
+    # causing "shape '[2, 2, 96, 96]' invalid for input of size 12288".
+    # Fix: set context_length = head_dim = d_model // encoder_attention_heads = 64 // 2 = 32.
+    if name_lower == "autoformermodel":
+        d_model = getattr(config, "d_model", 64)
+        enc_heads = getattr(config, "encoder_attention_heads", 2)
+        head_dim = d_model // enc_heads if enc_heads > 0 else 32
+        config.context_length = head_dim
+        config.prediction_length = head_dim
+
+    # --- InformerModel: distil=True causes downsampling between encoder layers ---
+    # The attention mask is created for the full sequence length (context_length) but after
+    # InformerConvLayer downsampling, hidden_states shrink (96→48) while mask stays at 96×96.
+    # The attention check raises ValueError which explain() cannot handle as a graph break.
+    # Fix: disable distillation so no conv downsampling occurs.
+    if name_lower == "informermodel":
+        config.distil = False
+
     # --- AyaVisionModel: embed_dim must be divisible by num_heads ---
     if name_lower == "ayavisionmodel":
         vision_cfg = getattr(config, "vision_config", None)
@@ -575,6 +595,25 @@ def _fix_config(model_name, config):
             ffn_cfg = getattr(config, "ffn_config", None)
             if ffn_cfg:
                 ffn_cfg.ffn_hidden_size = hs
+
+    # --- LongcatFlashModel: force num_key_value_heads = num_attention_heads after reduction ---
+    # LongcatFlash uses Multi-head Latent Attention (MLA): kv_b_proj always outputs num_attention_heads
+    # KV heads (not num_key_value_heads). After _reduce_model_size reduces num_key_value_heads
+    # independently (e.g. 64→8), the generic attention function applies repeat_kv incorrectly,
+    # turning 16 KV heads into 32 before SDPA which then fails (query has 16 heads, kv has 32).
+    # Fix: align num_key_value_heads to num_attention_heads post-reduction.
+    if name_lower == "longcatflashmodel":
+        nh = getattr(config, "num_attention_heads", None)
+        if nh:
+            config.num_key_value_heads = nh
+
+    # --- RecurrentGemmaModel: ensure block_types includes 'attention' after num_hidden_layers reduction ---
+    # The model uses layers_block_type = (block_types * 100)[:num_hidden_layers].
+    # Default block_types = ['recurrent', 'recurrent', 'attention'] — with num_hidden_layers=2,
+    # all 'attention' blocks are cut, and config.layers_block_type.index('attention') raises ValueError.
+    # Fix: set block_types = ['recurrent', 'attention'] so the pattern includes attention at 2 layers.
+    if name_lower == "recurrentgemmamodel":
+        config.block_types = ["recurrent", "attention"]
 
     return config
 
@@ -1115,6 +1154,13 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
         except Exception:
             pass
 
+    # MambaModel / FalconMambaModel: eval mode creates MambaCache / FalconMambaCache,
+    # which calls torch._dynamo.mark_static_address() — a forbidden callable during explain().
+    # In train mode, cache creation is skipped (use_cache=False by default in training).
+    # Fix: pass use_cache=False explicitly to prevent cache initialization.
+    if name_lower in ("mambamodel", "falconmambamodel"):
+        inputs["use_cache"] = False
+
     # ── image_token_mismatch fixes ──
     # Models that check image_token_id in input_ids and count them to match vision encoder output.
     # The correct number of image tokens varies per model due to different pooling/projection.
@@ -1126,6 +1172,8 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
         "florence2model": 50,
         "gemma3nmodel": 256,
         "gotocr2model": 256,
+        # InternVLModel: vision_tower (448x448, patch=14) → 1024 patches → pixel_shuffle(0.5) → 256
+        "internvlmodel": 256,
         "paligemmamodel": 256,
         "vipllavamodel": 576,
     }
@@ -1546,11 +1594,19 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
             num_channels = getattr(backbone_cfg, "num_channels", 3)
         inputs = {"pixel_values": torch.randn(B, num_channels, h, w, device=device)}
 
-    # FastSpeech2ConformerModel: train mode needs labels
+    # FastSpeech2ConformerModel: train mode needs all four label types
+    # The model forward checks: if self.training and any label is None → ValueError.
+    # Shapes: spectrogram_labels (B, spec_len, num_mel), duration_labels (B, text_len) long,
+    #         pitch_labels (B, text_len, 1), energy_labels (B, text_len, 1).
     if name_lower == "fastspeech2conformermodel":
-        hidden = getattr(config, "hidden_size", 384)
         num_mel = getattr(config, "num_mel_channels", 80)
-        inputs["labels"] = torch.randn(B, 50, num_mel, device=device)
+        text_len = inputs["input_ids"].shape[1] if "input_ids" in inputs else 32
+        # spectrogram_labels length must match length_regulator output.
+        # With duration_labels=ones(B, text_len), the regulator outputs seq_len=text_len.
+        inputs["spectrogram_labels"] = torch.randn(B, text_len, num_mel, device=device)
+        inputs["duration_labels"] = torch.ones(B, text_len, dtype=torch.long, device=device)
+        inputs["pitch_labels"] = torch.randn(B, text_len, 1, device=device)
+        inputs["energy_labels"] = torch.randn(B, text_len, 1, device=device)
 
     # CohereAsrModel: encoder-decoder ASR model, needs input_features (mel spectrogram) + decoder_input_ids
     # Encoder is ParakeetEncoder which expects (B, time, num_mel_bins) audio features.
