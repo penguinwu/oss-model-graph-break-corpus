@@ -5,6 +5,8 @@ Usage:
     python reproduce.py BartModel
     python reproduce.py BartModel --mode train
     python reproduce.py BartModel --mode train --device cpu
+    python reproduce.py BartModel --explain          # show ALL graph breaks
+    python reproduce.py BartModel --explain --verbose # include user stack traces
 """
 import argparse
 import json
@@ -24,6 +26,10 @@ def main():
     parser.add_argument("--device", default="cpu", choices=["cpu", "cuda"])
     parser.add_argument("--list", action="store_true",
                         help="List all graph-break models from the corpus")
+    parser.add_argument("--explain", action="store_true",
+                        help="Run torch._dynamo.explain() to show ALL graph breaks")
+    parser.add_argument("--verbose", action="store_true",
+                        help="Show user stack traces for each break (with --explain)")
     args = parser.parse_args()
 
     if args.list:
@@ -120,6 +126,59 @@ def main():
             model(**inputs_dict)
     print("  Eager: OK")
 
+    if args.explain:
+        # --explain mode: skip fullgraph compile, go straight to explain()
+        # This shows ALL graph breaks, not just the first one
+        print()
+        print("Running torch._dynamo.explain()...")
+        torch._dynamo.reset()
+        try:
+            with ctx:
+                if inputs_tuple:
+                    explanation = torch._dynamo.explain(model)(*inputs_tuple)
+                else:
+                    explanation = torch._dynamo.explain(model)(**inputs_dict)
+        except Exception as ex:
+            print(f"  explain() failed: {ex}")
+            sys.exit(1)
+
+        print(f"  Graphs:       {explanation.graph_count}")
+        print(f"  Graph breaks: {explanation.graph_break_count}")
+
+        if explanation.graph_break_count == 0:
+            print()
+            print("No graph breaks — model compiles cleanly.")
+            return
+
+        print()
+        if hasattr(explanation, "break_reasons") and explanation.break_reasons:
+            print(f"Break reasons ({len(explanation.break_reasons)} total):")
+            print("-" * 70)
+            for i, br in enumerate(explanation.break_reasons, 1):
+                reason = str(getattr(br, "reason", str(br)))
+                print(f"\n  [{i}] {reason}")
+
+                if args.verbose and hasattr(br, "user_stack"):
+                    stack = br.user_stack
+                    if stack:
+                        print("      User stack:")
+                        for frame in stack:
+                            if hasattr(frame, "filename"):
+                                print(f"        {frame.filename}:{frame.lineno} in {frame.name}")
+                            else:
+                                print(f"        {frame}")
+            print()
+        else:
+            print("  (no break_reasons attribute — older PyTorch version?)")
+
+        # Summary
+        if explanation.graph_break_count > 0:
+            print(f"Summary: {explanation.graph_break_count} graph break(s) "
+                  f"producing {explanation.graph_count} subgraph(s)")
+            print(f"Tip: Use TORCH_TRACE=/tmp/trace to capture full compilation artifacts,")
+            print(f"     then run: tlparse /tmp/trace")
+        return
+
     # Step 3: Compile with fullgraph=True
     print("Running torch.compile(fullgraph=True, backend='eager')...")
     torch._dynamo.reset()
@@ -152,6 +211,8 @@ def main():
                 for br in explanation.break_reasons:
                     reason = str(getattr(br, "reason", str(br)))
                     print(f"    - {reason[:200]}")
+            print()
+            print(f"  Tip: Run with --explain for full break details")
         except Exception as ex:
             print(f"  explain() failed: {ex}")
 
