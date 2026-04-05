@@ -358,8 +358,9 @@ def main():
 
     if not user_messages:
         print("No new user messages.")
-        state["last_check_epoch"] = time.time()
-        save_state(state)
+        if not args.dry_run:
+            state["last_check_epoch"] = time.time()
+            save_state(state)
         return
 
     print(f"Found {len(user_messages)} new message(s) to process.")
@@ -378,7 +379,7 @@ def main():
                 "action": "dry_run",
                 "reasoning": "Dry run mode — no action taken",
             })
-            state["processed_messages"].append(msg["id"])
+            # Don't mark as processed — dry-run should be read-only
             continue
 
         if classification == "noise":
@@ -478,8 +479,9 @@ def main():
         state["processed_messages"].append(msg["id"])
 
     state["last_check_epoch"] = time.time()
-    save_state(state)
-    print(f"\nProcessed {len(user_messages)} message(s). State saved.")
+    if not args.dry_run:
+        save_state(state)
+    print(f"\nProcessed {len(user_messages)} message(s). State {'unchanged (dry-run)' if args.dry_run else 'saved'}.")
 
 
 if __name__ == "__main__":
