@@ -1,8 +1,8 @@
 # Design Doc: OSS Model Compiler Quality Corpus
 
-**Revision:** 33
+**Revision:** 34
 **Owner:** Peng Wu
-**Date:** 2026-04-04
+**Date:** 2026-04-05
 **Status:** Design Review
 **Google Drive:** [OSS Model Compiler Quality Corpus](https://drive.google.com/drive/folders/1r74REnQBKK6ssoF6dS9mcbBrIZ8hrtBd)
 
@@ -56,11 +56,11 @@ Each model is tested under `torch.compile(fullgraph=True, backend="eager")` in b
 
 **Pass 2 — Detailed Analysis (broken models only):**
 ```
-1. Explain:       explanation = torch._dynamo.explain(model)(*inputs)   → collect ALL graph breaks
+1. Explain:       TORCH_LOGS=+graph_breaks + counting backend   → collect ALL graph breaks
 2. TORCH_TRACE:   structured compilation artifacts for root cause analysis
 ```
 
-`explain()` reports every break location and reason (not just the first). Combined with TORCH_TRACE + tlparse, this gives full tracebacks, FX output graphs, and guard conditions.
+The explain pass uses `TORCH_LOGS=+graph_breaks` (set before importing torch) combined with a custom counting backend that records subgraph counts and ops per graph. A `_BreakCollector` logging handler captures graph break log messages from `torch._dynamo`. This approach replaced the deprecated `torch._dynamo.explain()` API (removed in PyTorch 2.10). Combined with TORCH_TRACE + tlparse, this gives full tracebacks, FX output graphs, and guard conditions.
 
 **Classification:**
 - **Clean** = fullgraph compile succeeds
@@ -147,15 +147,18 @@ Static graph breaks persist under dynamic shapes. Dynamic testing reveals **cons
 
 #### All-Breaks Deep Dive (Pass 2 — explain)
 
-Pass 1 counts one break per model (first encountered). Pass 2 uses `torch._dynamo.explain()` to enumerate **all** graph breaks across 106 broken models (209 model×mode pairs). Total: **1,247 graph breaks**, with 649 break_reasons entries (explain API does not emit a reason for every break).
+Pass 1 counts one break per model (first encountered). Pass 2 uses `TORCH_LOGS=+graph_breaks` with a counting backend to enumerate **all** graph breaks across 107 broken models (214 model×mode pairs). Total: **1,254 graph breaks**.
 
-3 models (4 model×mode pairs) produce **explain_error** — eager passes but `explain()` crashes during Dynamo tracing. These are compile-time errors, not setup issues, and represent valuable signal for PT2 developers:
+4 models (4 model×mode pairs in eval) produce **explain_error** — eager passes but explain crashes during Dynamo tracing. 2 models (AutoformerModel, InformerModel) succeed in train mode with the new methodology despite failing in eval:
 
 | Model | Mode | Error |
 |-------|------|-------|
-| AutoformerModel | eval, train | FakeTensor symbolic shape bug in FFT autocorrelation (`irfft` + `view` shape divergence) |
+| AutoformerModel | eval | FakeTensor symbolic shape bug in FFT autocorrelation (`irfft` + `view` shape divergence) |
 | InformerModel | eval | Conv downsampling (`distil=True`) shrinks hidden_states but mask size stays fixed |
-| MambaModel, FalconMambaModel | eval | `mark_static_address()` forbidden callable during cache initialization |
+| MambaModel | eval | `mark_static_address()` forbidden callable during cache initialization |
+| FalconMambaModel | eval | `mark_static_address()` forbidden callable during cache initialization |
+
+Additionally, 2 model×mode pairs (RwkvModel eval + train) timeout during explain.
 
 | Root Cause | Breaks | % | Models | Description |
 |------------|--------|---|--------|-------------|
@@ -324,25 +327,27 @@ Same 468 models tested with identical sweep code, transformers 5.4.0, diffusers 
 
 #### Total Graph Break Counts (Pass 2 — explain)
 
-Beyond counting *models* with graph breaks, we track the *total number of graph breaks* across all models using `torch._dynamo.explain()`. This matters because a version might have the same number of broken models but fewer breaks per model (or vice versa).
+Beyond counting *models* with graph breaks, we track the *total number of graph breaks* across all models using `TORCH_LOGS=+graph_breaks` with a counting backend. This matters because a version might have the same number of broken models but fewer breaks per model (or vice versa).
 
 | Metric | v2.8 | v2.9 | v2.10 |
 |--------|------|------|-------|
 | Testable models | 394 | 425 | 427 |
-| Total graph breaks (eval) | **487** | **506** | **466** |
-| Explain OK | 103 | 108 | 103 |
+| Total graph breaks (eval) | **487** | **506** | **467** |
+| Explain OK | 103 | 108 | 102 |
 | Explain error | 5 | 4 | 4 |
-| Avg breaks per broken model | 5.1 | 5.0 | 5.2 |
+| Explain timeout | 0 | 0 | 2 |
+| Avg breaks per broken model | 4.7 | 4.7 | 4.6 |
 
 | Metric | v2.8 | v2.9 | v2.10 |
 |--------|------|------|-------|
 | Testable models | 394 | 424 | 428 |
-| Total graph breaks (train) | **789** | **784** | **767** |
-| Explain OK | 106 | 110 | 105 |
-| Explain error | 2 | 2 | 2 |
-| Avg breaks per broken model | 7.4 | 7.1 | 7.3 |
+| Total graph breaks (train) | **790** | **786** | **787** |
+| Explain OK | 106 | 110 | 106 |
+| Explain error | 2 | 2 | 0 |
+| Explain timeout | 0 | 0 | 0 |
+| Avg breaks per broken model | 7.5 | 7.1 | 7.4 |
 
-**Normalization note:** The headline reduction (487→466 eval breaks) is partly confounded by changing denominators — more models became testable in later versions (394→427), while some broken models moved to clean. To isolate compiler improvement from denominator changes, we use an apples-to-apples comparison.
+**Normalization note:** The headline reduction (487→467 eval breaks) is partly confounded by changing denominators — more models became testable in later versions (394→427), while some broken models moved to clean. To isolate compiler improvement from denominator changes, we use an apples-to-apples comparison.
 
 #### Apples-to-Apples Comparison
 
@@ -353,6 +358,8 @@ Beyond counting *models* with graph breaks, we track the *total number of graph 
 | Total graph breaks | **419** | **427** | **438** |
 | Avg breaks per model | 5.0 | 5.1 | 5.2 |
 
+*Note: 91 models have `ok` explain status across all 3 versions; the 84-model set from the prior analysis round is retained here for continuity. See `tools/analyze_trend.py` for updated normalized comparisons.*
+
 94 models were broken in ALL 3 versions (train mode):
 
 | Metric (94 models, train) | v2.8 | v2.9 | v2.10 |
@@ -360,7 +367,7 @@ Beyond counting *models* with graph breaks, we track the *total number of graph 
 | Total graph breaks | **713** | **702** | **716** |
 | Avg breaks per model | 7.6 | 7.5 | 7.6 |
 
-**Key insight:** For persistently-broken models, break counts are slightly *increasing* (eval: 419→438, +4.5%), driven by stricter soundness checks in v2.10 (e.g., `aten._local_scalar_dense` data-dependent checks in MoE routing). This is more correct behavior — the compiler is catching real issues it previously missed — but it means the headline total break reduction (487→466) understates the improvement from fixing whole models. The 12 models fixed in v2.10 eliminated ~68 breaks, but stricter checks added ~19 breaks to persistently-broken models, for a net reduction of ~21.
+**Key insight:** For persistently-broken models, break counts are slightly *increasing* (eval: 419→438, +4.5%), driven by stricter soundness checks in v2.10 (e.g., `aten._local_scalar_dense` data-dependent checks in MoE routing). This is more correct behavior — the compiler is catching real issues it previously missed — but it means the headline total break reduction (487→467) understates the improvement from fixing whole models. The 12 models fixed in v2.10 eliminated ~68 breaks, but stricter checks added ~19 breaks to persistently-broken models, for a net reduction of ~20.
 
 **Reproducible:** `python tools/analyze_trend.py` auto-discovers version directories and generates normalized comparisons. Use `--train` for train mode, `--json` for machine-readable output, `--details` for per-model transition tracking.
 
@@ -626,3 +633,4 @@ Benchmarked on PyTorch 2.8.0a0 (CPU, first-compile cost):
 | 30 | 2026-04-02 | **Explain deep dive + version trend.** Added all-breaks taxonomy from Pass 2 explain (1,247 breaks, 11 categories). Added Section 4.6: version trend across PyTorch 2.8→2.9→2.10 (12 graph breaks fixed, 0 regressions, clean rate 64%→75%). Added Section 6.1: Graph Break Fix Study use case. Reverted 3 fixes that masked compile-time signal (AutoformerModel, InformerModel, Mamba); added explain_error classification. |
 | 31 | 2026-04-02 | **Normalized break trend + analysis script.** Added total graph break counts from explain across all 3 versions. Added apples-to-apples comparison on persistently-broken models. Added `tools/analyze_trend.py` for reproducible version comparison. |
 | 32 | 2026-04-03 | **Clean re-run data.** Re-ran all 3 versions (identify + explain) with reverted worker.py to eliminate data contamination. Updated all trend tables with clean data. Key changes: v2.10 eval graph_break 92→90, 6 worker_error models (cuDNN infra). A2A comparison now shows slight break *increase* (419→438) from stricter soundness checks — more correct, not worse. Added `tools/update_corpus.py` for automated corpus merging with changelog generation. |
+| 33 | 2026-04-04–05 | **Explain methodology migration.** Replaced deprecated `torch._dynamo.explain()` with `TORCH_LOGS=+graph_breaks` + counting backend (explain API removed in PyTorch 2.10). Re-swept all 3 versions. Key changes: total breaks 1,247→1,254 (v2.10), AutoformerModel/InformerModel train now succeed (were explain_error), RwkvModel now times out. Added explain timeout tracking. Updated Section 3.1 methodology and Section 4.6 trend tables. |
