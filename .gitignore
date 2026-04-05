@@ -5,3 +5,4 @@ sweep_results/
 *.tmp
 .feedback_monitor_state.json
 .feedback_monitor_audit.jsonl
+docs/traces/
