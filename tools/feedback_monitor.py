@@ -84,7 +84,7 @@ def read_new_messages(since=None):
 
     Returns list of dicts with keys: id, sender, text, timestamp, thread_id.
     """
-    cmd = f"gchat read {FEEDBACK_SPACE} -c 50 --no-resolve --quiet"
+    cmd = f"gchat read {FEEDBACK_SPACE} -c 50 --no-resolve --json"
     if since:
         cmd += f" --since {since}"
 
@@ -92,50 +92,34 @@ def read_new_messages(since=None):
     if not output:
         return []
 
+    try:
+        data = json.loads(output)
+    except json.JSONDecodeError:
+        print("WARNING: Failed to parse gchat JSON output", file=sys.stderr)
+        return []
+
+    # Navigate the JSON structure: {data: {data: [messages]}}
+    raw_messages = data.get("data", {}).get("data", [])
+    if not raw_messages:
+        return []
+
     messages = []
-    current_msg = None
+    for m in raw_messages:
+        msg_id = m.get("google_message_name", "")
+        thread_name = m.get("google_thread_name", "")
 
-    for line in output.split("\n"):
-        # gchat read output format:
-        # [timestamp] sender (spaces/X/messages/Y):
-        # message text
-        if line.startswith("[") and "(" in line and "):" in line:
-            if current_msg and current_msg.get("text"):
-                messages.append(current_msg)
+        # Extract thread ID from thread name (spaces/X/threads/Y -> Y)
+        thread_id = None
+        if "/threads/" in thread_name:
+            thread_id = thread_name.split("/threads/")[-1]
 
-            # Parse header line
-            try:
-                ts_end = line.index("]")
-                timestamp = line[1:ts_end]
-                rest = line[ts_end + 2:]
-                sender_end = rest.index(" (")
-                sender = rest[:sender_end]
-                msg_id_start = rest.index("(") + 1
-                msg_id_end = rest.index(")")
-                msg_id = rest[msg_id_start:msg_id_end]
-
-                # Extract thread ID if present (spaces/X/messages/Y/threads/Z)
-                thread_id = None
-                if "/threads/" in msg_id:
-                    thread_id = msg_id.split("/threads/")[0].split("/messages/")[1]
-
-                current_msg = {
-                    "id": msg_id,
-                    "sender": sender,
-                    "timestamp": timestamp,
-                    "thread_id": thread_id,
-                    "text": "",
-                }
-            except (ValueError, IndexError):
-                continue
-        elif current_msg is not None:
-            if current_msg["text"]:
-                current_msg["text"] += "\n" + line
-            else:
-                current_msg["text"] = line
-
-    if current_msg and current_msg.get("text"):
-        messages.append(current_msg)
+        messages.append({
+            "id": msg_id,
+            "sender": m.get("sender_name", ""),
+            "timestamp": str(m.get("creation_timestamp", "")),
+            "thread_id": thread_id,
+            "text": m.get("message_body", ""),
+        })
 
     return messages
 
@@ -202,24 +186,35 @@ def create_task(title, description, category, gchat_msg_id):
 
 def respond_in_thread(msg_id, response_text):
     """Reply in the same GChat thread as the original message."""
-    # Extract thread key from message ID
-    # Message ID format: spaces/X/messages/Y
+    # Message ID format: spaces/X/messages/Y.Z
+    # Thread format: spaces/X/threads/Y (use the part before the dot)
     parts = msg_id.split("/messages/")
     if len(parts) == 2:
-        thread_key = parts[1].split(".")[0]  # Thread key is the first part
+        space_name = parts[0]
+        thread_key = parts[1].split(".")[0]
+        thread_name = f"{space_name}/threads/{thread_key}"
     else:
-        thread_key = None
+        thread_name = None
 
-    if thread_key:
-        cmd = f'gchat send {FEEDBACK_SPACE} --thread {thread_key} --quiet'
-    else:
-        cmd = f'gchat send {FEEDBACK_SPACE} --quiet'
+    # Write response to a temp file to avoid shell quoting issues
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+        f.write(response_text)
+        tmp_path = f.name
 
-    result = subprocess.run(
-        cmd, shell=True, input=response_text,
-        capture_output=True, text=True, timeout=30
-    )
-    return result.returncode == 0
+    try:
+        if thread_name:
+            cmd = f'gchat send {FEEDBACK_SPACE} --thread "{thread_name}" --text-file {tmp_path}'
+        else:
+            cmd = f'gchat send {FEEDBACK_SPACE} --text-file {tmp_path}'
+
+        result = subprocess.run(
+            cmd, shell=True,
+            capture_output=True, text=True, timeout=30
+        )
+        return result.returncode == 0
+    finally:
+        os.unlink(tmp_path)
 
 
 def delegate_to_rocky(task_num, category, msg_text, msg_id):
@@ -358,7 +353,7 @@ def main():
     user_messages = [
         m for m in new_messages
         if m["id"] not in SKIP_MESSAGE_IDS
-        and "users/" not in m.get("sender", "")  # Skip unresolved bot users
+        and m.get("sender", "")  # Skip messages with no sender
     ]
 
     if not user_messages:
