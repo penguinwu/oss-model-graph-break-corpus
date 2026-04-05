@@ -6,7 +6,7 @@ Usage:
     python reproduce.py BartModel --mode train
     python reproduce.py BartModel --mode train --device cpu
     python reproduce.py BartModel --explain          # show ALL graph breaks
-    python reproduce.py BartModel --explain --verbose # include user stack traces
+    python reproduce.py BartModel --explain --verbose # include stack traces via TORCH_TRACE
     python reproduce.py BartModel --dynamic mark     # dynamic shapes (realistic dims)
     python reproduce.py BartModel --dynamic true     # dynamic shapes (all dims)
 """
@@ -29,9 +29,9 @@ def main():
     parser.add_argument("--list", action="store_true",
                         help="List all graph-break models from the corpus")
     parser.add_argument("--explain", action="store_true",
-                        help="Run torch._dynamo.explain() to show ALL graph breaks")
+                        help="Show ALL graph breaks with reasons and doc links")
     parser.add_argument("--verbose", action="store_true",
-                        help="Show user stack traces for each break (with --explain)")
+                        help="Also generate TORCH_TRACE report (with --explain)")
     parser.add_argument("--dynamic", choices=["mark", "true"],
                         help="Enable dynamic shapes: 'mark' = batch+seq_len, 'true' = all dims")
     args = parser.parse_args()
@@ -49,6 +49,12 @@ def main():
 
     if not args.model:
         parser.error("model name is required (e.g., reproduce.py BartModel)")
+
+    # Enable graph break logging before importing torch (env var must be set
+    # before torch configures its logging system at import time)
+    if args.explain:
+        existing = os.environ.get("TORCH_LOGS", "")
+        os.environ["TORCH_LOGS"] = f"{existing},+graph_breaks" if existing else "+graph_breaks"
 
     try:
         import torch
@@ -133,68 +139,78 @@ def main():
     print("  Eager: OK")
 
     if args.explain:
-        # --explain mode: skip fullgraph compile, go straight to explain()
-        # This shows ALL graph breaks, not just the first one
+        # Compile with graph break logging to show ALL breaks with doc links
+        # (replaces deprecated torch._dynamo.explain)
         print()
-        print("Running torch._dynamo.explain()...")
+        print("Compiling with graph break logging enabled...")
+        print("(Break reasons will appear below as they are detected)")
+        print()
         torch._dynamo.reset()
 
         # Apply dynamic shapes if requested
+        compile_dynamic = None
         if args.dynamic == "mark":
             _mark_dynamic_dims(inputs_dict, inputs_tuple, spec["source"],
                                spec.get("input_type", "auto"))
             print("  (dynamic=mark: batch + seq_len dims marked dynamic)")
         elif args.dynamic == "true":
+            compile_dynamic = True
             print("  (dynamic=True: all dims symbolic)")
 
+        # Counting backend to track subgraphs and ops
+        graph_ops = []
+
+        def _counting_backend(gm, example_inputs):
+            op_count = sum(1 for n in gm.graph.nodes
+                           if n.op not in ('placeholder', 'output'))
+            graph_ops.append(op_count)
+            return gm.forward
+
+        # If --verbose, also capture TORCH_TRACE
+        trace_dir = None
+        if args.verbose:
+            import tempfile
+            trace_dir = tempfile.mkdtemp(prefix="graph_break_trace_")
+            os.environ["TORCH_TRACE"] = trace_dir
+
         try:
-            explain_kwargs = {}
-            if args.dynamic == "true":
-                explain_kwargs["dynamic"] = True
+            compiled = torch.compile(model, backend=_counting_backend,
+                                     dynamic=compile_dynamic)
             with ctx:
                 if inputs_tuple:
-                    explanation = torch._dynamo.explain(model, **explain_kwargs)(*inputs_tuple)
+                    compiled(*inputs_tuple)
                 else:
-                    explanation = torch._dynamo.explain(model, **explain_kwargs)(**inputs_dict)
+                    compiled(**inputs_dict)
         except Exception as ex:
-            print(f"  explain() failed: {ex}")
+            print(f"  Compilation failed: {ex}")
             sys.exit(1)
 
-        print(f"  Graphs:       {explanation.graph_count}")
-        print(f"  Graph breaks: {explanation.graph_break_count}")
+        graph_count = len(graph_ops)
+        break_count = max(0, graph_count - 1)
 
-        if explanation.graph_break_count == 0:
+        print()
+        print(f"  Graphs:       {graph_count}")
+        print(f"  Graph breaks: {break_count}")
+
+        if break_count == 0:
             print()
             print("No graph breaks — model compiles cleanly.")
             return
 
         print()
-        if hasattr(explanation, "break_reasons") and explanation.break_reasons:
-            print(f"Break reasons ({len(explanation.break_reasons)} total):")
-            print("-" * 70)
-            for i, br in enumerate(explanation.break_reasons, 1):
-                reason = str(getattr(br, "reason", str(br)))
-                print(f"\n  [{i}] {reason}")
+        print(f"Summary: {break_count} graph break(s) producing {graph_count} subgraph(s)")
 
-                if args.verbose and hasattr(br, "user_stack"):
-                    stack = br.user_stack
-                    if stack:
-                        print("      User stack:")
-                        for frame in stack:
-                            if hasattr(frame, "filename"):
-                                print(f"        {frame.filename}:{frame.lineno} in {frame.name}")
-                            else:
-                                print(f"        {frame}")
+        if trace_dir:
             print()
+            print(f"TORCH_TRACE captured to: {trace_dir}")
+            print(f"Generate HTML report:  tlparse {trace_dir}")
         else:
-            print("  (no break_reasons attribute — older PyTorch version?)")
-
-        # Summary
-        if explanation.graph_break_count > 0:
-            print(f"Summary: {explanation.graph_break_count} graph break(s) "
-                  f"producing {explanation.graph_count} subgraph(s)")
-            print(f"Tip: Use TORCH_TRACE=/tmp/trace to capture full compilation artifacts,")
-            print(f"     then run: tlparse /tmp/trace")
+            print()
+            print("For richer analysis with stack traces and graph IR:")
+            print(f"  python3 tools/reproduce.py {args.model} --mode {args.mode} --explain --verbose")
+            print("Or manually:")
+            print(f"  TORCH_TRACE=/tmp/trace python3 tools/reproduce.py {args.model} --mode {args.mode}")
+            print("  tlparse /tmp/trace")
         return
 
     # Step 3: Compile with fullgraph=True
@@ -221,34 +237,10 @@ def main():
     except Exception as e:
         print(f"  Compile: GRAPH BREAK")
         print(f"  Error: {e}")
-
-        # Step 4: Run explain() for details
         print()
-        print("Running torch._dynamo.explain() for details...")
-        torch._dynamo.reset()
-        if args.dynamic == "mark":
-            _mark_dynamic_dims(inputs_dict, inputs_tuple, spec["source"],
-                               spec.get("input_type", "auto"))
-        try:
-            explain_kwargs = {}
-            if args.dynamic == "true":
-                explain_kwargs["dynamic"] = True
-            with ctx:
-                if inputs_tuple:
-                    explanation = torch._dynamo.explain(model, **explain_kwargs)(*inputs_tuple)
-                else:
-                    explanation = torch._dynamo.explain(model, **explain_kwargs)(**inputs_dict)
-            print(f"  Graphs: {explanation.graph_count}")
-            print(f"  Graph breaks: {explanation.graph_break_count}")
-            if hasattr(explanation, "break_reasons") and explanation.break_reasons:
-                print(f"  Break reasons:")
-                for br in explanation.break_reasons:
-                    reason = str(getattr(br, "reason", str(br)))
-                    print(f"    - {reason[:200]}")
-            print()
-            print(f"  Tip: Run with --explain for full break details")
-        except Exception as ex:
-            print(f"  explain() failed: {ex}")
+        print("  For detailed break analysis, run with --explain:")
+        dyn_flag = f" --dynamic {args.dynamic}" if args.dynamic else ""
+        print(f"  python3 tools/reproduce.py {args.model} --mode {args.mode}{dyn_flag} --explain")
 
 
 if __name__ == "__main__":

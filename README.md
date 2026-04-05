@@ -75,9 +75,9 @@ python3 tools/query.py --status graph_break --json
 python3 tools/reproduce.py BartModel
 python3 tools/reproduce.py BartModel --mode train
 
-# Show ALL graph breaks (not just the first)
+# Show ALL graph breaks with doc links (not just the first)
 python3 tools/reproduce.py BartModel --explain
-python3 tools/reproduce.py BartModel --explain --verbose  # include stack traces
+python3 tools/reproduce.py BartModel --explain --verbose  # also capture TORCH_TRACE
 
 # Test with dynamic shapes
 python3 tools/reproduce.py BartModel --dynamic mark  # batch + seq_len dims
@@ -187,7 +187,7 @@ Sweep results by version: `sweep_results/{v2.8,v2.9,v2.10}/` — JSONL checkpoin
 1. **Browse** — find the model in the dashboard: `open docs/index.html`
 2. **Query** — or search by error: `python3 tools/query.py --error deepcopy`
 3. **Reproduce** — confirm the break: `python3 tools/reproduce.py ModelName`
-4. **Explain** — see all break reasons: `python3 tools/reproduce.py ModelName --explain --verbose`
+4. **Explain** — see all break reasons with doc links: `python3 tools/reproduce.py ModelName --explain`
 5. **Trace** — capture full artifacts: `TORCH_TRACE=/tmp/trace python3 tools/reproduce.py ModelName`
 6. **Parse** — browse the trace: `tlparse parse /tmp/trace -o /tmp/report`
 7. **Fix** — patch the model or upstream (see "Fix a model" below)

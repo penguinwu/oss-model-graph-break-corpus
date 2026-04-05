@@ -6,7 +6,7 @@ Called by the orchestrator as:
                    --pass 1 --device cuda --mode eval
 
 Identify: fullgraph=True compile → binary pass/fail
-Explain: explain() + optional TORCH_TRACE → detailed graph break analysis
+Explain: TORCH_LOGS=graph_breaks + counting backend → detailed graph break analysis
 
 Outputs a single JSON line to stdout. All logs go to stderr.
 """
@@ -2199,8 +2199,69 @@ def run_validate(spec, device, mode, dynamic=False):
 
 # ─── Explain: detailed analysis ─────────────────────────────────────────────
 
+class _BreakCollector:
+    """Logging handler that captures graph break messages."""
+
+    def __init__(self):
+        self.messages = []
+        self._handler = None
+
+    def install(self):
+        import logging
+
+        class _Handler(logging.Handler):
+            def __init__(self, collector):
+                super().__init__()
+                self.collector = collector
+
+            def emit(self, record):
+                self.collector.messages.append(record.getMessage())
+
+        self._handler = _Handler(self)
+        # Capture from torch._dynamo and all sub-loggers
+        logger = logging.getLogger("torch._dynamo")
+        logger.addHandler(self._handler)
+
+        # Enable graph break logging via torch's logging system
+        try:
+            import torch._logging
+            torch._logging.set_logs(graph_breaks=True)
+        except (ImportError, AttributeError):
+            pass
+
+    def uninstall(self):
+        import logging
+        if self._handler:
+            logging.getLogger("torch._dynamo").removeHandler(self._handler)
+        try:
+            import torch._logging
+            torch._logging.set_logs(graph_breaks=False)
+        except (ImportError, AttributeError):
+            pass
+
+    def get_break_reasons(self):
+        """Parse captured messages into break_reasons format."""
+        reasons = []
+        for msg in self.messages:
+            # Extract file:line if present in the message
+            info = {"reason": msg[:300]}
+            # Common patterns: "... at /path/file.py:123" or "file.py:123"
+            import re
+            loc = re.search(r'(\S+\.py):(\d+)', msg)
+            if loc:
+                info["file"] = loc.group(1)
+                info["line"] = int(loc.group(2))
+            reasons.append(info)
+        return reasons
+
+
 def run_explain(spec, device, mode):
-    """Run explain() + TORCH_TRACE on a model known to have graph breaks."""
+    """Analyze graph breaks via TORCH_LOGS + counting backend.
+
+    Replaces the deprecated torch._dynamo.explain() approach.
+    Uses a custom backend to count subgraphs and ops, and captures
+    graph break log messages for structured break_reasons output.
+    """
     result = {
         "name": spec["name"],
         "source": spec["source"],
@@ -2221,49 +2282,50 @@ def run_explain(spec, device, mode):
         model.eval()
     ctx = torch.no_grad() if mode == "eval" else torch.enable_grad()
 
-    # Step 1: explain()
+    # Set up graph break capture
+    collector = _BreakCollector()
+    collector.install()
+
+    # Counting backend: tracks subgraph count, ops per graph, compile times
+    ops_per_graph = []
+    compile_times_list = []
+
+    def _counting_backend(gm, example_inputs):
+        start_t = time.perf_counter()
+        op_count = sum(1 for n in gm.graph.nodes
+                       if n.op not in ('placeholder', 'output'))
+        ops_per_graph.append(op_count)
+        compile_times_list.append(round(time.perf_counter() - start_t, 3))
+        return gm.forward
+
     torch._dynamo.reset()
     start = time.perf_counter()
     try:
+        compiled = torch.compile(model, backend=_counting_backend)
         with ctx:
             if inputs_tuple:
-                explanation = torch._dynamo.explain(model)(*inputs_tuple)
+                compiled(*inputs_tuple)
             else:
-                explanation = torch._dynamo.explain(model)(**inputs_dict)
+                compiled(**inputs_dict)
 
         result["explain_time_s"] = round(time.perf_counter() - start, 3)
-        result["graph_count"] = explanation.graph_count
-        result["graph_break_count"] = explanation.graph_break_count
-        result["ops_per_graph"] = [len(g) for g in explanation.ops_per_graph]
+        result["graph_count"] = len(ops_per_graph)
+        result["graph_break_count"] = max(0, len(ops_per_graph) - 1)
+        result["ops_per_graph"] = ops_per_graph
+        result["compile_times"] = compile_times_list
 
-        if hasattr(explanation, "compile_times"):
-            try:
-                result["compile_times"] = [
-                    round(float(t), 3) if not isinstance(t, str) else t
-                    for t in explanation.compile_times
-                ]
-            except Exception:
-                result["compile_times"] = [str(t) for t in explanation.compile_times]
-
-        # Extract break reasons
-        if hasattr(explanation, "break_reasons") and explanation.break_reasons:
-            result["break_reasons"] = []
-            for br in explanation.break_reasons:
-                try:
-                    info = {"reason": str(getattr(br, "reason", str(br)))[:300]}
-                    if hasattr(br, "user_stack") and br.user_stack:
-                        top = br.user_stack[-1]
-                        info["file"] = str(getattr(top, "filename", ""))
-                        info["line"] = getattr(top, "lineno", 0)
-                    result["break_reasons"].append(info)
-                except Exception:
-                    result["break_reasons"].append({"reason": str(br)[:300]})
+        # Extract break reasons from captured log messages
+        break_reasons = collector.get_break_reasons()
+        if break_reasons:
+            result["break_reasons"] = break_reasons
 
         result["status"] = "ok"
     except Exception as e:
         result["status"] = "explain_error"
         result["error"] = str(e)[:500]
         result["explain_time_s"] = round(time.perf_counter() - start, 3)
+    finally:
+        collector.uninstall()
 
     # Step 2: TORCH_TRACE (if env var is set — orchestrator sets it before launch)
     trace_dir = os.environ.get("TORCH_TRACE")
@@ -2310,7 +2372,7 @@ def main():
     parser = argparse.ArgumentParser(description="Single-model worker for graph break sweep")
     parser.add_argument("--model-json", required=True, help="JSON string with model spec")
     parser.add_argument("--pass-num", type=int, required=True, choices=[1, 2, 3],
-                        help="Pass 1 (identify), 2 (explain), or 3 (validate)")
+                        help="Pass 1 (identify), 2 (explain/analyze), or 3 (validate)")
     parser.add_argument("--device", default="cuda", choices=["cpu", "cuda"])
     parser.add_argument("--mode", default="eval", choices=["eval", "train"])
     parser.add_argument("--dynamic", nargs="?", const="true", default=None,
