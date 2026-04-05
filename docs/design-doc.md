@@ -1,19 +1,22 @@
-# Design Doc: OSS Model Graph Break Corpus
+# Design Doc: OSS Model Compiler Quality Corpus
 
-**Revision:** 32
+**Revision:** 33
 **Owner:** Peng Wu
-**Date:** 2026-04-03
+**Date:** 2026-04-04
 **Status:** Design Review
-**Google Drive:** [OSS Model Graph Break Corpus](https://drive.google.com/drive/folders/1r74REnQBKK6ssoF6dS9mcbBrIZ8hrtBd)
+**Google Drive:** [OSS Model Compiler Quality Corpus](https://drive.google.com/drive/folders/1r74REnQBKK6ssoF6dS9mcbBrIZ8hrtBd)
 
 ---
 
 ## 1. Goal
 
-Build a curated corpus of open-source PyTorch models that exhibit **graph break problems** under `torch.compile(fullgraph=True)`, to enable:
-1. **Graph break skill analysis** — categorize and prioritize the root causes
-2. **Compiler hardening** — regression testing as Dynamo improves
-3. **Progress tracking** — measure graph break elimination across PyTorch versions
+Build a reusable corpus of open-source PyTorch models for measuring and improving `torch.compile` quality. The first application tracks `fullgraph=True` success rates; the infrastructure is designed to extend to other compiler quality studies.
+
+Use cases:
+1. **Compiler quality measurement** — track graph break rates, compilation success, and version-over-version trends
+2. **Fix validation** — validate graph break fix skills/tools against known breaks (e.g., Arsh's GraphBreak skill)
+3. **Compiler hardening** — regression testing as Dynamo improves
+4. **Extended diagnostics** — dynamic shape behavior, recompilation patterns, performance analysis
 
 ## 2. Scope
 
@@ -115,6 +118,8 @@ Static graph breaks persist under dynamic shapes. Dynamic testing reveals **cons
 
 ### 4.1 Corpus Summary
 
+*Note: Section 4 reflects the R8 analysis pass. The corpus has since been updated — see README.md and corpus/summary.md for current numbers (116 models with breaks across 6 configurations).*
+
 | Status | Eval | Train |
 |--------|------|-------|
 | Clean | **352 (75%)** | **337 (72%)** |
@@ -123,7 +128,7 @@ Static graph breaks persist under dynamic shapes. Dynamic testing reveals **cons
 | Create Error | 7 (1%) | 6 (1%) |
 | Timeout | 4 (1%) | 4 (1%) |
 
-**109 models** have graph breaks in at least one mode. 92 break in eval; 17 additional models break only in train (BioGpt, Blip2, CohereAsr, ConditionalDetr, Detr, Flaubert, IBert, InstructBlip, InstructBlipVideo, Kosmos2, MusicgenMelody, Musicgen, OPT, Phi4MultimodalAudio, SEWD, TableTransformer, XGLM).
+**107 models** have graph breaks in at least one mode. 90 break in eval; 17 additional models break only in train (BioGpt, Blip2, CohereAsr, ConditionalDetr, Detr, Flaubert, IBert, InstructBlip, InstructBlipVideo, Kosmos2, MusicgenMelody, Musicgen, OPT, Phi4MultimodalAudio, SEWD, TableTransformer, XGLM).
 
 ### 4.2 Graph Break Taxonomy (109 Models, 10 Root Causes)
 
@@ -487,7 +492,7 @@ python sweep/run_sweep.py --source hf+diffusers --device cuda --workers 4 \
 | Sweep worker | `sweep/worker.py` |
 | Model enumeration | `sweep/models.py` |
 | Corpus (JSON) | `corpus/corpus.json` |
-| Graph break analysis | `docs/graph-break-analysis.md` |
+| Graph break analysis | `analysis/graph-break-analysis.md` |
 | Design doc | `docs/design-doc.md` |
 | Google Drive folder | [Link](https://drive.google.com/drive/folders/1r74REnQBKK6ssoF6dS9mcbBrIZ8hrtBd) |
 

@@ -8,35 +8,34 @@
 
 | Status | Eval | Train |
 |--------|------|-------|
-| clean | 352 (75%) | 337 (72%) |
-| graph_break | 92 (20%) | 106 (23%) |
-| eager_error | 13 (3%) | 14 (3%) |
-| create_error | 7 (1%) | 7 (1%) |
-| timeout | 4 (1%) | 4 (1%) |
+| full_graph | 337 (72%) | 323 (69%) |
+| graph_break | 90 (19%) | 105 (22%) |
+| create_error | 18 (4%) | 18 (4%) |
+| eager_error | 17 (4%) | 17 (4%) |
+| worker_error | 6 (1%) | 5 (1%) |
 
 ## Dynamic Shape Comparison (eval)
 
 | Status | Static | Mark | True |
 |--------|--------|------|------|
-| clean | 352 | 335 | 339 |
-| graph_break | 92 | 97 | 90 |
-| eager_error | 13 | 18 | 18 |
-| create_error | 7 | 18 | 18 |
-| timeout | 4 | 0 | 3 |
+| full_graph | 337 | 335 | 339 |
+| graph_break | 90 | 97 | 90 |
+| create_error | 18 | 18 | 18 |
+| eager_error | 17 | 18 | 18 |
+| timeout | 0 | 0 | 3 |
 
 ## Key Findings
 
-- **118 unique models** with graph breaks in any config/mode (85 break in all 6 configs)
-- **3 targeted PRs** (deepcopy, Logger, audio callables) would fix ~44 models (40%)
-- `mark_dynamic` is **stricter** than `dynamic=true` (335 vs 339 clean eval)
+- **116 unique models** with graph breaks in any config/mode (86 break in all 6 configs)
+- `mark_dynamic` is **stricter** than `dynamic=true` (335 vs 339 full_graph eval)
 - Full analysis: [analysis/graph-break-analysis.md](../analysis/graph-break-analysis.md)
 
 ## Graph Break Models (static eval)
 
-92 models:
+90 models:
 
-- **AriaModel** — unsupported context manager
-- **AriaTextModel** — data-dependent guard
+- **AriaModel** — builtin callable
+- **AriaTextModel** — data-dependent branching
 - **AutoformerModel** — fake tensor error
 - **BambaModel** — logging.Logger
 - **BartModel** — copy.deepcopy
@@ -53,11 +52,10 @@
 - **FalconMambaModel** — forbidden callable
 - **FastSpeech2ConformerModel** — data-dependent branching
 - **Florence2Model** — builtin callable
-- **FunnelModel** — data-dependent guard
-- **Glm4vMoeVisionModel** — data-dependent guard
-- **Glm4vVisionModel** — data-dependent guard
-- **GlmImageVisionModel** — data-dependent guard
-- **GlmOcrVisionModel** — data-dependent guard
+- **Glm4vMoeVisionModel** — fake tensor error
+- **Glm4vVisionModel** — fake tensor error
+- **GlmImageVisionModel** — fake tensor error
+- **GlmOcrVisionModel** — fake tensor error
 - **GotOcr2Model** — builtin callable
 - **GraniteMoeHybridModel** — data-dependent branching
 - **GroundingDinoModel** — proxy conversion failure
@@ -67,7 +65,7 @@
 - **JambaModel** — data-dependent branching
 - **LEDModel** — logging.Logger
 - **LongT5Model** — observed exception
-- **LongcatFlashModel** — fake tensor error
+- **LongcatFlashModel** — data-dependent guard
 - **LongformerModel** — logging.Logger
 - **LwDetrModel** — proxy conversion failure
 - **M2M100Model** — copy.deepcopy
@@ -76,13 +74,13 @@
 - **MT5Model** — copy.deepcopy
 - **MambaModel** — forbidden callable
 - **MarianModel** — copy.deepcopy
-- **MimiModel** — data-dependent guard
+- **MimiModel** — fake tensor error
 - **MoonshineModel** — copy.deepcopy
 - **MoonshineStreamingModel** — copy.deepcopy
 - **MraModel** — unsupported requires_grad_()
 - **MvpModel** — copy.deepcopy
 - **NemotronHModel** — data-dependent branching
-- **NllbMoeModel** — non-Tensor return
+- **NllbMoeModel** — copy.deepcopy
 - **OlmoHybridModel** — data-dependent branching
 - **PLBartModel** — copy.deepcopy
 - **PPDocLayoutV2Model** — proxy conversion failure
@@ -92,7 +90,6 @@
 - **PeAudioModel** — non-Tensor return
 - **PegasusModel** — copy.deepcopy
 - **PegasusXModel** — copy.deepcopy
-- **ProphetNetModel** — copy.deepcopy
 - **Qwen3NextModel** — data-dependent branching
 - **Qwen3_5Model** — data-dependent branching
 - **Qwen3_5MoeModel** — data-dependent branching
@@ -100,14 +97,14 @@
 - **Qwen3_5TextModel** — data-dependent branching
 - **RTDetrModel** — proxy conversion failure
 - **RTDetrV2Model** — proxy conversion failure
-- **RecurrentGemmaModel** — skipped function call
+- **RecurrentGemmaModel** — builtin callable
 - **ReformerModel** — data-dependent branching
 - **RwkvModel** — logging.Logger
 - **SEWModel** — skipped function call
 - **SeamlessM4TModel** — logging.Logger
 - **SeamlessM4Tv2Model** — logging.Logger
-- **Siglip2Model** — data-dependent guard
-- **Siglip2VisionModel** — data-dependent guard
+- **Siglip2Model** — proxy conversion failure
+- **Siglip2VisionModel** — proxy conversion failure
 - **Speech2TextModel** — copy.deepcopy
 - **SpeechEncoderDecoderModel** — skipped function call
 - **SpeechT5Model** — skipped function call
@@ -118,8 +115,8 @@
 - **UdopModel** — observed exception
 - **UniSpeechModel** — skipped function call
 - **UniSpeechSatModel** — skipped function call
-- **VideoLlama3VisionModel** — dynamic shape operator
-- **ViltModel** — data-dependent guard
+- **VideoLlama3VisionModel** — fake tensor error
+- **ViltModel** — data-dependent branching
 - **VitsModel** — skipped function call
 - **Wav2Vec2BertModel** — skipped function call
 - **Wav2Vec2ConformerModel** — skipped function call

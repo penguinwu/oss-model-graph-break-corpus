@@ -104,6 +104,39 @@ CATEGORY_EXAMPLES = {
         "e.g. torch.* ops returning ints or tuples of non-Tensors"
     ),
 }
+
+
+# Actionability: maps taxonomy categories to who can fix them and how hard it is.
+ACTIONABILITY = {
+    # Fixable in user/model code
+    "copy.deepcopy()": ("fixable_in_user_code", "Replace deepcopy with clone() or manual copy"),
+    "Tensor.item()": ("fixable_in_user_code", "Remove .item() calls or guard with torch.compiler.is_compiling()"),
+    "Tensor requires_grad mutation": ("fixable_in_user_code", "Restructure gradient handling to avoid in-place mutation"),
+    "Observed exception": ("fixable_in_user_code", "Restructure try/except to avoid exception-based control flow"),
+    # Needs library PR (HF Transformers or PyTorch Dynamo)
+    "logging.Logger": ("needs_library_pr", "Dynamo should trace through logging calls — PyTorch fix"),
+    "Skipped function call": ("needs_library_pr", "Add Dynamo tracing support for skipped functions"),
+    "as_proxy() missing": ("needs_library_pr", "Add proxy support for additional arg types in Dynamo"),
+    "Fake tensor error": ("needs_library_pr", "Fix fake tensor propagation in Dynamo"),
+    "Non-Tensor return": ("needs_library_pr", "Add Dynamo support for non-Tensor return values"),
+    "Unsupported method/builtin": ("needs_library_pr", "Add Dynamo tracing for unsupported builtins"),
+    "Unsupported op/step": ("needs_library_pr", "Implement missing bytecode tracing in Dynamo"),
+    "NumPy fallback": ("needs_library_pr", "Add Dynamo support for NumPy operations"),
+    # Needs compiler/architectural change — hard
+    "Data-dependent branching": ("needs_compiler_change", "Requires torch.cond() or model restructuring — no quick fix"),
+    "Data-dependent guard": ("needs_compiler_change", "Requires compiler support for data-dependent guards"),
+    "Dynamic shape operator": ("needs_compiler_change", "Op output shape depends on data — fundamental limitation"),
+    "Constraint violation": ("needs_compiler_change", "mark_dynamic constraint — review dynamic shape annotations"),
+    # Unknown
+    "Other": ("needs_investigation", "Requires manual investigation"),
+}
+
+ACTIONABILITY_LABELS = {
+    "fixable_in_user_code": "Fixable in user code",
+    "needs_library_pr": "Needs library PR",
+    "needs_compiler_change": "Needs compiler change",
+    "needs_investigation": "Needs investigation",
+}
 def analyze(results, args):
     # Filter to successful explain results
     ok_results = [r for r in results if r.get("status") == "ok"]
@@ -224,6 +257,38 @@ def analyze(results, args):
 
     print(f"\n     {'Total':<35} {reasons_total:>7}")
 
+    # ── Actionability breakdown ──
+    if args.actionability:
+        print(f"\n{'─' * 50}")
+        print("ACTIONABILITY BREAKDOWN")
+        print(f"{'─' * 50}")
+
+        action_counts = Counter()
+        action_models = defaultdict(set)
+        action_details = defaultdict(lambda: Counter())  # action_level -> {category: count}
+
+        for rr in raw_reasons:
+            cat = rr["category"]
+            action_level = ACTIONABILITY.get(cat, ("needs_investigation", ""))[0]
+            action_counts[action_level] += 1
+            action_models[action_level].add(rr["model"])
+            action_details[action_level][cat] += 1
+
+        print(f"\n{'Level':<28} {'Breaks':>7} {'Models':>7} {'%':>6}")
+        print(f"{'─' * 52}")
+        for level in ["fixable_in_user_code", "needs_library_pr", "needs_compiler_change", "needs_investigation"]:
+            label = ACTIONABILITY_LABELS[level]
+            count = action_counts.get(level, 0)
+            n_models = len(action_models.get(level, set()))
+            pct = count / reasons_total * 100 if reasons_total else 0
+            print(f"{label:<28} {count:>7} {n_models:>7} {pct:>5.1f}%")
+            # Show contributing categories
+            for cat, cat_count in action_details[level].most_common():
+                fix_hint = ACTIONABILITY.get(cat, ("", ""))[1]
+                print(f"  └ {cat:<32} {cat_count:>5}  {fix_hint}")
+        print(f"{'─' * 52}")
+        print(f"{'Total':<28} {reasons_total:>7}")
+
     # ── Top raw reasons (deduplicated) ──
     n_reasons = args.top_reasons if hasattr(args, "top_reasons") and args.top_reasons else 15
     print(f"\n{'─' * 50}")
@@ -266,6 +331,25 @@ def analyze(results, args):
 
     # ── JSON output ──
     if args.json:
+        # Build actionability data for JSON
+        action_json = {}
+        if args.actionability:
+            action_counts_j = Counter()
+            action_models_j = defaultdict(set)
+            for rr in raw_reasons:
+                cat = rr["category"]
+                level = ACTIONABILITY.get(cat, ("needs_investigation", ""))[0]
+                action_counts_j[level] += 1
+                action_models_j[level].add(rr["model"])
+            action_json = {
+                level: {
+                    "label": ACTIONABILITY_LABELS[level],
+                    "breaks": action_counts_j.get(level, 0),
+                    "models": len(action_models_j.get(level, set())),
+                }
+                for level in ACTIONABILITY_LABELS
+            }
+
         output = {
             "summary": {
                 "models_analyzed": len(unique_models),
@@ -284,6 +368,8 @@ def analyze(results, args):
             },
             "distribution": dict(count_dist),
         }
+        if action_json:
+            output["actionability"] = action_json
         print(f"\n{'─' * 50}")
         print("JSON OUTPUT")
         print(json.dumps(output, indent=2))
@@ -321,6 +407,8 @@ def main():
                         help="Number of top raw reasons to show (default: 15)")
     parser.add_argument("--top-models", type=int, default=20,
                         help="Number of top models to show (default: 20)")
+    parser.add_argument("--actionability", action="store_true",
+                        help="Show 'fixable in user code / needs library PR / needs compiler change' breakdown")
 
     args = parser.parse_args()
 

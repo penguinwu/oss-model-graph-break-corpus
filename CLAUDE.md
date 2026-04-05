@@ -1,14 +1,17 @@
-# OSS Model Graph Break Corpus
+# OSS Model Compiler Quality Corpus
 
 ## What This Is
 
-A corpus of 468 HuggingFace models tested for `torch.compile(fullgraph=True)` compatibility on PyTorch 2.10.0. Results include static and dynamic shape (mark_dynamic) compilation status.
+A reusable corpus of 468 open-source models for measuring and improving `torch.compile` quality. The first application tracks `fullgraph=True` success rates across PyTorch versions; the infrastructure extends to dynamic shape behavior, recompilation patterns, and other compiler diagnostics.
 
 ## Key Files
 
 - `corpus/corpus.json` — main dataset (468 models, eval + train modes, static + dynamic results)
-- `tools/query.py` — query the corpus (by status, error text, dynamic comparison)
+- `tools/query.py` — query the corpus (by status, error text, dynamic comparison, top errors)
 - `tools/reproduce.py` — reproduce a single model's graph break
+- `tools/analyze_explain.py` — graph break taxonomy and root cause analysis
+- `tools/analyze_trend.py` — version trend analysis across PyTorch releases
+- `tools/validate.py` — corpus integrity checks (golden set, schema)
 - `tools/compare.py` — compare two sweep results
 - `sweep/run_sweep.py` — run a full sweep (orchestrator)
 - `sweep/worker.py` — single-model test worker (model creation, input generation, compile test)
