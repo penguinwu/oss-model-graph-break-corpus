@@ -128,6 +128,48 @@ python3 tools/compare.py --corpus-dynamic
 python3 tools/validate.py
 ```
 
+## Browsing the Corpus
+
+### Corpus dashboard
+
+A browsable HTML dashboard of all 468 models is available at `docs/index.html`:
+
+```bash
+python3 tools/generate_index.py    # generates docs/index.html
+open docs/index.html               # browse locally
+```
+
+The dashboard shows each model's status, break count, root cause category, fixability rating (Easy/Medium/Hard), and links to tlparse trace reports when available. Filterable by status, mode, and fixability.
+
+### Trace reports
+
+Pre-generated trace directories exist in `sweep_results/v2.10/traces/` (214 model-mode combinations). To generate browsable HTML reports for the top models:
+
+```bash
+# Generate tlparse reports for the top 30 models by break count
+python3 tools/generate_traces.py
+
+# Preview which models will be selected
+python3 tools/generate_traces.py --list
+
+# Customize
+python3 tools/generate_traces.py --top 50             # more models
+python3 tools/generate_traces.py --skip-existing       # resume interrupted run
+
+# Regenerate dashboard to pick up trace links
+python3 tools/generate_index.py
+```
+
+Reports are written to `docs/traces/` (gitignored — ~20 MB per model). After generating, refresh the dashboard to see "view" links in the Trace column.
+
+To generate a report for a single model manually:
+
+```bash
+TORCH_TRACE=/tmp/trace python3 tools/reproduce.py BartModel
+tlparse parse /tmp/trace -o /tmp/report
+open /tmp/report/index.html
+```
+
 ## Corpus Format
 
 `corpus/corpus.json` — 468 models with eval + train results across static and dynamic configurations. Each model includes status, compile time, error details. See `corpus/summary.md` for a human-readable overview.
@@ -138,48 +180,16 @@ Sweep results by version: `sweep_results/{v2.8,v2.9,v2.10}/` — JSONL checkpoin
 
 ## Debugging Graph Breaks
 
-### TORCH_TRACE + tlparse
-
-For deep investigation of graph breaks, capture the full compilation trace:
-
-```bash
-# Capture trace artifacts to a directory
-TORCH_TRACE=/tmp/trace python3 tools/reproduce.py BartModel
-
-# Parse the trace into a browsable report
-pip install tlparse  # trace visualization tool for torch.compile artifacts
-tlparse parse /tmp/trace -o /tmp/report
-
-# Opens an HTML report with:
-#   - Full graph IR for each subgraph
-#   - Guard expressions that caused breaks
-#   - Dynamo decision log
-#   - Performance counters
-```
-
-### Batch-generate trace reports
-
-Pre-generated traces exist for all 214 model-mode combinations (v2.10). To generate browsable HTML reports for all of them:
-
-```bash
-python3 tools/generate_trace_reports.py                    # all 214 traces → trace_reports/
-python3 tools/generate_trace_reports.py --skip-existing    # resume interrupted run
-python3 tools/generate_trace_reports.py --version v2.9     # different version
-```
-
-This generates an `index.html` with a filterable table linking to each model's tlparse report.
-
-**Note:** Reports are generated locally (not hosted). To share, consider uploading to a manifold bucket or GitHub Pages.
-
 ### Typical debugging workflow
 
-1. **Identify** — find the model in the corpus: `python3 tools/query.py --error deepcopy`
-2. **Reproduce** — confirm the break: `python3 tools/reproduce.py ModelName`
-3. **Explain** — see all break reasons: `python3 tools/reproduce.py ModelName --explain --verbose`
-4. **Trace** — capture full artifacts: `TORCH_TRACE=/tmp/trace python3 tools/reproduce.py ModelName`
-5. **Parse** — browse the trace: `tlparse /tmp/trace`
-6. **Fix** — patch the model or upstream (see "Fix a model" below)
-7. **Verify** — re-run: `python3 tools/reproduce.py ModelName`
+1. **Browse** — find the model in the dashboard: `open docs/index.html`
+2. **Query** — or search by error: `python3 tools/query.py --error deepcopy`
+3. **Reproduce** — confirm the break: `python3 tools/reproduce.py ModelName`
+4. **Explain** — see all break reasons: `python3 tools/reproduce.py ModelName --explain --verbose`
+5. **Trace** — capture full artifacts: `TORCH_TRACE=/tmp/trace python3 tools/reproduce.py ModelName`
+6. **Parse** — browse the trace: `tlparse parse /tmp/trace -o /tmp/report`
+7. **Fix** — patch the model or upstream (see "Fix a model" below)
+8. **Verify** — re-run: `python3 tools/reproduce.py ModelName`
 
 ### Export models for batch investigation
 
@@ -243,6 +253,8 @@ python3 sweep/worker.py --model hf/ModelName --device cuda
 | `tools/version_check.py` | Verify environment matches corpus versions |
 | `tools/update_corpus.py` | Update corpus.json from sweep results |
 | `tools/generate_trace_reports.py` | Batch-generate tlparse HTML reports with index |
+| `tools/generate_index.py` | Generate corpus dashboard (docs/index.html) |
+| `tools/generate_traces.py` | Pre-generate tlparse reports for top N models |
 | `scripts/setup_env.sh` | One-command virtual environment setup |
 
 The sweep uses process-group isolation, non-blocking polling, GPU pressure backoff, and JSONL checkpointing for crash recovery.
