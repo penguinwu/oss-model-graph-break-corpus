@@ -6,9 +6,11 @@ The first application tracks `fullgraph=True` success rates across PyTorch versi
 
 ## Who Is This For?
 
-- **Compiler engineers** — measure graph break rates, track regressions across versions, identify high-impact fix targets
-- **Skill builders** — validate graph break fix tools against a known corpus of breaks (e.g., testing an automated fix skill on all `deepcopy`-related breaks)
-- **Researchers** — study dynamic shape behavior, recompilation patterns, or compiler diagnostics at scale
+Compiler developers working on `torch.compile`. Three workflows:
+
+1. **Find & fix graph breaks** — reproduce any break with one command, see root causes and fix hints, prioritize by impact across 468 models
+2. **Prioritize work** — see which break categories affect the most models, track version-over-version progress, identify high-ROI fixes
+3. **Validate tools** — test graph break fix skills, compiler changes, or diagnostics against a known corpus of real-world breaks
 
 ## Results at a Glance (PyTorch 2.10)
 
