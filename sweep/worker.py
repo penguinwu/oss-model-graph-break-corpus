@@ -2241,12 +2241,14 @@ class _BreakCollector:
 
     def get_break_reasons(self):
         """Parse captured messages into break_reasons format."""
+        import re
+        # Strip long site-packages paths to preserve the meaningful part
+        _site_pkg_re = re.compile(r'/[^\s]*/site-packages/')
         reasons = []
         for msg in self.messages:
-            # Extract file:line if present in the message
-            info = {"reason": msg[:300]}
+            cleaned = _site_pkg_re.sub('', msg)
+            info = {"reason": cleaned[:2000]}
             # Common patterns: "... at /path/file.py:123" or "file.py:123"
-            import re
             loc = re.search(r'(\S+\.py):(\d+)', msg)
             if loc:
                 info["file"] = loc.group(1)

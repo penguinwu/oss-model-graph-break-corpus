@@ -476,8 +476,9 @@ Additional labels for type (`bug`, `feature-request`, `enhancement`, `question`)
 | 2 | Frame skip in generic.py + output_capturing.py | `for:dynamo-team` | 226 |
 | 3 | 300-char truncation in break reasons | `for:corpus-tooling` | 97 unclassifiable |
 | 4 | Dynamo compile crashes on 4 models | `for:dynamo-team` | 4 models blocked |
+| 5 | import_utils.py + configuration_utils.py hotspot | `for:hf-transformers` | 851 (68% of all) |
 
-**Gap:** Animesh requested top 5; issue #5 (e.g., `import_utils.py` hotspot — 510 breaks across models) is pending. All issues currently lack tlparse trace links (hosting not yet configured).
+All issues currently lack tlparse trace links (hosting not yet configured).
 
 ### 6.3 Issue Monitor
 
