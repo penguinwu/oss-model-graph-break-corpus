@@ -40,21 +40,25 @@ TASK_TAG = "graph-break-corpus"
 # Message IDs to skip (pinned template, bot messages)
 SKIP_MESSAGE_IDS = set()
 
-# Peng's fbid — MyClaw agents send messages as Peng, so filter these out
-PENG_FBID = "100056103097894"
-
-# Prefixes used in agent-generated responses (defense-in-depth)
+# Prefixes used in agent-generated responses (defense-in-depth).
+# Primary defense: agent messages sent with --as-bot are invisible to gchat read.
+# This list is a safety net in case a message slips through as --as-user.
 AGENT_PREFIXES = (
+    "[🦦 Otter]:",           # Otter's standard GChat prefix
+    "*Technical Report:",     # Technical report posts
     "Got it — logged as",
     "Thanks for the report!",
     "Full report:",
     "Full Technical Report",
     "Update: ",
+    "Update:",
     "Follow-up",
     "Quick follow-up",
     "On it,",
     "Great catch,",
+    "Hi, I'm Otter",
     "Testing thread reply",
+    "(Correction to my",      # Correction messages
 )
 
 # Categories that need Rocky's independent validation before corpus changes
@@ -223,9 +227,9 @@ def respond_in_thread(msg_id, response_text):
 
     try:
         if thread_name:
-            cmd = f'gchat send {FEEDBACK_SPACE} --thread "{thread_name}" --text-file {tmp_path}'
+            cmd = f'gchat send {FEEDBACK_SPACE} --thread "{thread_name}" --text-file {tmp_path} --as-bot'
         else:
-            cmd = f'gchat send {FEEDBACK_SPACE} --text-file {tmp_path}'
+            cmd = f'gchat send {FEEDBACK_SPACE} --text-file {tmp_path} --as-bot'
 
         result = subprocess.run(
             cmd, shell=True,
@@ -369,13 +373,14 @@ def main():
     new_messages = [m for m in messages if m["id"] not in processed]
 
     # Filter out bot messages and template
+    # Primary defense: agent messages sent with --as-bot don't appear in gchat read.
+    # AGENT_PREFIXES is defense-in-depth for any --as-user messages that slip through.
     user_messages = [
         m for m in new_messages
         if m["id"] not in SKIP_MESSAGE_IDS
         and m.get("sender", "")  # Skip messages with no sender
         and not m.get("is_thread_reply", False)  # Only top-level posts
-        and m.get("sender_fbid") != PENG_FBID  # Skip MyClaw agent messages (sent as Peng)
-        and not any(m.get("text", "").startswith(p) for p in AGENT_PREFIXES)  # Defense-in-depth
+        and not any(m.get("text", "").startswith(p) for p in AGENT_PREFIXES)
     ]
 
     if not user_messages:
