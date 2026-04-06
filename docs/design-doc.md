@@ -216,9 +216,14 @@ Observed exception: LongT5Model, SwitchTransformersModel, UdopModel. Non-Tensor 
 
 | Gap | Count | Description |
 |-----|-------|-------------|
+| **Breaks without reasons** | 78 | 6.2% of 1,254 breaks have no diagnostic reason from TORCH_LOGS (coverage gap) |
+| **Truncated sub-causes** | 702 | CALL/CALL_FUNCTION_EX entries truncated at 300 chars — sub-cause unclassifiable |
+| **Explain errors** | 4 | AutoformerModel, InformerModel, MambaModel, FalconMambaModel crash during Dynamo tracing (eval only, all 3 versions) |
+| **Explain timeout** | 1 | RwkvModel (new in v2.10) |
 | **Eager errors** | 13 | Structurally untestable (see below) |
 | **Create errors** | 7 | Missing deps (natten, detectron2, flash_attn), unresolvable config, or instantiation failure |
 | **Timeouts** | 4 | EdgeTam (×2), ZambaModel, xLSTMModel |
+| **tlparse traces** | — | Trace hosting not yet set up; issues lack tlparse links for interactive debugging |
 | **TIMM** | excluded | 1,284 models, 99% clean, 3 graph breaks — available via `--source all` |
 
 **13 Structurally Untestable Models:**
@@ -445,7 +450,42 @@ python sweep/run_sweep.py --source hf+diffusers --device cuda --workers 4 \
 - **Config creation:** `_create_config()` in `worker.py` — composite models needing factory methods
 - **Size reduction:** `_reduce_model_size()` in `worker.py` — cap layers, hidden dims, MoE experts
 
-## 6. Future Work
+## 6. GitHub Issue Tracking
+
+GitHub Issues on this repo serve as the interface between corpus findings and actionable work items for the Dynamo team, HuggingFace maintainers, and corpus contributors.
+
+### 6.1 Label Taxonomy
+
+Issues use `for:*` audience labels so teams can quickly filter for their items:
+
+| Label | Audience | Description |
+|-------|----------|-------------|
+| `for:dynamo-team` | PyTorch Dynamo team | Compiler-side fixes (frame skip, FakeTensor, tracing) |
+| `for:hf-transformers` | HuggingFace team | Model library fixes (deepcopy, config, annotations) |
+| `for:corpus-tooling` | Corpus maintainers | Pipeline/sweep infrastructure improvements |
+
+Additional labels for type (`bug`, `feature-request`, `enhancement`, `question`), priority (`high-impact`, `good first issue`), and domain (`dynamo`, `data-quality`).
+
+**Filtering:** `label:for:dynamo-team` shows only Dynamo-actionable issues.
+
+### 6.2 Initial Issues (v2.10 corpus)
+
+| # | Title | Audience | Breaks |
+|---|-------|----------|--------|
+| 1 | copy.deepcopy() → clone() | `for:hf-transformers` | 90 |
+| 2 | Frame skip in generic.py + output_capturing.py | `for:dynamo-team` | 226 |
+| 3 | 300-char truncation in break reasons | `for:corpus-tooling` | 97 unclassifiable |
+| 4 | Dynamo compile crashes on 4 models | `for:dynamo-team` | 4 models blocked |
+
+**Gap:** Animesh requested top 5; issue #5 (e.g., `import_utils.py` hotspot — 510 breaks across models) is pending. All issues currently lack tlparse trace links (hosting not yet configured).
+
+### 6.3 Issue Monitor
+
+`tools/github_issue_monitor.py` polls the GitHub API for new issues and comments, alerting via GChat. Runs as a cron job every 30 minutes during business hours (weekdays 9am–7pm ET).
+
+This enables a feedback loop: Dynamo engineers or users can file issues against the corpus, and the corpus maintainer is notified automatically.
+
+## 7. Future Work
 
 | Item | Description | Priority |
 |------|-------------|----------|
@@ -457,7 +497,7 @@ python sweep/run_sweep.py --source hf+diffusers --device cuda --workers 4 \
 | **torchaudio, ultralytics** | Additional model sources (~25 models) | Low |
 | **OSS long-tail discovery** | Crawl GitHub for wild PyTorch modules (separate project) | Deferred |
 
-### 6.1 Graph Break Fix Study (V2 Use Case)
+### 7.1 Graph Break Fix Study (V2 Use Case)
 
 **Goal:** Enable engineers to study graph breaks in pip-installed HuggingFace models, develop workarounds in user code, and validate fixes — without modifying the library source.
 
@@ -477,13 +517,13 @@ python sweep/run_sweep.py --source hf+diffusers --device cuda --workers 4 \
 
 **Priority:** After initial corpus + version trend data is complete.
 
-## 7. Open Questions
+## 8. Open Questions
 
 1. **Diffusers constructor args:** Can we auto-discover minimal constructor args, or need per-model configs?
 2. **TorchBench overlap:** Does the team already have fullgraph pass/fail data from CI?
 3. **Multimodal models:** 44 HF composite models skipped — some (Llava, CLIP) are high-usage. Worth adding?
 
-## 8. Prior Art
+## 9. Prior Art
 
 - **Repo:** https://github.com/jansel/pytorch-jit-paritybench
 - **Dashboard:** [pytorch/pytorch#93667](https://github.com/pytorch/pytorch/issues/93667)
@@ -491,7 +531,7 @@ python sweep/run_sweep.py --source hf+diffusers --device cuda --workers 4 \
 - **Core IR Opset Analysis:** [Google Doc](https://docs.google.com/document/d/1XR73gknq3gAh6nHuG-jDUjS1_vwjhY6zatn-Tx4zz2c)
 - **Op frequency spreadsheet:** [Google Sheet](https://docs.google.com/spreadsheets/d/1sEt0HD-0YAF5lfdOUPPZd2xIvwPL0emE7GaiqgMaTSM)
 
-## 9. Artifacts
+## 10. Artifacts
 
 | File | Location |
 |------|----------|
@@ -500,6 +540,7 @@ python sweep/run_sweep.py --source hf+diffusers --device cuda --workers 4 \
 | Model enumeration | `sweep/models.py` |
 | Corpus (JSON) | `corpus/corpus.json` |
 | Graph break analysis | `analysis/graph-break-analysis.md` |
+| GitHub issue monitor | `tools/github_issue_monitor.py` |
 | Design doc | `docs/design-doc.md` |
 | Google Drive folder | [Link](https://drive.google.com/drive/folders/1r74REnQBKK6ssoF6dS9mcbBrIZ8hrtBd) |
 
@@ -634,3 +675,4 @@ Benchmarked on PyTorch 2.8.0a0 (CPU, first-compile cost):
 | 31 | 2026-04-02 | **Normalized break trend + analysis script.** Added total graph break counts from explain across all 3 versions. Added apples-to-apples comparison on persistently-broken models. Added `tools/analyze_trend.py` for reproducible version comparison. |
 | 32 | 2026-04-03 | **Clean re-run data.** Re-ran all 3 versions (identify + explain) with reverted worker.py to eliminate data contamination. Updated all trend tables with clean data. Key changes: v2.10 eval graph_break 92→90, 6 worker_error models (cuDNN infra). A2A comparison now shows slight break *increase* (419→438) from stricter soundness checks — more correct, not worse. Added `tools/update_corpus.py` for automated corpus merging with changelog generation. |
 | 33 | 2026-04-04–05 | **Explain methodology migration.** Replaced deprecated `torch._dynamo.explain()` with `TORCH_LOGS=+graph_breaks` + counting backend (explain API removed in PyTorch 2.10). Re-swept all 3 versions. Key changes: total breaks 1,247→1,254 (v2.10), AutoformerModel/InformerModel train now succeed (were explain_error), RwkvModel now times out. Added explain timeout tracking. Updated Section 3.1 methodology and Section 4.6 trend tables. |
+| 34 | 2026-04-05 | **GitHub issue tracking.** Created 4 issues for top graph break findings (deepcopy, frame skip, truncation, compile crashes). Added label taxonomy with `for:*` audience labels for Dynamo team, HF Transformers, and corpus tooling. Added `tools/github_issue_monitor.py` for automated new-issue/comment alerting. Expanded Section 4.4 remaining gaps (breaks without reasons, truncated sub-causes, explain errors, tlparse traces). Added Section 6. |
