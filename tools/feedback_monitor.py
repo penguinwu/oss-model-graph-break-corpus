@@ -40,6 +40,23 @@ TASK_TAG = "graph-break-corpus"
 # Message IDs to skip (pinned template, bot messages)
 SKIP_MESSAGE_IDS = set()
 
+# Peng's fbid — MyClaw agents send messages as Peng, so filter these out
+PENG_FBID = "100056103097894"
+
+# Prefixes used in agent-generated responses (defense-in-depth)
+AGENT_PREFIXES = (
+    "Got it — logged as",
+    "Thanks for the report!",
+    "Full report:",
+    "Full Technical Report",
+    "Update: ",
+    "Follow-up",
+    "Quick follow-up",
+    "On it,",
+    "Great catch,",
+    "Testing thread reply",
+)
+
 # Categories that need Rocky's independent validation before corpus changes
 NEEDS_VALIDATION = {"bug", "data_correction"}
 
@@ -116,8 +133,10 @@ def read_new_messages(since=None):
         messages.append({
             "id": msg_id,
             "sender": m.get("sender_name", ""),
+            "sender_fbid": m.get("sender_work_user_fbid", ""),
             "timestamp": str(m.get("creation_timestamp", "")),
             "thread_id": thread_id,
+            "is_thread_reply": m.get("is_thread_reply", False),
             "text": m.get("message_body", ""),
         })
 
@@ -354,6 +373,9 @@ def main():
         m for m in new_messages
         if m["id"] not in SKIP_MESSAGE_IDS
         and m.get("sender", "")  # Skip messages with no sender
+        and not m.get("is_thread_reply", False)  # Only top-level posts
+        and m.get("sender_fbid") != PENG_FBID  # Skip MyClaw agent messages (sent as Peng)
+        and not any(m.get("text", "").startswith(p) for p in AGENT_PREFIXES)  # Defense-in-depth
     ]
 
     if not user_messages:
