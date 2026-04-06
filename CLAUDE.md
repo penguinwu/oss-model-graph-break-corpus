@@ -13,6 +13,8 @@ A reusable corpus of 468 open-source models for measuring and improving `torch.c
 - `tools/analyze_trend.py` — version trend analysis across PyTorch releases
 - `tools/validate.py` — corpus integrity checks (golden set, schema)
 - `tools/compare.py` — compare two sweep results
+- `tools/feedback_monitor.py` — monitor GChat feedback space for user reports
+- `tools/github_issue_monitor.py` — monitor GitHub issues for new activity
 - `sweep/run_sweep.py` — run a full sweep (orchestrator)
 - `sweep/worker.py` — single-model test worker (model creation, input generation, compile test)
 - `sweep/sweep_watchdog.py` — monitor sweep progress, auto-restart on failure
@@ -117,3 +119,11 @@ python tools/reproduce.py ModelName --dynamic mark     # Test with dynamic shape
 TORCH_TRACE=/tmp/trace python tools/reproduce.py ModelName  # Capture trace
 pip install tlparse && tlparse /tmp/trace -o /tmp/report     # Visualize trace
 ```
+
+### GitHub issue labels
+Issues use `for:*` labels to route to the right team:
+- `for:dynamo-team` — PyTorch Dynamo compiler fixes
+- `for:hf-transformers` — HuggingFace Transformers model/library fixes
+- `for:corpus-tooling` — corpus pipeline and tooling improvements
+
+When creating issues, always include: repro command, break count / impact, and the appropriate `for:*` label.

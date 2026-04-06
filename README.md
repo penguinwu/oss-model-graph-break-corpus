@@ -257,6 +257,8 @@ python3 sweep/worker.py --model hf/ModelName --device cuda
 | `tools/generate_trace_reports.py` | Batch-generate tlparse HTML reports with index |
 | `tools/generate_index.py` | Generate corpus dashboard (docs/index.html) |
 | `tools/generate_traces.py` | Pre-generate tlparse reports for top N models |
+| `tools/feedback_monitor.py` | Monitor GChat feedback space for user reports |
+| `tools/github_issue_monitor.py` | Monitor GitHub issues for new activity |
 | `scripts/setup_env.sh` | One-command virtual environment setup |
 
 The sweep uses process-group isolation, non-blocking polling, GPU pressure backoff, and JSONL checkpointing for crash recovery.
@@ -273,7 +275,14 @@ The sweep uses process-group isolation, non-blocking polling, GPU pressure backo
 
 ## Feedback
 
-Questions, bug reports, or feature requests: join the [Corpus Feedback space](https://chat.google.com/room/AAQABmB_3Is).
+Questions, bug reports, or feature requests: [open a GitHub issue](https://github.com/penguinwu/oss-model-graph-break-corpus/issues).
+
+Use `for:*` labels to route issues to the right team:
+- `for:dynamo-team` — PyTorch Dynamo compiler issues
+- `for:hf-transformers` — HuggingFace Transformers model/library fixes
+- `for:corpus-tooling` — corpus pipeline and tooling improvements
+
+Also available: [Corpus Feedback GChat space](https://chat.google.com/room/AAQABmB_3Is).
 
 ## Design Doc
 
