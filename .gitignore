@@ -1,8 +1,15 @@
 __pycache__/
 *.pyc
 sweep_results/
+# But track nightly results explicitly (git add -f)
+!sweep_results/nightly/
 *.log
 *.tmp
 .feedback_monitor_state.json
 .feedback_monitor_audit.jsonl
 docs/traces/
+tools/feedback_state.db
+data/pt2-issues/*_backup.json
+data/pt2-issues/pt2_analysis_data.json
+data/pt2-issues/pt2_analysis_output.txt
+data/pt2-issues/pt2_analysis_summary.json
