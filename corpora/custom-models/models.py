@@ -123,6 +123,7 @@ MODELS = [
         },
         "input_fn": "openvoice_inputs",
         "compile_target": "model.voice_conversion",
+        "skip_train": True,  # No forward() — inference-only voice cloning tool
     },
 
     # OpenVoice infer() — full TTS pipeline (text→audio), exercises more code paths
@@ -162,6 +163,7 @@ MODELS = [
         },
         "input_fn": "openvoice_infer_inputs",
         "compile_target": "model.infer",
+        "skip_train": True,  # No forward() — inference-only voice cloning tool
     },
 
     # =========================================================================
@@ -209,6 +211,51 @@ MODELS = [
         },
         "input_fn": "gptsovits_inputs",
         "compile_target": "model.infer",
+    },
+
+    # GPT-SoVITS forward() — training path with quantizer + encoder + flow + decoder
+    {
+        "name": "GPT-SoVITS-SynthesizerTrn-forward",
+        "source": "custom",
+        "category": "tts",
+        "repo": "RVC-Boss/GPT-SoVITS",
+        "files": {
+            "gptsovits/__init__.py": None,
+            "gptsovits/module/__init__.py": None,
+            "gptsovits/module/models.py": f"{GH_RAW}/RVC-Boss/GPT-SoVITS/main/GPT_SoVITS/module/models.py",
+            "gptsovits/module/commons.py": f"{GH_RAW}/RVC-Boss/GPT-SoVITS/main/GPT_SoVITS/module/commons.py",
+            "gptsovits/module/modules.py": f"{GH_RAW}/RVC-Boss/GPT-SoVITS/main/GPT_SoVITS/module/modules.py",
+            "gptsovits/module/attentions.py": f"{GH_RAW}/RVC-Boss/GPT-SoVITS/main/GPT_SoVITS/module/attentions.py",
+            "gptsovits/module/transforms.py": f"{GH_RAW}/RVC-Boss/GPT-SoVITS/main/GPT_SoVITS/module/transforms.py",
+        },
+        "mocks": ["f5_tts", "module.mrte_model", "module.quantize", "text", "torchmetrics"],
+        "extra_sys_paths": ["gptsovits"],
+        "model_module": "gptsovits.module.models",
+        "model_class": "SynthesizerTrn",
+        "model_kwargs": {
+            "spec_channels": 704,  # match ref_enc v2 channel count
+            "segment_size": 20480,
+            "inter_channels": 192,
+            "hidden_channels": 192,
+            "filter_channels": 768,
+            "n_heads": 2,
+            "n_layers": 6,
+            "kernel_size": 3,
+            "p_dropout": 0.1,
+            "resblock": "1",
+            "resblock_kernel_sizes": [3, 7, 11],
+            "resblock_dilation_sizes": [[1, 3, 5], [1, 3, 5], [1, 3, 5]],
+            "upsample_rates": [8, 8, 2, 2],
+            "upsample_initial_channel": 512,
+            "upsample_kernel_sizes": [16, 16, 4, 4],
+            "n_speakers": 0,
+            "gin_channels": 512,
+            "use_sdp": True,
+            "semantic_frame_rate": "50hz",
+            "version": "v2",
+        },
+        "input_fn": "gptsovits_forward_inputs",
+        "compile_target": "model",
     },
 
     # =========================================================================
@@ -337,6 +384,24 @@ def gptsovits_inputs(batch_size=2):
     T_text = 16
     ssl = torch.randn(batch_size, 768, T_ssl)
     y = torch.randn(batch_size, 704, T_ssl)
+    y_lengths = torch.tensor([T_ssl] * batch_size)
+    text = torch.randint(0, 28, (batch_size, T_text))
+    text_lengths = torch.tensor([T_text] * batch_size)
+    return {"ssl": ssl, "y": y, "y_lengths": y_lengths,
+            "text": text, "text_lengths": text_lengths}
+
+
+def gptsovits_forward_inputs(batch_size=2):
+    """GPT-SoVITS SynthesizerTrn.forward() inputs — training path.
+
+    y needs 513 channels (spec_channels) for enc_q, but ref_enc (v2)
+    clips y[:, :704]. In practice y is the full spectrogram (513 ch).
+    """
+    import torch
+    T_ssl = 32
+    T_text = 16
+    ssl = torch.randn(batch_size, 768, T_ssl)
+    y = torch.randn(batch_size, 704, T_ssl)     # matches ref_enc v2 + enc_q
     y_lengths = torch.tensor([T_ssl] * batch_size)
     text = torch.randint(0, 28, (batch_size, T_text))
     text_lengths = torch.tensor([T_text] * batch_size)

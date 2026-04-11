@@ -4,6 +4,7 @@
       "name": "GFPGAN",
       "source": "custom",
       "category": "face_restoration",
+      "mode": "eval",
       "download_ok": true,
       "params": 11732068,
       "params_M": 11.7,
@@ -12,12 +13,13 @@
       "graph_break_count": 0,
       "graph_count": 1,
       "break_reasons": [],
-      "wall_time_s": 9.1
+      "wall_time_s": 36.6
     },
     {
       "name": "FLUX.1-DiT",
       "source": "custom",
       "category": "diffusion",
+      "mode": "eval",
       "download_ok": true,
       "params": 17680960,
       "params_M": 17.7,
@@ -26,12 +28,13 @@
       "graph_break_count": 0,
       "graph_count": 1,
       "break_reasons": [],
-      "wall_time_s": 2.4
+      "wall_time_s": 6.2
     },
     {
       "name": "OpenVoice-SynthesizerTrn",
       "source": "custom",
       "category": "tts",
+      "mode": "eval",
       "download_ok": true,
       "params": 40118065,
       "params_M": 40.1,
@@ -51,12 +54,13 @@
           "reason": "GraphCompileReason(reason='Unsupported Tensor.item() call with capture_scalar_outputs=False\\n  Explanation: Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False.\\n  Hint: Set `torch._dynamo.config.capture_scalar_outputs = True` or `export TORCHDYNAMO_CAPTURE_SCALA"
         }
       ],
-      "wall_time_s": 22.7
+      "wall_time_s": 67.3
     },
     {
       "name": "OpenVoice-SynthesizerTrn-infer",
       "source": "custom",
       "category": "tts",
+      "mode": "eval",
       "download_ok": true,
       "params": 40118065,
       "params_M": 40.1,
@@ -121,12 +125,13 @@
           "reason": "GraphCompileReason(reason='Unsupported Tensor.item() call with capture_scalar_outputs=False\\n  Explanation: Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False.\\n  Hint: Set `torch._dynamo.config.capture_scalar_outputs = True` or `export TORCHDYNAMO_CAPTURE_SCALA"
         }
       ],
-      "wall_time_s": 20.4
+      "wall_time_s": 68.2
     },
     {
       "name": "GPT-SoVITS-SynthesizerTrn",
       "source": "custom",
       "category": "tts",
+      "mode": "eval",
       "download_ok": true,
       "params": 49114624,
       "params_M": 49.1,
@@ -146,12 +151,54 @@
           "reason": "GraphCompileReason(reason='Unsupported Tensor.item() call with capture_scalar_outputs=False\\n  Explanation: Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False.\\n  Hint: Set `torch._dynamo.config.capture_scalar_outputs = True` or `export TORCHDYNAMO_CAPTURE_SCALA"
         }
       ],
-      "wall_time_s": 19.0
+      "wall_time_s": 71.7
+    },
+    {
+      "name": "GPT-SoVITS-SynthesizerTrn-forward",
+      "source": "custom",
+      "category": "tts",
+      "mode": "eval",
+      "download_ok": true,
+      "params": 49151296,
+      "params_M": 49.2,
+      "eager_ok": true,
+      "status": "graph_break",
+      "graph_break_count": 8,
+      "graph_count": 9,
+      "break_reasons": [
+        {
+          "type": "Tensor.item()",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/gpt_sovits_synthesizertrn/gptsovits/module/commons.py:100 in fused_add_tanh_sigmoid_multiply",
+          "reason": "GraphCompileReason(reason='Unsupported Tensor.item() call with capture_scalar_outputs=False\\n  Explanation: Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False.\\n  Hint: Set `torch._dynamo.config.capture_scalar_outputs = True` or `export TORCHDYNAMO_CAPTURE_SCALA"
+        },
+        {
+          "type": "Tensor.item()",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/gpt_sovits_synthesizertrn/gptsovits/module/commons.py:100 in fused_add_tanh_sigmoid_multiply",
+          "reason": "GraphCompileReason(reason='Unsupported Tensor.item() call with capture_scalar_outputs=False\\n  Explanation: Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False.\\n  Hint: Set `torch._dynamo.config.capture_scalar_outputs = True` or `export TORCHDYNAMO_CAPTURE_SCALA"
+        },
+        {
+          "type": "Tensor.item()",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/gpt_sovits_synthesizertrn/gptsovits/module/commons.py:100 in fused_add_tanh_sigmoid_multiply",
+          "reason": "GraphCompileReason(reason='Unsupported Tensor.item() call with capture_scalar_outputs=False\\n  Explanation: Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False.\\n  Hint: Set `torch._dynamo.config.capture_scalar_outputs = True` or `export TORCHDYNAMO_CAPTURE_SCALA"
+        },
+        {
+          "type": "Tensor.item()",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/gpt_sovits_synthesizertrn/gptsovits/module/commons.py:51 in slice_segments",
+          "reason": "GraphCompileReason(reason='Unsupported Tensor.item() call with capture_scalar_outputs=False\\n  Explanation: Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False.\\n  Hint: Set `torch._dynamo.config.capture_scalar_outputs = True` or `export TORCHDYNAMO_CAPTURE_SCALA"
+        },
+        {
+          "type": "other",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/gpt_sovits_synthesizertrn/gptsovits/module/commons.py:48 in slice_segments",
+          "reason": "GraphCompileReason(reason='step_unsupported', user_stack=[<FrameSummary file /home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/gpt_sovits_synthesizertrn/gptsovits/module/commons.py, line 48 in slice_segments>], graph_break=True)"
+        }
+      ],
+      "wall_time_s": 80.5
     },
     {
       "name": "MiniCPM-V-Resampler",
       "source": "custom",
       "category": "multimodal",
+      "mode": "eval",
       "download_ok": true,
       "params": 3792384,
       "params_M": 3.8,
@@ -181,12 +228,13 @@
           "reason": "GraphCompileReason(reason='Data dependent operator\\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs ="
         }
       ],
-      "wall_time_s": 3.7
+      "wall_time_s": 4.6
     },
     {
       "name": "MiniCPM-V-ViT",
       "source": "custom",
       "category": "multimodal",
+      "mode": "eval",
       "download_ok": true,
       "params": 2669952,
       "params_M": 2.7,
@@ -206,7 +254,7 @@
           "reason": "GraphCompileReason(reason=\"Dynamic shape operator\\n  Explanation: Operator `aten.nonzero.default`'s output shape depends on input Tensor data.\\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\\n\\n  Developer debug context: aten.non"
         }
       ],
-      "wall_time_s": 2.5
+      "wall_time_s": 4.4
     }
   ]
 }

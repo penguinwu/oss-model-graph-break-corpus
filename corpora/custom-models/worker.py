@@ -16,6 +16,7 @@ Usage:
   python worker.py --all --output results.json
 """
 import argparse
+import contextlib
 import importlib
 import json
 import os
@@ -350,10 +351,11 @@ def get_inputs(spec):
         raise ValueError(f"No input specification for {spec['name']}")
 
 
-def run_test(spec, proxy_url=None):
+def run_test(spec, proxy_url=None, mode="eval"):
     """Full test pipeline for one model."""
     name = spec["name"]
-    result = {"name": name, "source": "custom", "category": spec.get("category", "unknown")}
+    result = {"name": name, "source": "custom", "category": spec.get("category", "unknown"),
+              "mode": mode}
 
     t0 = time.time()
 
@@ -373,6 +375,8 @@ def run_test(spec, proxy_url=None):
     try:
         setup_mocks(spec, model_dir)
         model = create_model(spec, model_dir)
+        if mode == "train":
+            model.train()
         params = sum(p.numel() for p in model.parameters())
         result["params"] = params
         result["params_M"] = round(params / 1e6, 1)
@@ -394,7 +398,8 @@ def run_test(spec, proxy_url=None):
         else:
             target_fn = model
 
-        with torch.no_grad():
+        ctx = torch.no_grad() if mode == "eval" else contextlib.nullcontext()
+        with ctx:
             if isinstance(inputs, dict):
                 eager_out = target_fn(**inputs)
             elif isinstance(inputs, tuple):
@@ -415,7 +420,8 @@ def run_test(spec, proxy_url=None):
         dynamo.reset()
         explained = dynamo.explain(target_fn)
 
-        with torch.no_grad():
+        ctx = torch.no_grad() if mode == "eval" else contextlib.nullcontext()
+        with ctx:
             if isinstance(inputs, dict):
                 explanation = explained(**inputs)
             elif isinstance(inputs, tuple):
@@ -473,6 +479,8 @@ def main():
     parser.add_argument("--proxy", type=str, default="http://localhost:7824/fetch",
                         help="Web proxy URL for downloads")
     parser.add_argument("--no-proxy", action="store_true", help="Skip proxy, download directly")
+    parser.add_argument("--mode", choices=["eval", "train", "both"], default="eval",
+                        help="Test mode: eval, train, or both")
     args = parser.parse_args()
 
     proxy_url = None if args.no_proxy else args.proxy
@@ -496,18 +504,25 @@ def main():
         parser.print_help()
         sys.exit(1)
 
+    modes = ["eval", "train"] if args.mode == "both" else [args.mode]
+
     results = []
     for spec in specs:
-        print(f"\n{'='*60}")
-        print(f"Testing: {spec['name']}")
-        print(f"{'='*60}")
+        for mode in modes:
+            # Skip train mode for models without forward()
+            if mode == "train" and spec.get("skip_train"):
+                continue
 
-        result = run_test(spec, proxy_url)
-        results.append(result)
+            print(f"\n{'='*60}")
+            print(f"Testing: {spec['name']} [{mode}]")
+            print(f"{'='*60}")
 
-        status = result.get("status", "unknown")
-        breaks = result.get("graph_break_count", "N/A")
-        print(f"  Status: {status} | Graph breaks: {breaks}")
+            result = run_test(spec, proxy_url, mode=mode)
+            results.append(result)
+
+            status = result.get("status", "unknown")
+            breaks = result.get("graph_break_count", "N/A")
+            print(f"  Status: {status} | Graph breaks: {breaks}")
 
         if result.get("break_reasons"):
             for br in result["break_reasons"][:5]:

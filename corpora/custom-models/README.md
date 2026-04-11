@@ -20,7 +20,7 @@ We selected these models by:
    exercises a different combination of Dynamo-unfriendly patterns (data-dependent
    branching, `Tensor.item()`, dynamic shape ops)
 
-The result is 6 models (7 entry points) from 5 repos totaling ~160k GitHub stars,
+The result is 6 models (8 entry points) from 5 repos totaling ~160k GitHub stars,
 representing real-world code that users actually compile.
 
 ## Models
@@ -32,12 +32,19 @@ representing real-world code that users actually compile.
 | OpenVoice | voice_conversion | TTS | myshell-ai/OpenVoice | ~30k | 7 | Tensor.item() |
 | OpenVoice | infer | TTS | myshell-ai/OpenVoice | — | 22 | nonzero, item, data-dep branch |
 | GPT-SoVITS | infer | TTS | RVC-Boss/GPT-SoVITS | ~39k | 4 | Tensor.item() in WaveNet |
+| GPT-SoVITS | forward (train) | TTS | RVC-Boss/GPT-SoVITS | — | 8 | Tensor.item(), rand_slice_segments |
 | MiniCPM-V Resampler | forward | Multimodal | OpenBMB/MiniCPM-V | ~14k | 5 | data-dep branch, scalar |
 | MiniCPM-V ViT | forward | Multimodal | OpenBMB/MiniCPM-V | — | 3 | nonzero in attention |
 
-Note: OpenVoice has two entries because `voice_conversion()` and `infer()` exercise
-very different code paths. The `infer()` path includes the StochasticDurationPredictor
-with spline transforms (nonzero, data-dependent branching) that `voice_conversion()` skips entirely.
+**Notes:**
+- OpenVoice has two entries because `voice_conversion()` and `infer()` exercise
+  very different code paths. The `infer()` path includes the StochasticDurationPredictor
+  with spline transforms (nonzero, data-dependent branching) that `voice_conversion()` skips.
+- GPT-SoVITS `forward()` is the training path — it adds `rand_slice_segments` (data-dependent
+  indexing) and exercises more WaveNet layers than `infer()`, doubling graph breaks (4→8).
+- OpenVoice has no `forward()` method (inference-only voice cloning tool), so no training path.
+- All batch sizes are 2. Train vs eval mode produces identical break counts — breaks are
+  structural, not mode-dependent.
 
 ## Usage
 
