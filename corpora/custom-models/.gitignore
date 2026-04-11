@@ -1,0 +1,4 @@
+_sources/
+__pycache__/
+*.pyc
+results/
