@@ -49,6 +49,7 @@ from pathlib import Path
 
 SWEEP_DIR = Path(__file__).resolve().parent
 WORKER_SCRIPT = SWEEP_DIR / "worker.py"
+CUSTOM_WORKER_SCRIPT = SWEEP_DIR.parent / "corpora" / "custom-models" / "worker.py"
 DEFAULT_OUTPUT_DIR = SWEEP_DIR.parent / "sweep_results"
 LARGE_MODELS_FILE = SWEEP_DIR / "large_models.json"
 
@@ -145,8 +146,9 @@ def spawn_worker(python_bin, spec, pass_num, device, mode, timeout_s,
         os.makedirs(model_trace_dir, exist_ok=True)
         env["TORCH_TRACE"] = model_trace_dir
 
+    worker_script = CUSTOM_WORKER_SCRIPT if spec.get("source") == "custom" else WORKER_SCRIPT
     cmd = [
-        python_bin, str(WORKER_SCRIPT),
+        python_bin, str(worker_script),
         "--model-json", json.dumps(spec),
         "--pass-num", str(pass_num),
         "--device", device,
@@ -658,7 +660,7 @@ def run_sweep(args):
         print(f"Loaded {len(specs)} broken models from {args.explain_from}")
     else:
         # Enumerate from source
-        from models import enumerate_timm, enumerate_hf, enumerate_diffusers, enumerate_all
+        from models import enumerate_timm, enumerate_hf, enumerate_diffusers, enumerate_custom, enumerate_all
         if args.source == "all":
             specs = enumerate_all()
             # Count by source for reporting
@@ -681,6 +683,9 @@ def run_sweep(args):
         elif args.source == "diffusers":
             specs = enumerate_diffusers()
             print(f"Enumerated {len(specs)} models from diffusers")
+        elif args.source == "custom":
+            specs = enumerate_custom()
+            print(f"Enumerated {len(specs)} models from custom repos")
 
     # Apply limit
     if args.limit:
@@ -1195,7 +1200,7 @@ def main():
 
     # Source / input
     parser.add_argument("--source", default="all",
-                        choices=["timm", "hf", "diffusers", "hf+diffusers", "all"],
+                        choices=["timm", "hf", "diffusers", "hf+diffusers", "custom", "all"],
                         help="Model sources (hf+diffusers = HF + Diffusers without TIMM)")
     parser.add_argument("--models", help="JSON file with model specs (overrides --source)")
     parser.add_argument("--explain-from", help="JSON file with identify results (skip to explain pass)")

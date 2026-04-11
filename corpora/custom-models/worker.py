@@ -166,6 +166,7 @@ def _mock_basicsr():
     basicsr.archs = types.ModuleType("basicsr.archs")
     basicsr.archs.arch_util = arch_util
     basicsr.utils = types.ModuleType("basicsr.utils")
+    basicsr.utils.scandir = lambda *a, **kw: iter([])  # stub for file scanning
     basicsr.utils.registry = types.ModuleType("basicsr.utils.registry")
 
     class MockRegistry:
@@ -481,6 +482,9 @@ def main():
     parser.add_argument("--no-proxy", action="store_true", help="Skip proxy, download directly")
     parser.add_argument("--mode", choices=["eval", "train", "both"], default="eval",
                         help="Test mode: eval, train, or both")
+    # Compatibility args for sweep runner integration
+    parser.add_argument("--pass-num", type=int, default=1, help="Sweep pass number (ignored, for compatibility)")
+    parser.add_argument("--device", type=str, default="cpu", help="Device (ignored, for compatibility)")
     args = parser.parse_args()
 
     proxy_url = None if args.no_proxy else args.proxy
@@ -511,6 +515,11 @@ def main():
         for mode in modes:
             # Skip train mode for models without forward()
             if mode == "train" and spec.get("skip_train"):
+                result = {"name": spec["name"], "source": "custom",
+                          "category": spec.get("category", "unknown"),
+                          "mode": mode, "status": "skipped",
+                          "error": "skip_train=True (no forward())"}
+                results.append(result)
                 continue
 
             print(f"\n{'='*60}")
@@ -543,9 +552,16 @@ def main():
             json.dump({"models": results}, f, indent=2)
         print(f"\nResults saved to {args.output}")
 
-    # Also print as JSON to stdout for piping
-    print("\n--- JSON ---")
-    print(json.dumps({"models": results}, indent=2))
+    if args.model_json and len(results) == 1:
+        # Single model mode (sweep runner integration) — output one JSON line
+        # The sweep runner reads the last line of stdout as JSON
+        result = results[0]
+        result["pass"] = args.pass_num
+        print(json.dumps(result))
+    else:
+        # Multi-model mode — full formatted output
+        print("\n--- JSON ---")
+        print(json.dumps({"models": results}, indent=2))
 
 
 if __name__ == "__main__":

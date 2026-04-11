@@ -40,6 +40,7 @@ MODELS = [
         "category": "face_restoration",
         "repo": "TencentARC/GFPGAN",
         "files": {
+            "gfpgan/__init__.py": None,  # override pip-installed gfpgan package
             "gfpgan/gfpganv1_clean_arch.py": f"{GH_RAW}/TencentARC/GFPGAN/master/gfpgan/archs/gfpganv1_clean_arch.py",
             "gfpgan/stylegan2_clean_arch.py": f"{GH_RAW}/TencentARC/GFPGAN/master/gfpgan/archs/stylegan2_clean_arch.py",
         },
@@ -306,6 +307,40 @@ MODELS = [
         "input_fn": "minicpm_vit_inputs",
         "compile_target": "model",
     },
+    # =========================================================================
+    # Gemma 4 — Multimodal LLM (Google, Apr 2025)
+    # Alternating sliding/global attention, PLE, dual RoPE, vision+text
+    # =========================================================================
+    {
+        "name": "Gemma4-text",
+        "source": "custom",
+        "category": "multimodal",
+        "repo": "google/gemma-4",
+        "note": "Text-only path — uses Gemma4ForConditionalGeneration from transformers>=5.5",
+        "files": {},
+        "mocks": [],
+        "model_module": "transformers.models.gemma4.modeling_gemma4",
+        "model_class": "Gemma4ForConditionalGeneration",
+        "model_kwargs_fn": "gemma4_kwargs",
+        "input_fn": "gemma4_text_inputs",
+        "compile_target": "model",
+        "skip_train": True,
+    },
+    {
+        "name": "Gemma4-vision",
+        "source": "custom",
+        "category": "multimodal",
+        "repo": "google/gemma-4",
+        "note": "Vision+text path — exercises vision tower, pooler, masked_scatter merge",
+        "files": {},
+        "mocks": [],
+        "model_module": "transformers.models.gemma4.modeling_gemma4",
+        "model_class": "Gemma4ForConditionalGeneration",
+        "model_kwargs_fn": "gemma4_kwargs",
+        "input_fn": "gemma4_vision_inputs",
+        "compile_target": "model",
+        "skip_train": True,
+    },
 ]
 
 
@@ -435,6 +470,107 @@ def minicpm_vit_inputs(batch_size=2):
     """MiniCPM-V ViT inputs."""
     import torch
     return {"pixel_values": torch.randn(batch_size, 3, 196, 196)}
+
+
+def gemma4_kwargs():
+    """Create Gemma4Config for a tiny but valid Gemma4 model."""
+    from transformers import Gemma4Config
+    config = Gemma4Config(
+        hidden_size=256,
+        intermediate_size=512,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        head_dim=64,
+        num_hidden_layers=4,
+        vocab_size=262144,
+        max_position_embeddings=512,
+        vision_config={
+            "hidden_size": 128,
+            "intermediate_size": 256,
+            "num_attention_heads": 4,
+            "num_key_value_heads": 4,
+            "num_hidden_layers": 4,
+            "patch_size": 16,
+            "pooling_kernel_size": 3,
+            "position_embedding_size": 64,
+            "max_position_embeddings": 512,
+            "hidden_activation": "gelu_pytorch_tanh",
+            "rms_norm_eps": 1e-6,
+            "standardize": False,
+        },
+        image_token_id=258880,
+        boi_token_id=255999,
+        eoi_token_id=258882,
+        sliding_window=256,
+        sliding_window_pattern=6,
+    )
+    return {"config": config}
+
+
+def gemma4_text_inputs(batch_size=2):
+    """Gemma4 text-only inputs (no vision)."""
+    import torch
+    seq_len = 32
+    input_ids = torch.randint(1, 1000, (batch_size, seq_len))
+    attention_mask = torch.ones(batch_size, seq_len, dtype=torch.long)
+    return {"input_ids": input_ids, "attention_mask": attention_mask}
+
+
+def gemma4_vision_inputs(batch_size=1):
+    """Gemma4 vision+text multimodal inputs.
+
+    pixel_values must be pre-patchified: (num_images, num_patches, patch_dim).
+    image_position_ids: (num_images, num_patches, 2) with (x, y) coords.
+    input_ids must contain image placeholder tokens.
+    mm_token_type_ids marks which tokens are image (1) vs text (0).
+    """
+    import torch
+    patch_size = 16
+    pooling_k = 3
+    # 6x6 patch grid -> 36 patches -> 4 soft tokens after 3x3 pooling
+    patch_w, patch_h = 6, 6
+    num_patches = patch_w * patch_h  # 36
+    num_soft_tokens = num_patches // (pooling_k ** 2)  # 4
+    patch_dim = patch_size * patch_size * 3  # 768
+
+    IMAGE_TOKEN_ID = 258880
+    BOI_TOKEN_ID = 255999
+    EOI_TOKEN_ID = 258882
+
+    num_images = batch_size  # 1 image per batch element
+
+    # Pre-patchified pixel values
+    pixel_values = torch.rand(num_images, num_patches, patch_dim)
+
+    # Patch position IDs: (x, y) coords for each patch in the 6x6 grid
+    xs = torch.arange(patch_w).repeat(patch_h)
+    ys = torch.arange(patch_h).repeat_interleave(patch_w)
+    image_position_ids = torch.stack([xs, ys], dim=-1).unsqueeze(0).expand(num_images, -1, -1)
+
+    # input_ids: [text..., BOI, IMAGE*N, EOI, text...]
+    text_before = torch.randint(1, 1000, (10,))
+    image_tokens = torch.full((num_soft_tokens,), IMAGE_TOKEN_ID)
+    text_after = torch.randint(1, 1000, (5,))
+    single_seq = torch.cat([text_before, torch.tensor([BOI_TOKEN_ID]),
+                            image_tokens, torch.tensor([EOI_TOKEN_ID]), text_after])
+    input_ids = single_seq.unsqueeze(0).expand(batch_size, -1).contiguous()
+    seq_len = input_ids.shape[1]
+
+    attention_mask = torch.ones(batch_size, seq_len, dtype=torch.long)
+
+    # mm_token_type_ids: 0=text, 1=image
+    mm_token_type_ids = torch.zeros(batch_size, seq_len, dtype=torch.long)
+    img_start = 11  # after text_before(10) + BOI(1)
+    img_end = img_start + num_soft_tokens
+    mm_token_type_ids[:, img_start:img_end] = 1
+
+    return {
+        "input_ids": input_ids,
+        "attention_mask": attention_mask,
+        "pixel_values": pixel_values,
+        "image_position_ids": image_position_ids,
+        "mm_token_type_ids": mm_token_type_ids,
+    }
 
 
 if __name__ == "__main__":

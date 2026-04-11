@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Model enumeration — discovers models from TIMM, HF Transformers, and Diffusers.
+"""Model enumeration — discovers models from TIMM, HF Transformers, Diffusers, and custom repos.
 
 Each model is represented as a JSON-serializable spec dict with at minimum:
-  {"name": "...", "source": "timm|hf|diffusers"}
+  {"name": "...", "source": "timm|hf|diffusers|custom"}
 
 Plus source-specific fields needed by worker.py to instantiate the model.
 
@@ -10,6 +10,7 @@ Usage:
   python models.py --source timm           # list all TIMM models
   python models.py --source hf             # list all HF base Model classes
   python models.py --source diffusers      # list all Diffusers ModelMixin classes
+  python models.py --source custom         # list custom (non-HF) models
   python models.py --source all            # list everything
   python models.py --source all --count    # just counts
   python models.py --source all --output models.json  # save to file
@@ -18,6 +19,7 @@ import argparse
 import inspect
 import json
 import sys
+from pathlib import Path
 
 
 def enumerate_timm():
@@ -247,6 +249,19 @@ def enumerate_diffusers():
     return models
 
 
+def enumerate_custom():
+    """Enumerate custom (non-HuggingFace) models from the custom-models corpus."""
+    import importlib.util
+    custom_models_path = Path(__file__).resolve().parent.parent / "corpora" / "custom-models" / "models.py"
+    if not custom_models_path.exists():
+        print(f"Warning: custom models registry not found at {custom_models_path}")
+        return []
+    spec = importlib.util.spec_from_file_location("custom_models", custom_models_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.enumerate_custom()
+
+
 def enumerate_all():
     """Enumerate models from all sources.
 
@@ -259,6 +274,8 @@ def enumerate_all():
     models.extend(enumerate_timm())
     # Only include diffusers models that have known constructor configs
     models.extend([m for m in enumerate_diffusers() if m.get("has_config", False)])
+    # Custom models (non-HF repos)
+    models.extend(enumerate_custom())
     return models
 
 
@@ -266,7 +283,7 @@ def enumerate_all():
 
 def main():
     parser = argparse.ArgumentParser(description="Enumerate models for graph break sweep")
-    parser.add_argument("--source", default="all", choices=["timm", "hf", "diffusers", "all"])
+    parser.add_argument("--source", default="all", choices=["timm", "hf", "diffusers", "custom", "all"])
     parser.add_argument("--count", action="store_true", help="Just print counts")
     parser.add_argument("--output", help="Save model list to JSON file")
     parser.add_argument("--has-config-only", action="store_true",
@@ -281,6 +298,8 @@ def main():
         models = enumerate_hf()
     elif args.source == "diffusers":
         models = enumerate_diffusers()
+    elif args.source == "custom":
+        models = enumerate_custom()
 
     if args.has_config_only:
         models = [m for m in models if m.get("has_config", True)]
