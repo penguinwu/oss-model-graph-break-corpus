@@ -44,7 +44,8 @@ SKIP_MESSAGE_IDS = set()
 # Primary defense: agent messages sent with --as-bot are invisible to gchat read.
 # This list is a safety net in case a message slips through as --as-user.
 AGENT_PREFIXES = (
-    "[🦦 Otter]:",           # Otter's standard GChat prefix
+    "[🦦 Otter]:",           # Otter's standard GChat prefix (with emoji)
+    "[Otter]:",              # Otter prefix without emoji (GChat may strip it)
     "*Technical Report:",     # Technical report posts
     "Got it — logged as",
     "Thanks for the report!",
@@ -60,6 +61,11 @@ AGENT_PREFIXES = (
     "Testing thread reply",
     "(Correction to my",      # Correction messages
 )
+
+# Regex pattern for agent-style prefixes: [AgentName]: at start of message.
+# Catches any agent posting as --as-user regardless of specific prefix list.
+import re
+AGENT_PREFIX_PATTERN = re.compile(r"^\[[\w🦦🐯🪶 ]+\]:")
 
 # Categories that need Rocky's independent validation before corpus changes
 NEEDS_VALIDATION = {"bug", "data_correction"}
@@ -374,12 +380,22 @@ def main():
 
     # Filter out bot messages and template
     # Primary defense: agent messages sent with --as-bot don't appear in gchat read.
-    # AGENT_PREFIXES is defense-in-depth for any --as-user messages that slip through.
+    # Defense-in-depth layers for --as-user messages that slip through:
+    #   1. Exact prefix match (AGENT_PREFIXES tuple)
+    #   2. Regex pattern match for any [AgentName]: prefix (AGENT_PREFIX_PATTERN)
+    def _is_agent_message(msg):
+        text = msg.get("text", "")
+        if any(text.startswith(p) for p in AGENT_PREFIXES):
+            return True
+        if AGENT_PREFIX_PATTERN.match(text):
+            return True
+        return False
+
     user_messages = [
         m for m in new_messages
         if m["id"] not in SKIP_MESSAGE_IDS
         and m.get("sender", "")  # Skip messages with no sender
-        and not any(m.get("text", "").startswith(p) for p in AGENT_PREFIXES)
+        and not _is_agent_message(m)
     ]
 
     if not user_messages:
