@@ -46,6 +46,23 @@ representing real-world code that users actually compile.
 - All batch sizes are 2. Train vs eval mode produces identical break counts — breaks are
   structural, not mode-dependent.
 
+### Cross-Version Stability (PyTorch 2.8 / 2.9 / 2.10)
+
+| Model | 2.8.0 | 2.9.0 | 2.10.0 | Delta |
+|-------|-------|-------|--------|-------|
+| GFPGAN | 0 | 0 | 0 | stable |
+| FLUX.1-DiT | 0 | 0 | 0 | stable |
+| OpenVoice (voice_conversion) | 7 | 7 | 7 | stable |
+| OpenVoice (infer) | 22 | 22 | 22 | stable |
+| GPT-SoVITS (infer) | 4 | 4 | 4 | stable |
+| GPT-SoVITS (forward) | 8 | 8 | 8 | stable |
+| MiniCPM-V Resampler | 5 | 5 | 5 | stable |
+| MiniCPM-V ViT | 5 | 3 | 3 | **improved 2.8→2.9** |
+
+Graph breaks are highly stable across PyTorch versions. Only MiniCPM-V ViT improved
+(2 breaks fixed between 2.8 and 2.9). This confirms that graph breaks are structural
+properties of the model code, not artifacts of a specific PyTorch release.
+
 ## Usage
 
 ```bash
@@ -106,5 +123,5 @@ But the **specific functions** causing them differ across repos, so fixes aren't
 
 ## Requirements
 
-Same as the main corpus: `torch>=2.10.0`. The `transformers` package is only needed for
+Same as the main corpus: `torch>=2.8.0`. The `transformers` package is only needed for
 the MiniCPM-V ViT test (Idefics2VisionTransformer).
