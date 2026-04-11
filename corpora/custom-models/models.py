@@ -125,6 +125,45 @@ MODELS = [
         "compile_target": "model.voice_conversion",
     },
 
+    # OpenVoice infer() — full TTS pipeline (text→audio), exercises more code paths
+    {
+        "name": "OpenVoice-SynthesizerTrn-infer",
+        "source": "custom",
+        "category": "tts",
+        "repo": "myshell-ai/OpenVoice",
+        "files": {
+            "openvoice/__init__.py": None,
+            "openvoice/models.py": f"{GH_RAW}/myshell-ai/OpenVoice/main/openvoice/models.py",
+            "openvoice/commons.py": f"{GH_RAW}/myshell-ai/OpenVoice/main/openvoice/commons.py",
+            "openvoice/modules.py": f"{GH_RAW}/myshell-ai/OpenVoice/main/openvoice/modules.py",
+            "openvoice/transforms.py": f"{GH_RAW}/myshell-ai/OpenVoice/main/openvoice/transforms.py",
+            "openvoice/attentions.py": f"{GH_RAW}/myshell-ai/OpenVoice/main/openvoice/attentions.py",
+        },
+        "mocks": [],
+        "model_module": "openvoice.models",
+        "model_class": "SynthesizerTrn",
+        "model_kwargs": {
+            "n_vocab": 100,
+            "spec_channels": 513,
+            "inter_channels": 192,
+            "hidden_channels": 192,
+            "filter_channels": 768,
+            "n_heads": 2,
+            "n_layers": 6,
+            "kernel_size": 3,
+            "p_dropout": 0.1,
+            "resblock": "1",
+            "resblock_kernel_sizes": [3, 7, 11],
+            "resblock_dilation_sizes": [[1, 3, 5], [1, 3, 5], [1, 3, 5]],
+            "upsample_rates": [8, 8, 2, 2],
+            "upsample_initial_channel": 512,
+            "upsample_kernel_sizes": [16, 16, 4, 4],
+            "gin_channels": 256,
+        },
+        "input_fn": "openvoice_infer_inputs",
+        "compile_target": "model.infer",
+    },
+
     # =========================================================================
     # GPT-SoVITS — TTS (VITS + GPT autoregressive)
     # =========================================================================
@@ -279,6 +318,16 @@ def openvoice_inputs(batch_size=2):
     sid_tgt = torch.randn(batch_size, 256, 1)
     return {"y": y, "y_lengths": y_lengths,
             "sid_src": sid_src, "sid_tgt": sid_tgt}
+
+
+def openvoice_infer_inputs(batch_size=2):
+    """OpenVoice SynthesizerTrn.infer() inputs — full TTS pipeline."""
+    import torch
+    T_text = 16
+    x = torch.randint(0, 100, (batch_size, T_text))        # text token ids
+    x_lengths = torch.tensor([T_text] * batch_size)
+    sid = torch.randint(0, 256, (batch_size,))              # speaker id
+    return {"x": x, "x_lengths": x_lengths, "sid": sid}
 
 
 def gptsovits_inputs(batch_size=2):

@@ -20,19 +20,24 @@ We selected these models by:
    exercises a different combination of Dynamo-unfriendly patterns (data-dependent
    branching, `Tensor.item()`, dynamic shape ops)
 
-The result is 6 models from 5 repos totaling ~160k GitHub stars, representing
-real-world code that users actually compile.
+The result is 6 models (7 entry points) from 5 repos totaling ~160k GitHub stars,
+representing real-world code that users actually compile.
 
 ## Models
 
-| Model | Category | Repo | Stars | Graph Breaks | Root Cause |
-|-------|----------|------|-------|-------------|------------|
-| GFPGAN | Face restoration | TencentARC/GFPGAN | ~36k | 0 | Clean |
-| FLUX.1-DiT | Diffusion | black-forest-labs/flux | ~20k | 0 | Clean |
-| OpenVoice | TTS | myshell-ai/OpenVoice | ~30k | 7 | Tensor.item() |
-| GPT-SoVITS | TTS | RVC-Boss/GPT-SoVITS | ~39k | 4 | Tensor.item() in WaveNet |
-| MiniCPM-V Resampler | Multimodal | OpenBMB/MiniCPM-V | ~14k | 5 | data-dep branch, scalar |
-| MiniCPM-V ViT | Multimodal | OpenBMB/MiniCPM-V | — | 3 | nonzero in attention |
+| Model | Entry Point | Category | Repo | Stars | Graph Breaks | Root Cause |
+|-------|-------------|----------|------|-------|-------------|------------|
+| GFPGAN | forward | Face restoration | TencentARC/GFPGAN | ~36k | 0 | Clean |
+| FLUX.1-DiT | forward | Diffusion | black-forest-labs/flux | ~20k | 0 | Clean |
+| OpenVoice | voice_conversion | TTS | myshell-ai/OpenVoice | ~30k | 7 | Tensor.item() |
+| OpenVoice | infer | TTS | myshell-ai/OpenVoice | — | 22 | nonzero, item, data-dep branch |
+| GPT-SoVITS | infer | TTS | RVC-Boss/GPT-SoVITS | ~39k | 4 | Tensor.item() in WaveNet |
+| MiniCPM-V Resampler | forward | Multimodal | OpenBMB/MiniCPM-V | ~14k | 5 | data-dep branch, scalar |
+| MiniCPM-V ViT | forward | Multimodal | OpenBMB/MiniCPM-V | — | 3 | nonzero in attention |
+
+Note: OpenVoice has two entries because `voice_conversion()` and `infer()` exercise
+very different code paths. The `infer()` path includes the StochasticDurationPredictor
+with spline transforms (nonzero, data-dependent branching) that `voice_conversion()` skips entirely.
 
 ## Usage
 

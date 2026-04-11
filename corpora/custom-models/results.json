@@ -12,7 +12,7 @@
       "graph_break_count": 0,
       "graph_count": 1,
       "break_reasons": [],
-      "wall_time_s": 13.7
+      "wall_time_s": 9.1
     },
     {
       "name": "FLUX.1-DiT",
@@ -26,7 +26,7 @@
       "graph_break_count": 0,
       "graph_count": 1,
       "break_reasons": [],
-      "wall_time_s": 3.6
+      "wall_time_s": 2.4
     },
     {
       "name": "OpenVoice-SynthesizerTrn",
@@ -51,7 +51,77 @@
           "reason": "GraphCompileReason(reason='Unsupported Tensor.item() call with capture_scalar_outputs=False\\n  Explanation: Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False.\\n  Hint: Set `torch._dynamo.config.capture_scalar_outputs = True` or `export TORCHDYNAMO_CAPTURE_SCALA"
         }
       ],
-      "wall_time_s": 37.2
+      "wall_time_s": 22.7
+    },
+    {
+      "name": "OpenVoice-SynthesizerTrn-infer",
+      "source": "custom",
+      "category": "tts",
+      "download_ok": true,
+      "params": 40118065,
+      "params_M": 40.1,
+      "eager_ok": true,
+      "status": "graph_break",
+      "graph_break_count": 22,
+      "graph_count": 23,
+      "break_reasons": [
+        {
+          "type": "aten.nonzero",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/openvoice_synthesizertrn/openvoice/transforms.py:74 in unconstrained_rational_quadratic_spline",
+          "reason": "GraphCompileReason(reason=\"Dynamic shape operator\\n  Explanation: Operator `aten.nonzero.default`'s output shape depends on input Tensor data.\\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\\n\\n  Developer debug context: aten.non"
+        },
+        {
+          "type": "aten.nonzero",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/openvoice_synthesizertrn/openvoice/transforms.py:74 in unconstrained_rational_quadratic_spline",
+          "reason": "GraphCompileReason(reason=\"Dynamic shape operator\\n  Explanation: Operator `aten.nonzero.default`'s output shape depends on input Tensor data.\\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\\n\\n  Developer debug context: aten.non"
+        },
+        {
+          "type": "aten.nonzero",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/openvoice_synthesizertrn/openvoice/transforms.py:74 in unconstrained_rational_quadratic_spline",
+          "reason": "GraphCompileReason(reason=\"Dynamic shape operator\\n  Explanation: Operator `aten.nonzero.default`'s output shape depends on input Tensor data.\\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\\n\\n  Developer debug context: aten.non"
+        },
+        {
+          "type": "aten.nonzero",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/openvoice_synthesizertrn/openvoice/transforms.py:83 in unconstrained_rational_quadratic_spline",
+          "reason": "GraphCompileReason(reason=\"Dynamic shape operator\\n  Explanation: Operator `aten.nonzero.default`'s output shape depends on input Tensor data.\\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\\n\\n  Developer debug context: aten.non"
+        },
+        {
+          "type": "data-dependent-branch",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/openvoice_synthesizertrn/openvoice/transforms.py:114 in rational_quadratic_spline",
+          "reason": "GraphCompileReason(reason='generic_jump TensorVariable()', user_stack=[<FrameSummary file /home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/openvoice_synthesizertrn/openvoice/transforms.py, line 114 in rational_quadratic_spline>], graph_break=True)"
+        },
+        {
+          "type": "data-dependent-branch",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/openvoice_synthesizertrn/openvoice/transforms.py:114 in torch_dynamo_resume_in_rational_quadratic_spline_at_114",
+          "reason": "GraphCompileReason(reason='generic_jump TensorVariable()', user_stack=[<FrameSummary file /home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/openvoice_synthesizertrn/openvoice/transforms.py, line 114 in torch_dynamo_resume_in_rational_quadratic_spline_at_114>], graph_b"
+        },
+        {
+          "type": "Tensor.item()",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/openvoice_synthesizertrn/openvoice/commons.py:124 in sequence_mask",
+          "reason": "GraphCompileReason(reason='Data dependent operator\\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs ="
+        },
+        {
+          "type": "Tensor.item()",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/openvoice_synthesizertrn/openvoice/commons.py:124 in sequence_mask",
+          "reason": "GraphCompileReason(reason='Data dependent operator\\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs ="
+        },
+        {
+          "type": "Tensor.item()",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/openvoice_synthesizertrn/openvoice/commons.py:104 in fused_add_tanh_sigmoid_multiply",
+          "reason": "GraphCompileReason(reason='Unsupported Tensor.item() call with capture_scalar_outputs=False\\n  Explanation: Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False.\\n  Hint: Set `torch._dynamo.config.capture_scalar_outputs = True` or `export TORCHDYNAMO_CAPTURE_SCALA"
+        },
+        {
+          "type": "Tensor.item()",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/openvoice_synthesizertrn/openvoice/commons.py:104 in fused_add_tanh_sigmoid_multiply",
+          "reason": "GraphCompileReason(reason='Unsupported Tensor.item() call with capture_scalar_outputs=False\\n  Explanation: Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False.\\n  Hint: Set `torch._dynamo.config.capture_scalar_outputs = True` or `export TORCHDYNAMO_CAPTURE_SCALA"
+        },
+        {
+          "type": "Tensor.item()",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/openvoice_synthesizertrn/openvoice/commons.py:104 in fused_add_tanh_sigmoid_multiply",
+          "reason": "GraphCompileReason(reason='Unsupported Tensor.item() call with capture_scalar_outputs=False\\n  Explanation: Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False.\\n  Hint: Set `torch._dynamo.config.capture_scalar_outputs = True` or `export TORCHDYNAMO_CAPTURE_SCALA"
+        }
+      ],
+      "wall_time_s": 20.4
     },
     {
       "name": "GPT-SoVITS-SynthesizerTrn",
@@ -76,7 +146,7 @@
           "reason": "GraphCompileReason(reason='Unsupported Tensor.item() call with capture_scalar_outputs=False\\n  Explanation: Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False.\\n  Hint: Set `torch._dynamo.config.capture_scalar_outputs = True` or `export TORCHDYNAMO_CAPTURE_SCALA"
         }
       ],
-      "wall_time_s": 35.3
+      "wall_time_s": 19.0
     },
     {
       "name": "MiniCPM-V-Resampler",
@@ -111,7 +181,7 @@
           "reason": "GraphCompileReason(reason='Data dependent operator\\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs ="
         }
       ],
-      "wall_time_s": 3.8
+      "wall_time_s": 3.7
     },
     {
       "name": "MiniCPM-V-ViT",
@@ -136,7 +206,7 @@
           "reason": "GraphCompileReason(reason=\"Dynamic shape operator\\n  Explanation: Operator `aten.nonzero.default`'s output shape depends on input Tensor data.\\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\\n\\n  Developer debug context: aten.non"
         }
       ],
-      "wall_time_s": 3.6
+      "wall_time_s": 2.5
     }
   ]
 }
