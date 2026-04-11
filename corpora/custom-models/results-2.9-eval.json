@@ -1,0 +1,260 @@
+{
+  "models": [
+    {
+      "name": "GFPGAN",
+      "source": "custom",
+      "category": "face_restoration",
+      "mode": "eval",
+      "download_ok": true,
+      "params": 11732068,
+      "params_M": 11.7,
+      "eager_ok": true,
+      "status": "full_graph",
+      "graph_break_count": 0,
+      "graph_count": 1,
+      "break_reasons": [],
+      "wall_time_s": 12.6
+    },
+    {
+      "name": "FLUX.1-DiT",
+      "source": "custom",
+      "category": "diffusion",
+      "mode": "eval",
+      "download_ok": true,
+      "params": 17680960,
+      "params_M": 17.7,
+      "eager_ok": true,
+      "status": "full_graph",
+      "graph_break_count": 0,
+      "graph_count": 1,
+      "break_reasons": [],
+      "wall_time_s": 2.9
+    },
+    {
+      "name": "OpenVoice-SynthesizerTrn",
+      "source": "custom",
+      "category": "tts",
+      "mode": "eval",
+      "download_ok": true,
+      "params": 40118065,
+      "params_M": 40.1,
+      "eager_ok": true,
+      "status": "graph_break",
+      "graph_break_count": 7,
+      "graph_count": 8,
+      "break_reasons": [
+        {
+          "type": "other",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/openvoice_synthesizertrn/openvoice/commons.py:104 in fused_add_tanh_sigmoid_multiply",
+          "reason": "GraphCompileReason(reason='Dynamic slicing with Tensor arguments\\n  Explanation: Creating slices with Tensor arguments is not supported. e.g. `l[:x]`, where `x` is a 1-element tensor.\\n  Hint: It may be possible to write Dynamo tracing rules for this code. Please report an issue to PyTorch if you en"
+        },
+        {
+          "type": "other",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/openvoice_synthesizertrn/openvoice/commons.py:104 in fused_add_tanh_sigmoid_multiply",
+          "reason": "GraphCompileReason(reason='Dynamic slicing with Tensor arguments\\n  Explanation: Creating slices with Tensor arguments is not supported. e.g. `l[:x]`, where `x` is a 1-element tensor.\\n  Hint: It may be possible to write Dynamo tracing rules for this code. Please report an issue to PyTorch if you en"
+        }
+      ],
+      "wall_time_s": 28.4
+    },
+    {
+      "name": "OpenVoice-SynthesizerTrn-infer",
+      "source": "custom",
+      "category": "tts",
+      "mode": "eval",
+      "download_ok": true,
+      "params": 40118065,
+      "params_M": 40.1,
+      "eager_ok": true,
+      "status": "graph_break",
+      "graph_break_count": 22,
+      "graph_count": 23,
+      "break_reasons": [
+        {
+          "type": "aten.nonzero",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/openvoice_synthesizertrn/openvoice/transforms.py:74 in unconstrained_rational_quadratic_spline",
+          "reason": "GraphCompileReason(reason=\"Dynamic shape operator\\n  Explanation: Operator `aten.nonzero.default`'s output shape depends on input Tensor data.\\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\\n\\n  Developer debug context: aten.non"
+        },
+        {
+          "type": "aten.nonzero",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/openvoice_synthesizertrn/openvoice/transforms.py:74 in unconstrained_rational_quadratic_spline",
+          "reason": "GraphCompileReason(reason=\"Dynamic shape operator\\n  Explanation: Operator `aten.nonzero.default`'s output shape depends on input Tensor data.\\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\\n\\n  Developer debug context: aten.non"
+        },
+        {
+          "type": "aten.nonzero",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/openvoice_synthesizertrn/openvoice/transforms.py:74 in unconstrained_rational_quadratic_spline",
+          "reason": "GraphCompileReason(reason=\"Dynamic shape operator\\n  Explanation: Operator `aten.nonzero.default`'s output shape depends on input Tensor data.\\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\\n\\n  Developer debug context: aten.non"
+        },
+        {
+          "type": "aten.nonzero",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/openvoice_synthesizertrn/openvoice/transforms.py:83 in unconstrained_rational_quadratic_spline",
+          "reason": "GraphCompileReason(reason=\"Dynamic shape operator\\n  Explanation: Operator `aten.nonzero.default`'s output shape depends on input Tensor data.\\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\\n\\n  Developer debug context: aten.non"
+        },
+        {
+          "type": "data-dependent-branch",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/openvoice_synthesizertrn/openvoice/transforms.py:114 in rational_quadratic_spline",
+          "reason": "GraphCompileReason(reason='generic_jump TensorVariable()', user_stack=[<FrameSummary file /home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/openvoice_synthesizertrn/openvoice/transforms.py, line 114 in rational_quadratic_spline>], graph_break=True)"
+        },
+        {
+          "type": "data-dependent-branch",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/openvoice_synthesizertrn/openvoice/transforms.py:114 in torch_dynamo_resume_in_rational_quadratic_spline_at_114",
+          "reason": "GraphCompileReason(reason='generic_jump TensorVariable()', user_stack=[<FrameSummary file /home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/openvoice_synthesizertrn/openvoice/transforms.py, line 114 in torch_dynamo_resume_in_rational_quadratic_spline_at_114>], graph_b"
+        },
+        {
+          "type": "Tensor.item()",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/openvoice_synthesizertrn/openvoice/commons.py:124 in sequence_mask",
+          "reason": "GraphCompileReason(reason='Data dependent operator\\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs ="
+        },
+        {
+          "type": "Tensor.item()",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/openvoice_synthesizertrn/openvoice/commons.py:124 in sequence_mask",
+          "reason": "GraphCompileReason(reason='Data dependent operator\\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs ="
+        },
+        {
+          "type": "other",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/openvoice_synthesizertrn/openvoice/commons.py:104 in fused_add_tanh_sigmoid_multiply",
+          "reason": "GraphCompileReason(reason='Dynamic slicing with Tensor arguments\\n  Explanation: Creating slices with Tensor arguments is not supported. e.g. `l[:x]`, where `x` is a 1-element tensor.\\n  Hint: It may be possible to write Dynamo tracing rules for this code. Please report an issue to PyTorch if you en"
+        },
+        {
+          "type": "other",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/openvoice_synthesizertrn/openvoice/commons.py:104 in fused_add_tanh_sigmoid_multiply",
+          "reason": "GraphCompileReason(reason='Dynamic slicing with Tensor arguments\\n  Explanation: Creating slices with Tensor arguments is not supported. e.g. `l[:x]`, where `x` is a 1-element tensor.\\n  Hint: It may be possible to write Dynamo tracing rules for this code. Please report an issue to PyTorch if you en"
+        },
+        {
+          "type": "other",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/openvoice_synthesizertrn/openvoice/commons.py:104 in fused_add_tanh_sigmoid_multiply",
+          "reason": "GraphCompileReason(reason='Dynamic slicing with Tensor arguments\\n  Explanation: Creating slices with Tensor arguments is not supported. e.g. `l[:x]`, where `x` is a 1-element tensor.\\n  Hint: It may be possible to write Dynamo tracing rules for this code. Please report an issue to PyTorch if you en"
+        }
+      ],
+      "wall_time_s": 40.5
+    },
+    {
+      "name": "GPT-SoVITS-SynthesizerTrn",
+      "source": "custom",
+      "category": "tts",
+      "mode": "eval",
+      "download_ok": true,
+      "params": 49114624,
+      "params_M": 49.1,
+      "eager_ok": true,
+      "status": "graph_break",
+      "graph_break_count": 4,
+      "graph_count": 5,
+      "break_reasons": [
+        {
+          "type": "other",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/gpt_sovits_synthesizertrn/gptsovits/module/commons.py:100 in fused_add_tanh_sigmoid_multiply",
+          "reason": "GraphCompileReason(reason='Dynamic slicing with Tensor arguments\\n  Explanation: Creating slices with Tensor arguments is not supported. e.g. `l[:x]`, where `x` is a 1-element tensor.\\n  Hint: It may be possible to write Dynamo tracing rules for this code. Please report an issue to PyTorch if you en"
+        },
+        {
+          "type": "other",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/gpt_sovits_synthesizertrn/gptsovits/module/commons.py:100 in fused_add_tanh_sigmoid_multiply",
+          "reason": "GraphCompileReason(reason='Dynamic slicing with Tensor arguments\\n  Explanation: Creating slices with Tensor arguments is not supported. e.g. `l[:x]`, where `x` is a 1-element tensor.\\n  Hint: It may be possible to write Dynamo tracing rules for this code. Please report an issue to PyTorch if you en"
+        }
+      ],
+      "wall_time_s": 18.1
+    },
+    {
+      "name": "GPT-SoVITS-SynthesizerTrn-forward",
+      "source": "custom",
+      "category": "tts",
+      "mode": "eval",
+      "download_ok": true,
+      "params": 49151296,
+      "params_M": 49.2,
+      "eager_ok": true,
+      "status": "graph_break",
+      "graph_break_count": 8,
+      "graph_count": 9,
+      "break_reasons": [
+        {
+          "type": "other",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/gpt_sovits_synthesizertrn/gptsovits/module/commons.py:100 in fused_add_tanh_sigmoid_multiply",
+          "reason": "GraphCompileReason(reason='Dynamic slicing with Tensor arguments\\n  Explanation: Creating slices with Tensor arguments is not supported. e.g. `l[:x]`, where `x` is a 1-element tensor.\\n  Hint: It may be possible to write Dynamo tracing rules for this code. Please report an issue to PyTorch if you en"
+        },
+        {
+          "type": "other",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/gpt_sovits_synthesizertrn/gptsovits/module/commons.py:100 in fused_add_tanh_sigmoid_multiply",
+          "reason": "GraphCompileReason(reason='Dynamic slicing with Tensor arguments\\n  Explanation: Creating slices with Tensor arguments is not supported. e.g. `l[:x]`, where `x` is a 1-element tensor.\\n  Hint: It may be possible to write Dynamo tracing rules for this code. Please report an issue to PyTorch if you en"
+        },
+        {
+          "type": "other",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/gpt_sovits_synthesizertrn/gptsovits/module/commons.py:100 in fused_add_tanh_sigmoid_multiply",
+          "reason": "GraphCompileReason(reason='Dynamic slicing with Tensor arguments\\n  Explanation: Creating slices with Tensor arguments is not supported. e.g. `l[:x]`, where `x` is a 1-element tensor.\\n  Hint: It may be possible to write Dynamo tracing rules for this code. Please report an issue to PyTorch if you en"
+        },
+        {
+          "type": "other",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/gpt_sovits_synthesizertrn/gptsovits/module/commons.py:51 in slice_segments",
+          "reason": "GraphCompileReason(reason='Dynamic slicing with Tensor arguments\\n  Explanation: Creating slices with Tensor arguments is not supported. e.g. `l[:x]`, where `x` is a 1-element tensor.\\n  Hint: It may be possible to write Dynamo tracing rules for this code. Please report an issue to PyTorch if you en"
+        },
+        {
+          "type": "other",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/gpt_sovits_synthesizertrn/gptsovits/module/commons.py:48 in slice_segments",
+          "reason": "GraphCompileReason(reason='step_unsupported', user_stack=[<FrameSummary file /home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/gpt_sovits_synthesizertrn/gptsovits/module/commons.py, line 48 in slice_segments>], graph_break=True)"
+        }
+      ],
+      "wall_time_s": 28.2
+    },
+    {
+      "name": "MiniCPM-V-Resampler",
+      "source": "custom",
+      "category": "multimodal",
+      "mode": "eval",
+      "download_ok": true,
+      "params": 3792384,
+      "params_M": 3.8,
+      "eager_ok": true,
+      "status": "graph_break",
+      "graph_break_count": 5,
+      "graph_count": 6,
+      "break_reasons": [
+        {
+          "type": "data-dependent-branch",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/minicpm_v_resampler/minicpm/resampler.py:117 in _adjust_pos_cache",
+          "reason": "GraphCompileReason(reason='Data-dependent branching\\n  Explanation: Detected data-dependent branching (e.g. `if my_tensor.sum() > 0:`). Dynamo does not support tracing dynamic control flow.\\n  Hint: This graph break is fundamental - it is unlikely that Dynamo will ever be able to trace through your "
+        },
+        {
+          "type": "data-dependent-branch",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/minicpm_v_resampler/minicpm/resampler.py:117 in _adjust_pos_cache",
+          "reason": "GraphCompileReason(reason='generic_jump TensorVariable()', user_stack=[<FrameSummary file /home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/minicpm_v_resampler/minicpm/resampler.py, line 117 in _adjust_pos_cache>], graph_break=True)"
+        },
+        {
+          "type": "data-dependent-branch",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/minicpm_v_resampler/minicpm/resampler.py:117 in torch_dynamo_resume_in__adjust_pos_cache_at_117",
+          "reason": "GraphCompileReason(reason='generic_jump TensorVariable()', user_stack=[<FrameSummary file /home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/minicpm_v_resampler/minicpm/resampler.py, line 117 in torch_dynamo_resume_in__adjust_pos_cache_at_117>], graph_break=True)"
+        },
+        {
+          "type": "Tensor.item()",
+          "location": "/home/pengwu/projects/oss-model-graph-break-corpus/corpora/custom-models/_sources/minicpm_v_resampler/minicpm/resampler.py:142 in forward",
+          "reason": "GraphCompileReason(reason='Data dependent operator\\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs ="
+        }
+      ],
+      "wall_time_s": 3.3
+    },
+    {
+      "name": "MiniCPM-V-ViT",
+      "source": "custom",
+      "category": "multimodal",
+      "mode": "eval",
+      "download_ok": true,
+      "params": 2669952,
+      "params_M": 2.7,
+      "eager_ok": true,
+      "status": "graph_break",
+      "graph_break_count": 3,
+      "graph_count": 4,
+      "break_reasons": [
+        {
+          "type": "aten.nonzero",
+          "location": "/home/pengwu/envs/graph-break-corpus-29/lib/python3.12/site-packages/transformers/models/idefics2/modeling_idefics2.py:176 in forward",
+          "reason": "GraphCompileReason(reason=\"Dynamic shape operator\\n  Explanation: Operator `aten.nonzero.default`'s output shape depends on input Tensor data.\\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\\n\\n  Developer debug context: aten.non"
+        },
+        {
+          "type": "aten.nonzero",
+          "location": "/home/pengwu/envs/graph-break-corpus-29/lib/python3.12/site-packages/transformers/models/idefics2/modeling_idefics2.py:176 in forward",
+          "reason": "GraphCompileReason(reason=\"Dynamic shape operator\\n  Explanation: Operator `aten.nonzero.default`'s output shape depends on input Tensor data.\\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\\n\\n  Developer debug context: aten.non"
+        }
+      ],
+      "wall_time_s": 2.1
+    }
+  ]
+}
