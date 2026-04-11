@@ -12,7 +12,7 @@
       "graph_break_count": 0,
       "graph_count": 1,
       "break_reasons": [],
-      "wall_time_s": 10.7
+      "wall_time_s": 13.7
     },
     {
       "name": "FLUX.1-DiT",
@@ -26,7 +26,7 @@
       "graph_break_count": 0,
       "graph_count": 1,
       "break_reasons": [],
-      "wall_time_s": 3.9
+      "wall_time_s": 3.6
     },
     {
       "name": "OpenVoice-SynthesizerTrn",
@@ -51,7 +51,7 @@
           "reason": "GraphCompileReason(reason='Unsupported Tensor.item() call with capture_scalar_outputs=False\\n  Explanation: Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False.\\n  Hint: Set `torch._dynamo.config.capture_scalar_outputs = True` or `export TORCHDYNAMO_CAPTURE_SCALA"
         }
       ],
-      "wall_time_s": 28.0
+      "wall_time_s": 37.2
     },
     {
       "name": "GPT-SoVITS-SynthesizerTrn",
@@ -76,7 +76,7 @@
           "reason": "GraphCompileReason(reason='Unsupported Tensor.item() call with capture_scalar_outputs=False\\n  Explanation: Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False.\\n  Hint: Set `torch._dynamo.config.capture_scalar_outputs = True` or `export TORCHDYNAMO_CAPTURE_SCALA"
         }
       ],
-      "wall_time_s": 27.7
+      "wall_time_s": 35.3
     },
     {
       "name": "MiniCPM-V-Resampler",
@@ -111,7 +111,7 @@
           "reason": "GraphCompileReason(reason='Data dependent operator\\n  Explanation: Operator `aten._local_scalar_dense.default` has a non-Tensor output whose value is dependent on the data of Tensor inputs.\\n  Hint: Enable tracing of data-dependent output operators with `torch._dynamo.config.capture_scalar_outputs ="
         }
       ],
-      "wall_time_s": 4.1
+      "wall_time_s": 3.8
     },
     {
       "name": "MiniCPM-V-ViT",
@@ -136,7 +136,7 @@
           "reason": "GraphCompileReason(reason=\"Dynamic shape operator\\n  Explanation: Operator `aten.nonzero.default`'s output shape depends on input Tensor data.\\n  Hint: Enable tracing of dynamic shape operators with `torch._dynamo.config.capture_dynamic_output_shape_ops = True`\\n\\n  Developer debug context: aten.non"
         }
       ],
-      "wall_time_s": 3.3
+      "wall_time_s": 3.6
     }
   ]
 }

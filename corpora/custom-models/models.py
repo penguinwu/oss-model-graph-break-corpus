@@ -56,7 +56,7 @@ MODELS = [
             "channel_multiplier": 1,
             "narrow": 0.5,
         },
-        "input_shape": [1, 3, 64, 64],
+        "input_shape": [2, 3, 64, 64],
         "compile_target": "model",
     },
 
@@ -269,7 +269,7 @@ def flux_inputs(batch_size=2):
             "txt_ids": txt_ids, "timesteps": timesteps, "y": y}
 
 
-def openvoice_inputs(batch_size=1):
+def openvoice_inputs(batch_size=2):
     """OpenVoice SynthesizerTrn.voice_conversion() inputs."""
     import torch
     T = 32
@@ -281,7 +281,7 @@ def openvoice_inputs(batch_size=1):
             "sid_src": sid_src, "sid_tgt": sid_tgt}
 
 
-def gptsovits_inputs(batch_size=1):
+def gptsovits_inputs(batch_size=2):
     """GPT-SoVITS SynthesizerTrn.infer() inputs."""
     import torch
     T_ssl = 32
@@ -295,7 +295,7 @@ def gptsovits_inputs(batch_size=1):
             "text": text, "text_lengths": text_lengths}
 
 
-def minicpm_resampler_inputs(batch_size=1):
+def minicpm_resampler_inputs(batch_size=2):
     """MiniCPM-V Resampler inputs."""
     import torch
     x = torch.randn(batch_size, 196, 1024)  # 14x14 patches, vision_dim
@@ -317,7 +317,7 @@ def minicpm_vit_kwargs():
     return {"config": config}
 
 
-def minicpm_vit_inputs(batch_size=1):
+def minicpm_vit_inputs(batch_size=2):
     """MiniCPM-V ViT inputs."""
     import torch
     return {"pixel_values": torch.randn(batch_size, 3, 196, 196)}
