@@ -6,16 +6,33 @@ These models can't be tested via the main HF sweep — they have custom architec
 non-standard dependencies, or aren't published as HF model classes. We download their
 source directly from GitHub/HuggingFace, mock external deps, and test at the top level.
 
+## Why These Models?
+
+The HuggingFace corpus covers models available via `AutoModel`, but many popular
+open-source models have custom architectures that live outside the HF ecosystem.
+We selected these models by:
+
+1. **Surveying high-star GitHub repos** in categories with known `torch.compile`
+   friction (TTS/voice cloning, diffusion, multimodal, face restoration)
+2. **Filtering out models already covered** by the HuggingFace corpus — if a model
+   or its architecture family is already tested there, we skip it
+3. **Prioritizing diverse graph break patterns** — each model was chosen because it
+   exercises a different combination of Dynamo-unfriendly patterns (data-dependent
+   branching, `Tensor.item()`, dynamic shape ops)
+
+The result is 6 models from 5 repos totaling ~160k GitHub stars, representing
+real-world code that users actually compile.
+
 ## Models
 
-| Model | Category | Repo | Graph Breaks | Root Cause |
-|-------|----------|------|-------------|------------|
-| GFPGAN | Face restoration | TencentARC/GFPGAN | 0 | Clean |
-| FLUX.1-DiT | Diffusion | black-forest-labs/flux | 0 | Clean |
-| OpenVoice | TTS | myshell-ai/OpenVoice | 31 | nonzero, item, data-dep branch |
-| GPT-SoVITS | TTS | RVC-Boss/GPT-SoVITS | 4 | Tensor.item() in WaveNet |
-| MiniCPM-V Resampler | Multimodal | OpenBMB/MiniCPM-V | 5 | data-dep branch, scalar |
-| MiniCPM-V ViT | Multimodal | OpenBMB/MiniCPM-V | 3 | nonzero in attention |
+| Model | Category | Repo | Stars | Graph Breaks | Root Cause |
+|-------|----------|------|-------|-------------|------------|
+| GFPGAN | Face restoration | TencentARC/GFPGAN | ~36k | 0 | Clean |
+| FLUX.1-DiT | Diffusion | black-forest-labs/flux | ~20k | 0 | Clean |
+| OpenVoice | TTS | myshell-ai/OpenVoice | ~30k | 7 | Tensor.item() |
+| GPT-SoVITS | TTS | RVC-Boss/GPT-SoVITS | ~39k | 4 | Tensor.item() in WaveNet |
+| MiniCPM-V Resampler | Multimodal | OpenBMB/MiniCPM-V | ~14k | 5 | data-dep branch, scalar |
+| MiniCPM-V ViT | Multimodal | OpenBMB/MiniCPM-V | — | 3 | nonzero in attention |
 
 ## Usage
 

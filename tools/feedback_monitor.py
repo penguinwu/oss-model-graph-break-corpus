@@ -379,7 +379,6 @@ def main():
         m for m in new_messages
         if m["id"] not in SKIP_MESSAGE_IDS
         and m.get("sender", "")  # Skip messages with no sender
-        and not m.get("is_thread_reply", False)  # Only top-level posts
         and not any(m.get("text", "").startswith(p) for p in AGENT_PREFIXES)
     ]
 
@@ -393,8 +392,15 @@ def main():
     print(f"Found {len(user_messages)} new message(s) to process.")
 
     for msg in user_messages:
+        is_reply = msg.get("is_thread_reply", False)
         classification = classify_message(msg["text"])
-        print(f"\n--- Message from {msg['sender']} ---")
+        # Thread replies are typically responses/follow-ups, not new bug reports.
+        # Classify them as questions (needs_answer) so the cron prompt can decide
+        # how to handle them, rather than creating duplicate Tasks.
+        if is_reply and classification in ("bug", "feature", "data_correction"):
+            classification = "question"
+        reply_tag = " (thread reply)" if is_reply else ""
+        print(f"\n--- Message from {msg['sender']}{reply_tag} ---")
         print(f"Text: {msg['text'][:200]}...")
         print(f"Classification: {classification}")
 
