@@ -87,7 +87,7 @@
     {
       "name": "FalconMambaModel",
       "eval": {
-        "status": "graph_break"
+        "status": "full_graph"
       },
       "train": {
         "status": "full_graph"

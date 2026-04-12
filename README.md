@@ -1,6 +1,6 @@
 # OSS Model Compiler Quality Corpus
 
-A reusable corpus of **468 open-source models** for measuring and improving `torch.compile` quality. Structured, reproducible, extensible.
+A reusable corpus of **open-source models** for measuring and improving `torch.compile` quality. Structured, reproducible, extensible.
 
 The first application tracks `fullgraph=True` success rates across PyTorch versions. But the corpus is designed to extend to other compiler quality studies: dynamic shape behavior, recompilation patterns, graph break taxonomy, and fix validation.
 
@@ -39,11 +39,14 @@ Reproducible: `python3 tools/analyze_trend.py`
 ### Install dependencies
 
 ```bash
-bash scripts/setup_env.sh        # creates venv and installs deps
-source env/bin/activate
+# Option 1: Auto-setup (creates venv at ./env by default, or supply a custom path)
+bash scripts/setup_env.sh                    # creates ./env
+bash scripts/setup_env.sh ~/envs/torch210    # creates at a custom location
 
-# Or manually:
-pip install -r requirements.txt  # torch 2.10.0, transformers 5.4.0, diffusers 0.37.1
+# Option 2: Manual
+python3 -m venv ~/envs/torch210   # or wherever you prefer
+source ~/envs/torch210/bin/activate
+pip install -r requirements.txt   # torch, transformers, diffusers, timm
 ```
 
 ### Browse the corpus
@@ -172,9 +175,23 @@ tlparse parse /tmp/trace -o /tmp/report
 open /tmp/report/index.html
 ```
 
+## Model Variants
+
+The sweep tests three tiers of HuggingFace model classes, reflecting how users actually apply `torch.compile`:
+
+| Tier | Example | What it tests | Why it matters |
+|------|---------|---------------|----------------|
+| **Base Model** | `Gemma4Model` | Transformer backbone only | Core attention/MLP compile quality |
+| **ForCausalLM** | `Gemma4ForCausalLM` | Backbone + LM head + loss | The standard text generation compile target |
+| **ForConditionalGeneration** | `Gemma4ForConditionalGeneration` | Backbone + task head + multimodal merge | Real-world VLM compile — where vision-text integration breaks surface |
+
+Users don't compile base models — they compile `ForCausalLM` (text generation) or `ForConditionalGeneration` (multimodal generation). The `ForConditionalGeneration` wrapper adds vision-text merge logic that can introduce graph breaks invisible at the base model level. For example, `Gemma4Model` compiles clean, but `Gemma4ForConditionalGeneration` has 5 graph breaks from dynamic shape ops in the vision merge path.
+
+Each variant is a separate entry in the corpus, so you can compare compile quality across tiers for the same architecture.
+
 ## Corpus Format
 
-`corpus/corpus.json` — 468 models with eval + train results across static and dynamic configurations. Each model includes status, compile time, error details. See `corpus/summary.md` for a human-readable overview.
+`corpus/corpus.json` — models with eval + train results across static and dynamic configurations. Each model includes status, compile time, error details. See `corpus/summary.md` for a human-readable overview.
 
 `corpus/golden_set.json` — 2,133 expected-status checks for regression detection. Run `python3 tools/validate.py` to verify the corpus matches the golden set.
 
@@ -208,11 +225,14 @@ python3 sweep/run_sweep.py --models deepcopy_models.json --device cuda
 ### Run a sweep
 
 ```bash
-python3 -m venv env && source env/bin/activate
-pip install torch transformers diffusers
+# Set up a venv with torch + model libraries (wherever you prefer)
+python3 -m venv ~/envs/torch210
+~/envs/torch210/bin/pip install -r requirements.txt
 
+# Run a sweep — point --python to your venv
 python3 sweep/run_sweep.py \
     --device cuda \
+    --python ~/envs/torch210/bin/python \
     --source hf+diffusers \
     --identify-only \
     --identify-modes eval train \
@@ -241,7 +261,7 @@ python3 sweep/worker.py --model hf/ModelName --device cuda
 
 | Script | Role |
 |--------|------|
-| `sweep/models.py` | Model enumeration from HF/Diffusers/TIMM |
+| `sweep/models.py` | Model enumeration from HF/Diffusers/TIMM (base + ForCausalLM + ForConditionalGeneration) |
 | `sweep/worker.py` | Single-model subprocess (create → eager → compile) |
 | `sweep/run_sweep.py` | Orchestrator (parallel workers, timeouts, checkpointing) |
 | `sweep/sweep_watchdog.py` | Progress monitor + auto-restart on failure |

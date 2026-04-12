@@ -36,15 +36,26 @@ def enumerate_timm():
 
 
 def enumerate_hf():
-    """Enumerate HF Transformers base Model classes with matching Configs.
+    """Enumerate HF Transformers model classes with matching Configs.
+
+    Discovers three tiers of model classes:
+    - Base *Model (backbone only — e.g. Gemma4Model)
+    - *ForCausalLM (backbone + lm_head — e.g. Gemma4ForCausalLM)
+    - *ForConditionalGeneration (backbone + task head + multimodal merge)
 
     Filters:
     - Must subclass PreTrainedModel
-    - Must end with 'Model' (not ForXxxModel task heads)
     - Must not be a PreTrainedModel base class
-    - Must have a matching Config class
+    - Must have a config_class with a matching Config in transformers
     """
     import transformers
+
+    # Accepted suffixes and their variant labels
+    _SUFFIXES = [
+        ("Model", "base"),
+        ("ForCausalLM", "causal_lm"),
+        ("ForConditionalGeneration", "conditional_generation"),
+    ]
 
     models = []
     seen = set()
@@ -58,13 +69,24 @@ def enumerate_hf():
             continue
         if "PreTrained" in name:
             continue
-        if not name.endswith("Model"):
-            continue
-        if "For" in name:
+
+        # Determine which variant this is
+        variant = None
+        for suffix, var_name in _SUFFIXES:
+            if name.endswith(suffix):
+                # Base models must not contain "For" (avoids FormerModel etc.)
+                if var_name == "base" and "For" in name:
+                    continue
+                variant = var_name
+                break
+        if variant is None:
             continue
 
-        # Find matching config
-        config_name = name.replace("Model", "Config")
+        # Get config class from the model class itself (authoritative source)
+        config_cls = getattr(obj, "config_class", None)
+        if config_cls is None:
+            continue
+        config_name = config_cls.__name__
         if not hasattr(transformers, config_name):
             continue
 
@@ -79,10 +101,16 @@ def enumerate_hf():
             "hf_class": name,
             "hf_config": config_name,
         }
+        if variant != "base":
+            spec["variant"] = variant
 
-        # Detect input type from name heuristics (fast, no config instantiation)
-        # The worker does config-based detection at runtime
-        input_type = _detect_hf_input_type(name)
+        # Detect input type using base model name for heuristics
+        base_name = name
+        if variant == "causal_lm":
+            base_name = name.replace("ForCausalLM", "Model")
+        elif variant == "conditional_generation":
+            base_name = name.replace("ForConditionalGeneration", "Model")
+        input_type = _detect_hf_input_type(base_name)
         if input_type != "text":
             spec["input_type"] = input_type
 

@@ -11,6 +11,7 @@ Explain: TORCH_LOGS=graph_breaks + counting backend → detailed graph break ana
 Outputs a single JSON line to stdout. All logs go to stderr.
 """
 import argparse
+import inspect
 import json
 import os
 import sys
@@ -95,6 +96,8 @@ warnings.filterwarnings("ignore")
 
 import torch
 import torch._dynamo
+
+from explain import run_graph_break_analysis
 
 
 # ─── Model creation ──────────────────────────────────────────────────────────
@@ -485,6 +488,36 @@ def _fix_config(model_name, config):
         config.num_queries = 10
         config.group_detr = 1
 
+    # --- Gemma3ForConditionalGeneration: mm_tokens_per_image must match vision image_size ---
+    # Default mm_tokens_per_image=256 (tokens_per_side=16) with image_size=224 (patches=14)
+    # gives kernel_size = patches_per_image // tokens_per_side = 14 // 16 = 0 → AvgPool2d(0) crash.
+    # Fix: set mm_tokens_per_image = patches_per_image^2 so kernel=1 (no pooling).
+    if name_lower == "gemma3model":
+        vision_cfg = getattr(config, "vision_config", None)
+        mm_tok = getattr(config, "mm_tokens_per_image", None)
+        if vision_cfg and mm_tok:
+            img_sz = getattr(vision_cfg, "image_size", 224) or 224
+            ps = getattr(vision_cfg, "patch_size", 16)
+            patches_per_image = img_sz // ps
+            tokens_per_side = int(mm_tok ** 0.5)
+            if tokens_per_side > patches_per_image:
+                # Reduce mm_tokens_per_image to match image_size
+                config.mm_tokens_per_image = patches_per_image ** 2
+
+    # --- Gemma4ForConditionalGeneration: default config has vision_config=None ---
+    # Gemma4 is multimodal but its default Gemma4Config omits vision_config.
+    # Construct one so ForConditionalGeneration gets proper multimodal inputs.
+    if name_lower == "gemma4model":
+        if getattr(config, "vision_config", None) is None:
+            try:
+                import transformers
+                config.vision_config = transformers.Gemma4VisionConfig(
+                    num_hidden_layers=2, hidden_size=64, intermediate_size=128,
+                    num_attention_heads=2, num_key_value_heads=2,
+                )
+            except Exception:
+                pass
+
     # --- Generic size reduction for all models ---
     # For graph break detection, 2 layers is sufficient.
     # This prevents create-phase timeouts for large models.
@@ -686,16 +719,48 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
     config_name = spec.get("hf_config") or spec["name"].replace("Model", "Config")
     model_name = spec.get("hf_class") or spec["name"]
 
+    # For ForCausalLM / ForConditionalGeneration variants, derive the base model
+    # name so config creation, input detection, and model-specific handlers all
+    # match against the same keys they use for base models.
+    variant = spec.get("variant")
+    if variant == "causal_lm":
+        base_model_name = model_name.replace("ForCausalLM", "Model")
+    elif variant == "conditional_generation":
+        base_model_name = model_name.replace("ForConditionalGeneration", "Model")
+    else:
+        base_model_name = model_name
+
     config_cls = getattr(transformers, config_name)
     model_cls = getattr(transformers, model_name)
 
-    config = _create_config(model_name, config_cls)
-    config = _fix_config(model_name, config)
+    config = _create_config(base_model_name, config_cls)
+
+    # For ForConditionalGeneration: preserve text_config.hidden_size before reduction.
+    # _reduce_model_size may shrink text_config.hidden_size, but the vision-to-text
+    # projection layer is built with the original hidden_size during model init.
+    # Reducing it creates a dimension mismatch when multimodal inputs are used.
+    _orig_text_hs = None
+    if variant == "conditional_generation":
+        text_cfg = getattr(config, "text_config", None)
+        if text_cfg and getattr(config, "vision_config", getattr(config, "image_config", None)):
+            _orig_text_hs = getattr(text_cfg, "hidden_size", None)
+
+    config = _fix_config(base_model_name, config)
+
+    # Restore text hidden_size for ForConditionalGeneration with vision
+    if _orig_text_hs is not None:
+        text_cfg = getattr(config, "text_config", None)
+        if text_cfg and getattr(text_cfg, "hidden_size", None) != _orig_text_hs:
+            text_cfg.hidden_size = _orig_text_hs
+            # Re-sync dependent dims that _reduce_model_size may have scaled
+            if getattr(text_cfg, "intermediate_size", None):
+                text_cfg.intermediate_size = max(text_cfg.intermediate_size, _orig_text_hs * 2)
+
     model = model_cls(config).to(device)
 
     # Always auto-detect from config — spec's name-based hint can be wrong
     # (e.g., GroundingDino classified as vision but needs text input_ids too)
-    input_type = _detect_hf_input_type(model_name, config)
+    input_type = _detect_hf_input_type(base_model_name, config)
 
     vocab_size = getattr(config, "vocab_size", None) or 1000
     vocab_size = min(vocab_size, 1000)
@@ -886,7 +951,9 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
         }
 
     # ── Post-processing: add model-specific required inputs ──
-    name_lower = (spec.get("hf_class") or spec["name"]).lower()
+    # Use base model name for handler matching so ForCausalLM/ForConditionalGeneration
+    # variants reuse the same input logic as their base model.
+    name_lower = base_model_name.lower()
     model_type = getattr(config, "model_type", "")
 
     # Sub-models that need hidden_states instead of/in addition to pixel_values
@@ -1354,6 +1421,54 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
         if getattr(config, "sliding_window", None) == 0:
             config.sliding_window = 4096
 
+    # Gemma4Model (composite): text-only with mm_token_type_ids for train mode
+    # Gemma4 uses pre-patchified vision (nn.Linear, not Conv2d) — text-only avoids
+    # the complex multimodal path while still testing the core language model + compile.
+    if name_lower == "gemma4model":
+        text_cfg = getattr(config, "text_config", config)
+        voc = min(getattr(text_cfg, "vocab_size", 262144) or 262144, 1000)
+        inputs = {
+            "input_ids": torch.randint(0, voc, (B, 32), device=device),
+            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
+            # Train mode requires mm_token_type_ids (0=text, 1=image, 2=audio)
+            "mm_token_type_ids": torch.zeros(B, 32, dtype=torch.long, device=device),
+        }
+        if getattr(config, "sliding_window", None) == 0:
+            config.sliding_window = 4096
+
+    # Gemma4VisionModel: pre-patchified pixel_values (nn.Linear patch embed, not Conv2d)
+    # pixel_values shape: (B, max_patches, patch_size * patch_size * num_channels)
+    # pixel_position_ids shape: (B, max_patches, 2) — row/col position of each patch
+    if name_lower == "gemma4visionmodel":
+        patch_size = getattr(config, "patch_size", 16)
+        num_channels = getattr(config, "num_channels", 3)
+        patch_dim = num_channels * patch_size * patch_size  # 768
+        # num_patches must be divisible by pooling_kernel_size^2 (default 3^2=9)
+        # so the multihead pooling layers can reduce evenly at each stage.
+        pool_k = getattr(config, "pooling_kernel_size", 3)
+        num_patches = pool_k ** 4  # 81 for k=3: supports 2 pooling stages (81→9→1)
+        grid_side = int(num_patches ** 0.5)  # 9 for 81 patches
+        inputs = {
+            "pixel_values": torch.randn(B, num_patches, patch_dim, device=device),
+            "pixel_position_ids": torch.randint(0, grid_side, (B, num_patches, 2), device=device),
+        }
+
+    # Gemma4AudioModel: mel spectrogram input_features
+    # input_features shape: (B, time_frames, feature_size=128)
+    if name_lower == "gemma4audiomodel":
+        feature_size = getattr(config, "feature_size", 128)
+        inputs = {
+            "input_features": torch.randn(B, 100, feature_size, device=device),
+            "attention_mask": torch.ones(B, 100, dtype=torch.long, device=device),
+        }
+
+    # Hybrid attention+Mamba models: disable cache to avoid transformers 5.5
+    # cache_utils.py ValueError ("get_seq_length/has_previous_state can only be
+    # called on Attention/LinearAttention layers"). These models mix attention and
+    # Mamba/linear-attention layers — the hybrid cache validation is broken in eager.
+    if name_lower in ("bambamodel", "granitemoehybridmodel", "jambamodel"):
+        inputs["use_cache"] = False
+
     # KyutaiSpeechToTextModel: input_ids must be 3D (B, seq_len, num_codebooks + 1)
     # The embeddings layer adds audio_tokens_offsets of shape (num_codebooks + 1,) to input_ids,
     # then sums over the last dim. 2D input_ids causes shape mismatch (seq_len vs num_codebooks+1).
@@ -1657,6 +1772,110 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
             "decoder_input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
         }
 
+    # ForCausalLM: add labels for loss computation (tests the loss path too)
+    if variant == "causal_lm" and "input_ids" in inputs:
+        inputs["labels"] = inputs["input_ids"].clone()
+
+    # ForConditionalGeneration: ensure multimodal inputs for vision-language models.
+    # Many base model handlers above force text-only inputs (via _vl_text_only_models
+    # or model-specific overrides). For base models that's correct — they crash with
+    # raw pixel_values. But ForConditionalGeneration wraps the full pipeline (vision
+    # encoder + merge + LM), so it needs actual multimodal inputs to test the
+    # integration layer where real graph breaks occur.
+    if variant == "conditional_generation" and "pixel_values" not in inputs:
+        vision_cfg = getattr(config, "vision_config", getattr(config, "image_config", None))
+        if vision_cfg:
+            model_fwd_params = set(inspect.signature(model.forward).parameters.keys())
+            text_cfg = getattr(config, "text_config", config)
+            voc = min(getattr(text_cfg, "vocab_size", 32000) or 32000, 1000)
+
+            # Gemma4ForConditionalGeneration: pre-patchified vision input
+            if "mm_token_type_ids" in model_fwd_params:
+                patch_size = getattr(vision_cfg, "patch_size", 16)
+                num_channels = 3
+                patch_dim = num_channels * patch_size * patch_size
+                pool_k = getattr(vision_cfg, "pooling_kernel_size", 3)
+                num_patches = pool_k ** 4  # 81 for k=3
+                grid_side = int(num_patches ** 0.5)
+                n_vis_tokens = num_patches // (pool_k ** 2)  # tokens after pooling
+                seq_len = 32 + n_vis_tokens
+                input_ids = torch.randint(0, voc, (B, seq_len), device=device)
+                inputs = {
+                    "pixel_values": torch.randn(B, num_patches, patch_dim, device=device),
+                    "image_position_ids": torch.randint(0, grid_side, (B, num_patches, 2), device=device),
+                    "input_ids": input_ids,
+                    "attention_mask": torch.ones(B, seq_len, dtype=torch.long, device=device),
+                    "mm_token_type_ids": torch.zeros(B, seq_len, dtype=torch.long, device=device),
+                }
+            else:
+                # Standard vision: pixel_values as image tensor
+                img_size = getattr(vision_cfg, "image_size", 224) or 224
+                if isinstance(img_size, (list, tuple)):
+                    img_size = img_size[0]
+                num_channels = getattr(vision_cfg, "num_channels", 3) or 3
+                in_channels = getattr(vision_cfg, "in_channels", None)
+                if in_channels and not num_channels:
+                    num_channels = in_channels
+
+                # Estimate image token count for models that need image_token placeholders
+                patch_size = getattr(vision_cfg, "patch_size", 14)
+                if isinstance(patch_size, (list, tuple)):
+                    patch_size = patch_size[0]
+                n_vis_tokens = (img_size // patch_size) ** 2 if patch_size > 0 else 196
+                image_token_id = getattr(config, "image_token_id",
+                                         getattr(config, "image_token_index", None))
+
+                # Build input_ids with image token placeholders
+                text_len = 8
+                if image_token_id is not None:
+                    seq_len = text_len + n_vis_tokens
+                    ids = torch.randint(0, voc, (B, seq_len), device=device)
+                    ids[:, :n_vis_tokens] = image_token_id
+                    # Resize embeddings if image_token_id >= vocab_size
+                    if image_token_id >= voc:
+                        model.resize_token_embeddings(image_token_id + 1)
+                else:
+                    seq_len = 32
+                    ids = torch.randint(0, voc, (B, seq_len), device=device)
+
+                inputs = {
+                    "input_ids": ids,
+                    "attention_mask": torch.ones(B, seq_len, dtype=torch.long, device=device),
+                }
+
+                # Qwen2VL/Qwen2.5VL/Qwen3VL family: patchified 3D inputs
+                if "image_grid_thw" in model_fwd_params:
+                    temporal_ps = getattr(vision_cfg, "temporal_patch_size", 2)
+                    in_ch = getattr(vision_cfg, "in_channels", 3)
+                    merge_size = getattr(vision_cfg, "spatial_merge_size", 2)
+                    # Grid dims must be divisible by merge_size
+                    t, h, w = temporal_ps, merge_size * 2, merge_size * 2
+                    num_patches = t * h * w
+                    patch_dim = in_ch * temporal_ps * patch_size * patch_size
+                    inputs["pixel_values"] = torch.randn(num_patches, patch_dim, device=device)
+                    inputs["image_grid_thw"] = torch.tensor([[t, h, w]], device=device)
+                    # Recompute image tokens: after spatial merge, features = t * (h/ms) * (w/ms)
+                    n_vis_actual = t * (h // merge_size) * (w // merge_size)
+                    if image_token_id is not None:
+                        text_len = 8
+                        new_seq = text_len + n_vis_actual
+                        new_ids = torch.randint(0, voc, (B, new_seq), device=device)
+                        new_ids[:, :n_vis_actual] = image_token_id
+                        if image_token_id >= voc:
+                            model.resize_token_embeddings(image_token_id + 1)
+                        inputs["input_ids"] = new_ids
+                        inputs["attention_mask"] = torch.ones(B, new_seq, dtype=torch.long, device=device)
+                elif "pixel_values" not in inputs:
+                    # Standard pixel_values: (B, C, H, W)
+                    inputs["pixel_values"] = torch.randn(B, num_channels, img_size, img_size, device=device)
+
+                # Note: image_sizes is optional metadata — omit by default.
+                # Models that require it will get it from model-specific handlers.
+
+                # Gemma3/PaliGemma: needs token_type_ids for train mode
+                if "token_type_ids" in model_fwd_params:
+                    inputs["token_type_ids"] = torch.zeros(B, seq_len, dtype=torch.long, device=device)
+
     return model, inputs, None
 
 
@@ -1911,7 +2130,7 @@ def run_identify(spec, device, mode, dynamic=False):
                 config = None
                 try:
                     import transformers
-                    cfg_name = spec["name"].replace("Model", "Config")
+                    cfg_name = spec.get("hf_config") or spec["name"].replace("Model", "Config")
                     config = getattr(transformers, cfg_name)()
                 except Exception:
                     pass
@@ -2199,70 +2418,12 @@ def run_validate(spec, device, mode, dynamic=False):
 
 # ─── Explain: detailed analysis ─────────────────────────────────────────────
 
-class _BreakCollector:
-    """Logging handler that captures graph break messages."""
-
-    def __init__(self):
-        self.messages = []
-        self._handler = None
-
-    def install(self):
-        import logging
-
-        class _Handler(logging.Handler):
-            def __init__(self, collector):
-                super().__init__()
-                self.collector = collector
-
-            def emit(self, record):
-                self.collector.messages.append(record.getMessage())
-
-        self._handler = _Handler(self)
-        # Capture from torch._dynamo and all sub-loggers
-        logger = logging.getLogger("torch._dynamo")
-        logger.addHandler(self._handler)
-
-        # Enable graph break logging via torch's logging system
-        try:
-            import torch._logging
-            torch._logging.set_logs(graph_breaks=True)
-        except (ImportError, AttributeError):
-            pass
-
-    def uninstall(self):
-        import logging
-        if self._handler:
-            logging.getLogger("torch._dynamo").removeHandler(self._handler)
-        try:
-            import torch._logging
-            torch._logging.set_logs(graph_breaks=False)
-        except (ImportError, AttributeError):
-            pass
-
-    def get_break_reasons(self):
-        """Parse captured messages into break_reasons format."""
-        import re
-        # Strip long site-packages paths to preserve the meaningful part
-        _site_pkg_re = re.compile(r'/[^\s]*/site-packages/')
-        reasons = []
-        for msg in self.messages:
-            cleaned = _site_pkg_re.sub('', msg)
-            info = {"reason": cleaned[:2000]}
-            # Common patterns: "... at /path/file.py:123" or "file.py:123"
-            loc = re.search(r'(\S+\.py):(\d+)', msg)
-            if loc:
-                info["file"] = loc.group(1)
-                info["line"] = int(loc.group(2))
-            reasons.append(info)
-        return reasons
-
-
 def run_explain(spec, device, mode):
-    """Analyze graph breaks via TORCH_LOGS + counting backend.
+    """Analyze graph breaks using shared methodology (TORCH_LOGS + counting backend).
 
-    Replaces the deprecated torch._dynamo.explain() approach.
-    Uses a custom backend to count subgraphs and ops, and captures
-    graph break log messages for structured break_reasons output.
+    Core analysis is delegated to run_graph_break_analysis() from explain.py,
+    which is the canonical implementation shared across all suites (HF, diffusers,
+    timm, custom). This wrapper handles model creation, TORCH_TRACE, and GPU memory.
     """
     result = {
         "name": spec["name"],
@@ -2284,50 +2445,21 @@ def run_explain(spec, device, mode):
         model.eval()
     ctx = torch.no_grad() if mode == "eval" else torch.enable_grad()
 
-    # Set up graph break capture
-    collector = _BreakCollector()
-    collector.install()
+    # Core graph break analysis — shared with all suites
+    inputs = inputs_tuple if inputs_tuple else inputs_dict
+    analysis = run_graph_break_analysis(model, inputs, mode=mode)
 
-    # Counting backend: tracks subgraph count, ops per graph, compile times
-    ops_per_graph = []
-    compile_times_list = []
-
-    def _counting_backend(gm, example_inputs):
-        start_t = time.perf_counter()
-        op_count = sum(1 for n in gm.graph.nodes
-                       if n.op not in ('placeholder', 'output'))
-        ops_per_graph.append(op_count)
-        compile_times_list.append(round(time.perf_counter() - start_t, 3))
-        return gm.forward
-
-    torch._dynamo.reset()
-    start = time.perf_counter()
-    try:
-        compiled = torch.compile(model, backend=_counting_backend)
-        with ctx:
-            if inputs_tuple:
-                compiled(*inputs_tuple)
-            else:
-                compiled(**inputs_dict)
-
-        result["explain_time_s"] = round(time.perf_counter() - start, 3)
-        result["graph_count"] = len(ops_per_graph)
-        result["graph_break_count"] = max(0, len(ops_per_graph) - 1)
-        result["ops_per_graph"] = ops_per_graph
-        result["compile_times"] = compile_times_list
-
-        # Extract break reasons from captured log messages
-        break_reasons = collector.get_break_reasons()
-        if break_reasons:
-            result["break_reasons"] = break_reasons
-
+    result["explain_time_s"] = analysis["explain_time_s"]
+    if analysis["status"] == "ok":
         result["status"] = "ok"
-    except Exception as e:
+        result["graph_count"] = analysis["graph_count"]
+        result["graph_break_count"] = analysis["graph_break_count"]
+        result["ops_per_graph"] = analysis["ops_per_graph"]
+        result["compile_times"] = analysis["compile_times"]
+        result["break_reasons"] = analysis["break_reasons"]
+    else:
         result["status"] = "explain_error"
-        result["error"] = str(e)[:500]
-        result["explain_time_s"] = round(time.perf_counter() - start, 3)
-    finally:
-        collector.uninstall()
+        result["error"] = analysis.get("error", "unknown")
 
     # Step 2: TORCH_TRACE (if env var is set — orchestrator sets it before launch)
     trace_dir = os.environ.get("TORCH_TRACE")
