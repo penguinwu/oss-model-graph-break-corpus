@@ -729,16 +729,30 @@ def _fix_config(model_name, config):
                 text_cfg.hidden_size = v_hs
                 if getattr(text_cfg, "intermediate_size", None):
                     text_cfg.intermediate_size = max(text_cfg.intermediate_size, v_hs * 2)
-                # Fix attention heads to divide hidden_size
-                nh = getattr(text_cfg, "num_attention_heads", None)
-                if nh and v_hs % nh != 0:
-                    for heads in (16, 8, 4):
-                        if v_hs % heads == 0:
-                            text_cfg.num_attention_heads = heads
-                            nkv = getattr(text_cfg, "num_key_value_heads", None)
-                            if nkv and nkv > heads:
-                                text_cfg.num_key_value_heads = heads
-                            break
+                # Must preserve original head_dim for mrope_section compatibility.
+                # mrope_section is designed for the original head_dim (typically 128).
+                # Find num_attention_heads that gives original head_dim.
+                rp = getattr(text_cfg, "rope_scaling", None)
+                mrope = rp.get("mrope_section", None) if isinstance(rp, dict) else None
+                if mrope:
+                    target_head_dim = sum(mrope) * 2  # mrope uses head_dim/2
+                    heads = v_hs // target_head_dim
+                    if heads > 0 and v_hs % target_head_dim == 0:
+                        text_cfg.num_attention_heads = heads
+                        nkv = getattr(text_cfg, "num_key_value_heads", None)
+                        if nkv and nkv > heads:
+                            text_cfg.num_key_value_heads = heads
+                else:
+                    # No mrope — just find valid heads
+                    nh = getattr(text_cfg, "num_attention_heads", None)
+                    if nh and v_hs % nh != 0:
+                        for heads in (16, 8, 4):
+                            if v_hs % heads == 0:
+                                text_cfg.num_attention_heads = heads
+                                nkv = getattr(text_cfg, "num_key_value_heads", None)
+                                if nkv and nkv > heads:
+                                    text_cfg.num_key_value_heads = heads
+                                break
                 nkv = getattr(text_cfg, "num_key_value_heads", None)
                 nh = getattr(text_cfg, "num_attention_heads", None)
                 if nh and nkv and nkv > 0 and nh % nkv != 0:
@@ -2069,6 +2083,25 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
                     "attention_mask": torch.ones(B, seq_len, dtype=torch.long, device=device),
                 }
 
+            # PaddleOCR: expects 4D pixel_values (num_images, C, H, W) + image_grid_thw
+            # Model does unsqueeze(0) internally for 5D vision embeddings
+            elif "paddleocr" in name_lower_fcg:
+                img_size = getattr(vision_cfg, "image_size", 384) or 384
+                num_ch = getattr(vision_cfg, "num_channels", 3) or 3
+                merge_size = getattr(vision_cfg, "spatial_merge_size", 2)
+                patch_size = getattr(vision_cfg, "patch_size", 14)
+                if isinstance(patch_size, (list, tuple)):
+                    patch_size = patch_size[0]
+                h_patches = w_patches = img_size // patch_size
+                n_vis = (h_patches // merge_size) * (w_patches // merge_size)
+                ids, seq_len = _build_ids(n_vis)
+                inputs = {
+                    "pixel_values": torch.randn(B, num_ch, img_size, img_size, device=device),
+                    "image_grid_thw": torch.tensor([[1, h_patches, w_patches]] * B, device=device),
+                    "input_ids": ids,
+                    "attention_mask": torch.ones(B, seq_len, dtype=torch.long, device=device),
+                }
+
             # PerceptionLM: needs 5D pixel_values (B, num_images, C, H, W)
             elif "perceptionlm" in name_lower_fcg:
                 img_size = getattr(vision_cfg, "image_size", 224) or 224
@@ -2101,14 +2134,25 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
                     "image_embeds_position_mask": img_mask,
                 }
 
-            # Ovis2: uses visual_token_ids (not standard pixel_values pipeline)
+            # Ovis2: pixel_values is (num_images, C, H, W), each batch item gets the features
+            # Vision model outputs (num_images, seq_len, hidden) where seq_len depends on hidden_stride
             elif "ovis2" in name_lower_fcg:
                 img_size = getattr(vision_cfg, "image_size", 224) or 224
+                if isinstance(img_size, (list, tuple)):
+                    img_size = img_size[0]
                 num_ch = getattr(vision_cfg, "num_channels", 3) or 3
-                n_vis = 16  # small to avoid timeout
+                patch_size = getattr(vision_cfg, "patch_size", 14)
+                if isinstance(patch_size, (list, tuple)):
+                    patch_size = patch_size[0]
+                hidden_stride = getattr(vision_cfg, "hidden_stride", 2) or 1
+                patches_per_side = img_size // patch_size
+                # After hidden_stride downsampling: (patches_per_side / hidden_stride) ^ 2
+                seq_per_image = (patches_per_side // hidden_stride) ** 2
+                # Total features = B * seq_per_image. Each batch item gets seq_per_image tokens.
+                n_vis = seq_per_image
                 ids, seq_len = _build_ids(n_vis)
                 inputs = {
-                    "pixel_values": torch.randn(1, num_ch, img_size, img_size, device=device),
+                    "pixel_values": torch.randn(B, num_ch, img_size, img_size, device=device),
                     "input_ids": ids,
                     "attention_mask": torch.ones(B, seq_len, dtype=torch.long, device=device),
                 }
