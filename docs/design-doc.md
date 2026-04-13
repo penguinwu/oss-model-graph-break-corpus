@@ -96,11 +96,11 @@ Single A100 GPU, 4 parallel worker subprocesses, 180s timeout per model. Each mo
 ```bash
 # Default sweep: HF + Diffusers (~468 models, ~1 hour)
 python run_sweep.py --source hf+diffusers --device cuda --workers 4 \
-  --python ~/envs/graph-break-corpus/bin/python
+  --python /path/to/your/venv/bin/python
 
 # Full sweep including TIMM (~1,752 models, ~6 hours)
 python run_sweep.py --source all --device cuda --workers 4 \
-  --python ~/envs/graph-break-corpus/bin/python
+  --python /path/to/your/venv/bin/python
 ```
 
 ### 3.6 Dynamic Shape Testing

@@ -7,7 +7,7 @@ Workflow per model:
   3. Apply patches (if any)
   4. Import and instantiate model
   5. Run eager baseline
-  6. Run dynamo.explain for graph break analysis
+  6. Run graph break analysis (shared methodology across all suites)
 
 Usage:
   python worker.py --model-json '{"name": "GFPGAN", ...}'
@@ -28,7 +28,10 @@ import types
 from pathlib import Path
 
 import torch
-import torch._dynamo as dynamo
+
+# Shared explain module — same methodology across all suites
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "sweep"))
+from explain import run_graph_break_analysis
 
 
 # Where to download source files
@@ -415,52 +418,22 @@ def run_test(spec, proxy_url=None, mode="eval"):
         result["traceback"] = traceback.format_exc()
         return result
 
-    # Phase 4: dynamo.explain
+    # Phase 4: graph break analysis (shared methodology with HF/diffusers/timm suites)
     print(f"PHASE:explain {name}", file=sys.stderr)
     try:
-        dynamo.reset()
-        explained = dynamo.explain(target_fn)
+        analysis = run_graph_break_analysis(target_fn, inputs, mode=mode)
 
-        ctx = torch.no_grad() if mode == "eval" else contextlib.nullcontext()
-        with ctx:
-            if isinstance(inputs, dict):
-                explanation = explained(**inputs)
-            elif isinstance(inputs, tuple):
-                explanation = explained(*inputs)
-            else:
-                explanation = explained(inputs)
-
-        graph_breaks = explanation.graph_break_count
-        graph_count = explanation.graph_count
-
-        # Parse break reasons
-        break_reasons = []
-        for r in explanation.break_reasons:
-            reason_str = str(r)
-            # Classify break type
-            if "nonzero" in reason_str:
-                btype = "aten.nonzero"
-            elif "item()" in reason_str.lower() or "scalar" in reason_str.lower():
-                btype = "Tensor.item()"
-            elif "generic_jump" in reason_str or "Data-dependent branching" in reason_str:
-                btype = "data-dependent-branch"
-            else:
-                btype = "other"
-
-            # Extract file/line/function
-            files = re.findall(r'file (\S+\.py), line (\d+) in (\w+)', reason_str)
-            loc = f"{files[-1][0]}:{files[-1][1]} in {files[-1][2]}" if files else "unknown"
-
-            break_reasons.append({
-                "type": btype,
-                "location": loc,
-                "reason": reason_str[:300],
-            })
-
-        result["status"] = "full_graph" if graph_breaks == 0 else "graph_break"
-        result["graph_break_count"] = graph_breaks
-        result["graph_count"] = graph_count
-        result["break_reasons"] = break_reasons
+        if analysis["status"] == "ok":
+            result["status"] = "full_graph" if analysis["graph_break_count"] == 0 else "graph_break"
+            result["graph_break_count"] = analysis["graph_break_count"]
+            result["graph_count"] = analysis["graph_count"]
+            result["break_reasons"] = analysis["break_reasons"]
+            result["ops_per_graph"] = analysis["ops_per_graph"]
+            result["compile_times"] = analysis["compile_times"]
+            result["explain_time_s"] = analysis["explain_time_s"]
+        else:
+            result["status"] = "explain_error"
+            result["error"] = analysis.get("error", "unknown")
 
     except Exception as e:
         result["status"] = "explain_error"

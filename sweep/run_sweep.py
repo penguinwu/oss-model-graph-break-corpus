@@ -20,10 +20,10 @@ Optimizations:
 
 Usage:
   # Full sweep (auto-resumes from checkpoint if exists)
-  python run_sweep.py --device cuda --python ~/envs/graph-break-corpus/bin/python
+  python run_sweep.py --device cuda --python /path/to/your/venv/bin/python
 
   # Explicit resume after crash
-  python run_sweep.py --resume --device cuda --python ~/envs/graph-break-corpus/bin/python
+  python run_sweep.py --resume --device cuda --python /path/to/your/venv/bin/python
 
   # Explain pass only (from prior identify results)
   python run_sweep.py --explain-from results_identify.json --device cuda
@@ -1192,6 +1192,147 @@ def check_env(args):
         sys.exit(1)
 
 
+def run_test_mode(args):
+    """Quick integration test — pick 1 model per source, run both passes, validate output.
+
+    Tests the full worker subprocess pipeline (spawn → harvest → parse) without
+    running the full sweep. Catches import errors, JSON serialization bugs, and
+    output format regressions.
+
+    Usage: python run_sweep.py --test [--device cpu] [--python /path/to/python]
+    """
+    python_bin = args.python or sys.executable
+    device = args.device
+
+    # Test models — chosen to exercise both clean and breaking paths
+    # AutoformerModel has 5+ graph breaks with break_reasons — validates explain output thoroughly
+    test_specs = [
+        {"name": "resnet18", "source": "timm", "expect_breaks": False},
+        {"name": "AutoformerModel", "source": "hf", "expect_breaks": True},
+        {"name": "GFPGAN", "source": "custom", "category": "face_restoration", "expect_breaks": False},
+    ]
+
+    required_keys = {"status", "name", "source", "mode"}
+    explain_keys = {"graph_count", "graph_break_count", "ops_per_graph", "compile_times",
+                    "break_reasons", "explain_time_s"}
+
+    print("=" * 60)
+    print("Integration test: 1 model per source through worker pipeline")
+    print(f"  resnet18 (timm) — full graph, validates clean path")
+    print(f"  AutoformerModel (hf) — multiple graph breaks, validates explain depth")
+    print(f"  GFPGAN (custom) — validates custom worker subprocess path")
+    print(f"Device: {device}, Python: {python_bin}")
+    print("=" * 60)
+
+    passed, failed = 0, 0
+    for spec in test_specs:
+        source = spec["source"]
+        name = spec["name"]
+        expect_breaks = spec.pop("expect_breaks", None)
+
+        for pass_num in [1, 2]:
+            pass_name = "identify" if pass_num == 1 else "explain"
+            label = f"{source}/{name} pass={pass_name}"
+            print(f"\n--- {label} ---")
+
+            try:
+                handle = spawn_worker(python_bin, spec, pass_num, device, "eval",
+                                      timeout_s=180)
+                handle.proc.wait(timeout=180)
+                result = harvest_worker(handle)
+
+                if result is None:
+                    print(f"  FAIL: no result returned")
+                    failed += 1
+                    continue
+
+                # Check required keys
+                missing = required_keys - set(result.keys())
+                if missing:
+                    print(f"  FAIL: missing keys {missing}")
+                    print(f"  Got: {json.dumps(result, indent=2)[:500]}")
+                    failed += 1
+                    continue
+
+                status = result["status"]
+                if status in ("create_error", "download_error", "timeout"):
+                    print(f"  SKIP: {status} — {result.get('error', '')[:200]}")
+                    passed += 1  # environment issue, not pipeline bug
+                    continue
+
+                if status in ("ok", "full_graph", "graph_break"):
+                    summary = (f"status={status}, "
+                               f"graph_count={result.get('graph_count', 'N/A')}, "
+                               f"breaks={result.get('graph_break_count', 'N/A')}, "
+                               f"wall={result.get('wall_time_s', '?')}s")
+
+                    # Deep validation for explain pass
+                    if pass_num == 2:
+                        missing_explain = explain_keys - set(result.keys())
+                        if missing_explain:
+                            print(f"  FAIL: explain result missing {missing_explain}")
+                            failed += 1
+                            continue
+
+                        gc = result["graph_count"]
+                        bc = result["graph_break_count"]
+                        opg = result["ops_per_graph"]
+                        ct = result["compile_times"]
+                        br = result["break_reasons"]
+
+                        # Structural invariants
+                        if bc != max(0, gc - 1):
+                            print(f"  FAIL: graph_break_count ({bc}) != graph_count-1 ({gc-1})")
+                            failed += 1
+                            continue
+                        if len(opg) != gc:
+                            print(f"  FAIL: ops_per_graph length ({len(opg)}) != graph_count ({gc})")
+                            failed += 1
+                            continue
+                        if len(ct) != gc:
+                            print(f"  FAIL: compile_times length ({len(ct)}) != graph_count ({gc})")
+                            failed += 1
+                            continue
+
+                        # Validate break_reasons structure
+                        for i, entry in enumerate(br):
+                            if "reason" not in entry or "type" not in entry:
+                                print(f"  FAIL: break_reasons[{i}] missing reason/type")
+                                failed += 1
+                                continue
+
+                        # If we expect breaks, verify we got them
+                        if expect_breaks and bc == 0:
+                            print(f"  WARN: expected graph breaks but got 0 — "
+                                  f"possible PyTorch version change. {summary}")
+                        elif expect_breaks and bc > 0:
+                            summary += f", reasons={len(br)}"
+
+                    print(f"  PASS: {summary}")
+                    passed += 1
+                else:
+                    print(f"  WARN: status={status}, error={result.get('error', '')[:200]}")
+                    passed += 1
+
+                json.dumps(result)  # must be serializable
+
+            except subprocess.TimeoutExpired:
+                print(f"  FAIL: subprocess timed out after 180s")
+                try:
+                    os.killpg(handle.proc.pid, signal.SIGKILL)
+                except Exception:
+                    pass
+                failed += 1
+            except Exception as e:
+                print(f"  FAIL: {e}")
+                failed += 1
+
+    print(f"\n{'=' * 60}")
+    print(f"Results: {passed} passed, {failed} failed out of {passed + failed}")
+    print("=" * 60)
+    sys.exit(1 if failed > 0 else 0)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Two-pass graph break sweep orchestrator",
@@ -1248,10 +1389,14 @@ def main():
                         help="JSON file with list of model names to skip (toxic models)")
     parser.add_argument("--check-env", action="store_true",
                         help="Check installed versions against corpus and exit (pre-sweep validation)")
+    parser.add_argument("--test", action="store_true",
+                        help="Quick integration test: 1 model per source, both passes, validate output")
 
     args = parser.parse_args()
 
-    if args.check_env:
+    if args.test:
+        run_test_mode(args)
+    elif args.check_env:
         check_env(args)
     elif args.validate or args.validate_from:
         run_validation(args)

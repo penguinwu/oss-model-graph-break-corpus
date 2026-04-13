@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Set up a virtual environment for the OSS Model Compiler Quality Corpus.
-# Usage: bash scripts/setup_env.sh
+# Usage: bash scripts/setup_env.sh [VENV_PATH]
+# Examples:
+#   bash scripts/setup_env.sh                    # creates ./env (default)
+#   bash scripts/setup_env.sh ~/envs/torch210    # creates at custom path
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"

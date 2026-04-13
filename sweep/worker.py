@@ -448,6 +448,13 @@ def _fix_config(model_name, config):
         psr = getattr(config, "pixel_shuffle_ratio", 0.5)
         hs = getattr(config, "hidden_size", 768)
         config.intermediate_size = int(hs / (psr ** 2))
+    # Also fix for Llama4Model (ForConditionalGeneration variant)
+    if name_lower == "llama4model":
+        vision_cfg = getattr(config, "vision_config", None)
+        if vision_cfg and hasattr(vision_cfg, "pixel_shuffle_ratio"):
+            psr = getattr(vision_cfg, "pixel_shuffle_ratio", 0.5)
+            hs = getattr(vision_cfg, "hidden_size", 768)
+            vision_cfg.intermediate_size = int(hs / (psr ** 2))
 
     # --- AriaModel: projector_patch_to_query_dict must include actual patch count ---
     # Default vision config produces 49 patches (224/32=7, 7*7=49), but
@@ -488,6 +495,18 @@ def _fix_config(model_name, config):
         config.num_queries = 10
         config.group_detr = 1
 
+    # --- Qwen VL family: vision out_hidden_size must match text_config.hidden_size ---
+    # Default configs have out_hidden_size=3584 (from pretrained weights) but text_config
+    # defaults to a different hidden_size. The merger FC2 projects to out_hidden_size,
+    # but inputs_embeds uses text_config.hidden_size → numel mismatch in forward.
+    vision_cfg = getattr(config, "vision_config", None)
+    text_cfg = getattr(config, "text_config", None)
+    if vision_cfg and text_cfg:
+        ohs = getattr(vision_cfg, "out_hidden_size", None)
+        ths = getattr(text_cfg, "hidden_size", None)
+        if ohs is not None and ths is not None and ohs != ths:
+            vision_cfg.out_hidden_size = ths
+
     # --- Gemma3ForConditionalGeneration: mm_tokens_per_image must match vision image_size ---
     # Default mm_tokens_per_image=256 (tokens_per_side=16) with image_size=224 (patches=14)
     # gives kernel_size = patches_per_image // tokens_per_side = 14 // 16 = 0 → AvgPool2d(0) crash.
@@ -517,6 +536,39 @@ def _fix_config(model_name, config):
                 )
             except Exception:
                 pass
+
+    # --- Mistral3/LightOnOcr: default image_size=1540 creates too many patches ---
+    # (1540/14)^2 = 12100 patches → 3025 features per image. Cap to 224.
+    if name_lower in ("mistral3model", "lightonocrmodel"):
+        vision_cfg = getattr(config, "vision_config", None)
+        if vision_cfg:
+            vision_cfg.image_size = 224
+
+    # --- Idefics3/SmolVLM/AyaVision/Cohere2Vision: pixel_shuffle needs patches_per_side % scale == 0 ---
+    # Default image_size=224, patch_size=32 → 7 patches per side, but scale_factor=2 needs even count.
+    # Set image_size=256 → 8 patches per side → 8 % 2 == 0 ✓
+    _pixel_shuffle_models = ("idefics3model", "smolvlmmodel", "ayavisionmodel", "cohere2visionmodel")
+    if name_lower in _pixel_shuffle_models:
+        vision_cfg = getattr(config, "vision_config", None)
+        if vision_cfg:
+            ps = getattr(vision_cfg, "patch_size", 32)
+            if isinstance(ps, (list, tuple)):
+                ps = ps[0]
+            scale = getattr(config, "scale_factor", getattr(config, "downsample_factor", 2))
+            img_sz = getattr(vision_cfg, "image_size", 224) or 224
+            patches_per_side = img_sz // ps if ps > 0 else 7
+            if patches_per_side % scale != 0:
+                # Round up to next multiple of scale * patch_size
+                new_patches = ((patches_per_side + scale - 1) // scale) * scale
+                vision_cfg.image_size = new_patches * ps
+
+    # --- PerceptionLM: vision_config.model_args must have embed_dim ---
+    if name_lower == "perceptionlmmodel":
+        vision_cfg = getattr(config, "vision_config", None)
+        if vision_cfg:
+            if getattr(vision_cfg, "model_args", None) is None:
+                hs = getattr(vision_cfg, "hidden_size", 2048) or 2048
+                vision_cfg.model_args = {"embed_dim": hs}
 
     # --- Generic size reduction for all models ---
     # For graph break detection, 2 layers is sufficient.
@@ -628,6 +680,124 @@ def _fix_config(model_name, config):
     if name_lower == "recurrentgemmamodel":
         config.block_types = ["recurrent", "attention"]
 
+    # --- VipLlava: vision_feature_layers indices must be valid after layer reduction ---
+    # Default (-2, -5, -8, -11, 6) — all out of range with 2 vision layers (3 hidden_states).
+    if name_lower == "vipllavamodel":
+        vision_cfg = getattr(config, "vision_config", None)
+        if vision_cfg:
+            n_layers = getattr(vision_cfg, "num_hidden_layers", 2)
+            config.vision_feature_layers = [-1, -2]
+
+    # --- Mllama: intermediate_layers_indices must be valid after layer reduction ---
+    # Default [3, 7, 15, 23, 30] — all out of range with 2 vision layers.
+    # vision_output_dim = hidden_size * (len(intermediate_layers_indices) + 1)
+    if name_lower == "mllamamodel":
+        vision_cfg = getattr(config, "vision_config", None)
+        if vision_cfg:
+            n_layers = getattr(vision_cfg, "num_hidden_layers", 2)
+            valid_indices = [i for i in range(n_layers)]  # [0, 1]
+            vision_cfg.intermediate_layers_indices = valid_indices
+            # Also reduce num_global_layers
+            if getattr(vision_cfg, "num_global_layers", 0) > 2:
+                vision_cfg.num_global_layers = 2
+
+    # --- Gemma3n: list-typed configs and num_kv_shared_layers need post-reduction sync ---
+    if name_lower == "gemma3nmodel":
+        text_cfg = getattr(config, "text_config", None)
+        if text_cfg:
+            n = getattr(text_cfg, "num_hidden_layers", 2)
+            # num_kv_shared_layers must be <= num_hidden_layers
+            if getattr(text_cfg, "num_kv_shared_layers", 0) > n:
+                text_cfg.num_kv_shared_layers = 0
+            # Truncate per-layer lists
+            for attr in ("intermediate_size", "activation_sparsity_pattern"):
+                val = getattr(text_cfg, attr, None)
+                if isinstance(val, list) and len(val) > n:
+                    setattr(text_cfg, attr, val[:n])
+
+    # --- Qwen2VL: merger output = vision_config.hidden_size must match text_config.hidden_size ---
+    # Qwen2VL has no out_hidden_size — merger uses vision_config.hidden_size directly.
+    # After reduction, text_config.hidden_size may differ.
+    if name_lower == "qwen2vlmodel":
+        text_cfg = getattr(config, "text_config", None)
+        vision_cfg = getattr(config, "vision_config", None)
+        if text_cfg and vision_cfg:
+            v_hs = getattr(vision_cfg, "hidden_size", None)
+            t_hs = getattr(text_cfg, "hidden_size", None)
+            if v_hs and t_hs and v_hs != t_hs:
+                # Set text hidden_size to match vision (don't change vision, it controls merger)
+                text_cfg.hidden_size = v_hs
+                if getattr(text_cfg, "intermediate_size", None):
+                    text_cfg.intermediate_size = max(text_cfg.intermediate_size, v_hs * 2)
+                # Fix attention heads to divide hidden_size
+                nh = getattr(text_cfg, "num_attention_heads", None)
+                if nh and v_hs % nh != 0:
+                    for heads in (16, 8, 4):
+                        if v_hs % heads == 0:
+                            text_cfg.num_attention_heads = heads
+                            nkv = getattr(text_cfg, "num_key_value_heads", None)
+                            if nkv and nkv > heads:
+                                text_cfg.num_key_value_heads = heads
+                            break
+                nkv = getattr(text_cfg, "num_key_value_heads", None)
+                nh = getattr(text_cfg, "num_attention_heads", None)
+                if nh and nkv and nkv > 0 and nh % nkv != 0:
+                    for k in range(nkv, 0, -1):
+                        if nh % k == 0:
+                            text_cfg.num_key_value_heads = k
+                            break
+
+    # --- Cohere2Vision: alignment_intermediate_size must work with reduced dims ---
+    if name_lower == "cohere2visionmodel":
+        vision_cfg = getattr(config, "vision_config", None)
+        text_cfg = getattr(config, "text_config", None)
+        if vision_cfg and text_cfg:
+            v_hs = getattr(vision_cfg, "hidden_size", 1152)
+            t_hs = getattr(text_cfg, "hidden_size", None)
+            scale = getattr(config, "downsample_factor", 2)
+            # Projector input = v_hs * scale^2, output = alignment_intermediate_size // 2 (SwiGLU)
+            # Then final linear: alignment_intermediate_size // 2 → text_hidden_size
+            if t_hs:
+                config.alignment_intermediate_size = t_hs * 2  # SwiGLU halves it
+
+    # --- Lfm2Vl: vision projector expects vision_config.hidden_size → text_config.hidden_size ---
+    if name_lower == "lfm2vlmodel":
+        vision_cfg = getattr(config, "vision_config", None)
+        text_cfg = getattr(config, "text_config", None)
+        if vision_cfg and text_cfg:
+            v_hs = getattr(vision_cfg, "hidden_size", None)
+            t_hs = getattr(text_cfg, "hidden_size", None)
+            if v_hs and t_hs and v_hs != t_hs:
+                # Align text to vision since vision encoder is not reduced
+                text_cfg.hidden_size = v_hs
+                if getattr(text_cfg, "intermediate_size", None):
+                    text_cfg.intermediate_size = max(text_cfg.intermediate_size, v_hs * 2)
+                nh = getattr(text_cfg, "num_attention_heads", None)
+                if nh and v_hs % nh != 0:
+                    for heads in (16, 8, 4):
+                        if v_hs % heads == 0:
+                            text_cfg.num_attention_heads = heads
+                            nkv = getattr(text_cfg, "num_key_value_heads", None)
+                            if nkv and nkv > heads:
+                                text_cfg.num_key_value_heads = heads
+                            break
+
+    # --- Ovis2: config.hidden_size (visual embedding table) must match text_config.hidden_size ---
+    if name_lower == "ovis2model":
+        text_cfg = getattr(config, "text_config", None)
+        if text_cfg:
+            t_hs = getattr(text_cfg, "hidden_size", None)
+            if t_hs and t_hs != getattr(config, "hidden_size", None):
+                config.hidden_size = t_hs
+
+    # --- FastVlm: image_seq_length is wrong for reduced vision output ---
+    if name_lower == "fastvlmmodel":
+        vision_cfg = getattr(config, "vision_config", None)
+        if vision_cfg:
+            # With timm backbone after reduction, actual feature count depends on model.
+            # Set image_seq_length to a small valid value so token count matches.
+            config.image_seq_length = 1
+
     return config
 
 
@@ -735,19 +905,23 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
 
     config = _create_config(base_model_name, config_cls)
 
-    # For ForConditionalGeneration: preserve text_config.hidden_size before reduction.
-    # _reduce_model_size may shrink text_config.hidden_size, but the vision-to-text
-    # projection layer is built with the original hidden_size during model init.
-    # Reducing it creates a dimension mismatch when multimodal inputs are used.
+    # For ForConditionalGeneration: preserve text_config.hidden_size before reduction
+    # only if the vision merger uses out_hidden_size (which we've aligned to text hs).
+    # Models WITHOUT out_hidden_size (e.g., Qwen2VL) use vision_config.hidden_size
+    # as merger output, so text_config.hidden_size should match that after reduction.
     _orig_text_hs = None
     if variant == "conditional_generation":
         text_cfg = getattr(config, "text_config", None)
-        if text_cfg and getattr(config, "vision_config", getattr(config, "image_config", None)):
-            _orig_text_hs = getattr(text_cfg, "hidden_size", None)
+        vision_cfg_check = getattr(config, "vision_config",
+                                   getattr(config, "image_config", None))
+        if text_cfg and vision_cfg_check:
+            has_out_hs = getattr(vision_cfg_check, "out_hidden_size", None) is not None
+            if has_out_hs:
+                _orig_text_hs = getattr(text_cfg, "hidden_size", None)
 
     config = _fix_config(base_model_name, config)
 
-    # Restore text hidden_size for ForConditionalGeneration with vision
+    # Restore text hidden_size for ForConditionalGeneration with out_hidden_size
     if _orig_text_hs is not None:
         text_cfg = getattr(config, "text_config", None)
         if text_cfg and getattr(text_cfg, "hidden_size", None) != _orig_text_hs:
@@ -1789,92 +1963,232 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
             text_cfg = getattr(config, "text_config", config)
             voc = min(getattr(text_cfg, "vocab_size", 32000) or 32000, 1000)
 
-            # Gemma4ForConditionalGeneration: pre-patchified vision input
-            if "mm_token_type_ids" in model_fwd_params:
-                patch_size = getattr(vision_cfg, "patch_size", 16)
-                num_channels = 3
-                patch_dim = num_channels * patch_size * patch_size
-                pool_k = getattr(vision_cfg, "pooling_kernel_size", 3)
-                num_patches = pool_k ** 4  # 81 for k=3
-                grid_side = int(num_patches ** 0.5)
-                n_vis_tokens = num_patches // (pool_k ** 2)  # tokens after pooling
-                seq_len = 32 + n_vis_tokens
-                input_ids = torch.randint(0, voc, (B, seq_len), device=device)
-                inputs = {
-                    "pixel_values": torch.randn(B, num_patches, patch_dim, device=device),
-                    "image_position_ids": torch.randint(0, grid_side, (B, num_patches, 2), device=device),
-                    "input_ids": input_ids,
-                    "attention_mask": torch.ones(B, seq_len, dtype=torch.long, device=device),
-                    "mm_token_type_ids": torch.zeros(B, seq_len, dtype=torch.long, device=device),
-                }
-            else:
-                # Standard vision: pixel_values as image tensor
+            # Common: resolve image_token_id
+            image_token_id = getattr(config, "image_token_id",
+                                     getattr(config, "image_token_index", None))
+
+            # Helper: build input_ids with image token placeholders
+            def _build_ids(n_vis, token_id=image_token_id):
+                text_len = 8
+                if token_id is not None:
+                    sl = text_len + n_vis
+                    _ids = torch.randint(0, voc, (B, sl), device=device)
+                    _ids[:, :n_vis] = token_id
+                    if token_id >= voc:
+                        model.resize_token_embeddings(token_id + 1)
+                else:
+                    sl = 32
+                    _ids = torch.randint(0, voc, (B, sl), device=device)
+                return _ids, sl
+
+            name_lower_fcg = base_model_name.lower()
+
+            # ── Model-specific overrides (before generic paths) ──
+
+            # DeepseekVLHybrid: needs both pixel_values and high_res_pixel_values
+            if "deepseekvlhybrid" in name_lower_fcg:
                 img_size = getattr(vision_cfg, "image_size", 224) or 224
                 if isinstance(img_size, (list, tuple)):
                     img_size = img_size[0]
-                num_channels = getattr(vision_cfg, "num_channels", 3) or 3
-                in_channels = getattr(vision_cfg, "in_channels", None)
-                if in_channels and not num_channels:
-                    num_channels = in_channels
-
-                # Estimate image token count for models that need image_token placeholders
+                num_ch = getattr(vision_cfg, "num_channels", 3) or 3
+                high_res_cfg = getattr(config, "high_res_vision_config", None)
+                hr_size = getattr(high_res_cfg, "image_size", img_size) if high_res_cfg else img_size
+                if isinstance(hr_size, (list, tuple)):
+                    hr_size = hr_size[0]
                 patch_size = getattr(vision_cfg, "patch_size", 14)
                 if isinstance(patch_size, (list, tuple)):
                     patch_size = patch_size[0]
-                n_vis_tokens = (img_size // patch_size) ** 2 if patch_size > 0 else 196
-                image_token_id = getattr(config, "image_token_id",
-                                         getattr(config, "image_token_index", None))
-
-                # Build input_ids with image token placeholders
-                text_len = 8
-                if image_token_id is not None:
-                    seq_len = text_len + n_vis_tokens
-                    ids = torch.randint(0, voc, (B, seq_len), device=device)
-                    ids[:, :n_vis_tokens] = image_token_id
-                    # Resize embeddings if image_token_id >= vocab_size
-                    if image_token_id >= voc:
-                        model.resize_token_embeddings(image_token_id + 1)
-                else:
-                    seq_len = 32
-                    ids = torch.randint(0, voc, (B, seq_len), device=device)
-
+                n_vis = (img_size // patch_size) ** 2 if patch_size > 0 else 196
+                ids, seq_len = _build_ids(n_vis)
                 inputs = {
+                    "pixel_values": torch.randn(B, num_ch, img_size, img_size, device=device),
+                    "high_res_pixel_values": torch.randn(B, num_ch, hr_size, hr_size, device=device),
                     "input_ids": ids,
                     "attention_mask": torch.ones(B, seq_len, dtype=torch.long, device=device),
                 }
 
-                # Qwen2VL/Qwen2.5VL/Qwen3VL family: patchified 3D inputs
-                if "image_grid_thw" in model_fwd_params:
-                    temporal_ps = getattr(vision_cfg, "temporal_patch_size", 2)
-                    in_ch = getattr(vision_cfg, "in_channels", 3)
-                    merge_size = getattr(vision_cfg, "spatial_merge_size", 2)
-                    # Grid dims must be divisible by merge_size
-                    t, h, w = temporal_ps, merge_size * 2, merge_size * 2
-                    num_patches = t * h * w
-                    patch_dim = in_ch * temporal_ps * patch_size * patch_size
-                    inputs["pixel_values"] = torch.randn(num_patches, patch_dim, device=device)
-                    inputs["image_grid_thw"] = torch.tensor([[t, h, w]], device=device)
-                    # Recompute image tokens: after spatial merge, features = t * (h/ms) * (w/ms)
-                    n_vis_actual = t * (h // merge_size) * (w // merge_size)
-                    if image_token_id is not None:
-                        text_len = 8
-                        new_seq = text_len + n_vis_actual
-                        new_ids = torch.randint(0, voc, (B, new_seq), device=device)
-                        new_ids[:, :n_vis_actual] = image_token_id
-                        if image_token_id >= voc:
-                            model.resize_token_embeddings(image_token_id + 1)
-                        inputs["input_ids"] = new_ids
-                        inputs["attention_mask"] = torch.ones(B, new_seq, dtype=torch.long, device=device)
-                elif "pixel_values" not in inputs:
-                    # Standard pixel_values: (B, C, H, W)
-                    inputs["pixel_values"] = torch.randn(B, num_channels, img_size, img_size, device=device)
+            # PerceptionLM: needs 5D pixel_values (B, num_images, C, H, W)
+            elif "perceptionlm" in name_lower_fcg:
+                img_size = getattr(vision_cfg, "image_size", 224) or 224
+                if isinstance(img_size, (list, tuple)):
+                    img_size = img_size[0]
+                num_ch = getattr(vision_cfg, "num_channels", 3) or 3
+                n_vis = 16
+                ids, seq_len = _build_ids(n_vis)
+                inputs = {
+                    "pixel_values": torch.randn(B, 1, num_ch, img_size, img_size, device=device),
+                    "input_ids": ids,
+                    "attention_mask": torch.ones(B, seq_len, dtype=torch.long, device=device),
+                }
 
-                # Note: image_sizes is optional metadata — omit by default.
-                # Models that require it will get it from model-specific handlers.
+            # Kosmos2: uses img_input_mask and latent_query_num (default 64)
+            # image_to_text_projection outputs (B, latent_query_num, hidden_size)
+            elif "kosmos2" in name_lower_fcg:
+                img_size = getattr(vision_cfg, "image_size", 224) or 224
+                num_ch = getattr(vision_cfg, "num_channels", 3) or 3
+                n_latent = getattr(config, "latent_query_num", 64)
+                text_len = 8
+                seq_len = text_len + n_latent
+                ids = torch.randint(0, voc, (B, seq_len), device=device)
+                img_mask = torch.zeros(B, seq_len, dtype=torch.bool, device=device)
+                img_mask[:, :n_latent] = True
+                inputs = {
+                    "pixel_values": torch.randn(B, num_ch, img_size, img_size, device=device),
+                    "input_ids": ids,
+                    "attention_mask": torch.ones(B, seq_len, dtype=torch.long, device=device),
+                    "image_embeds_position_mask": img_mask,
+                }
 
-                # Gemma3/PaliGemma: needs token_type_ids for train mode
-                if "token_type_ids" in model_fwd_params:
-                    inputs["token_type_ids"] = torch.zeros(B, seq_len, dtype=torch.long, device=device)
+            # Ovis2: uses visual_token_ids (not standard pixel_values pipeline)
+            elif "ovis2" in name_lower_fcg:
+                img_size = getattr(vision_cfg, "image_size", 224) or 224
+                num_ch = getattr(vision_cfg, "num_channels", 3) or 3
+                n_vis = 16  # small to avoid timeout
+                ids, seq_len = _build_ids(n_vis)
+                inputs = {
+                    "pixel_values": torch.randn(1, num_ch, img_size, img_size, device=device),
+                    "input_ids": ids,
+                    "attention_mask": torch.ones(B, seq_len, dtype=torch.long, device=device),
+                }
+
+            # ── Path 1: Gemma4 pre-patchified vision (nn.Linear patch embed) ──
+            elif (hasattr(vision_cfg, "pooling_kernel_size")
+                  and "image_position_ids" in model_fwd_params):
+                patch_size = getattr(vision_cfg, "patch_size", 16)
+                patch_dim = 3 * patch_size * patch_size
+                pool_k = getattr(vision_cfg, "pooling_kernel_size", 3)
+                num_patches = pool_k ** 4  # 81 for k=3
+                grid_side = int(num_patches ** 0.5)
+                n_vis_tokens = num_patches // (pool_k ** 2)
+                ids, seq_len = _build_ids(n_vis_tokens)
+                inputs = {
+                    "pixel_values": torch.randn(B, num_patches, patch_dim, device=device),
+                    "image_position_ids": torch.randint(0, grid_side, (B, num_patches, 2), device=device),
+                    "input_ids": ids,
+                    "attention_mask": torch.ones(B, seq_len, dtype=torch.long, device=device),
+                    "mm_token_type_ids": torch.zeros(B, seq_len, dtype=torch.long, device=device),
+                }
+
+            # ── Path 2: Grid-based vision (Qwen VL, Glm4v, Ernie, PaddleOCR, VideoLlama3) ──
+            elif "image_grid_thw" in model_fwd_params:
+                patch_size = getattr(vision_cfg, "patch_size", 14)
+                if isinstance(patch_size, (list, tuple)):
+                    patch_size = patch_size[0]
+                temporal_ps = getattr(vision_cfg, "temporal_patch_size", None)
+                if temporal_ps is None:
+                    temporal_ps = 1
+                in_ch = getattr(vision_cfg, "in_channels", 3)
+                merge_size = getattr(vision_cfg, "spatial_merge_size", 2)
+                # Always use t=1 for image inputs; t>1 is video which creates
+                # repeat_interleave issues in models like Glm4v
+                t, h, w = 1, merge_size * 2, merge_size * 2
+                num_patches_per_image = t * h * w
+                patch_dim = in_ch * temporal_ps * patch_size * patch_size
+                n_vis_per_image = t * (h // merge_size) * (w // merge_size)
+                # Grid models: pixel_values is unbatched (total_patches, patch_dim),
+                # image_grid_thw has one entry per image. With B images, we need B entries.
+                # Each batch item's input_ids gets n_vis_per_image image tokens.
+                total_patches = num_patches_per_image * B
+                ids, seq_len = _build_ids(n_vis_per_image)
+                inputs = {
+                    "pixel_values": torch.randn(total_patches, patch_dim, device=device),
+                    "image_grid_thw": torch.tensor([[t, h, w]] * B, device=device),
+                    "input_ids": ids,
+                    "attention_mask": torch.ones(B, seq_len, dtype=torch.long, device=device),
+                }
+                if "mm_token_type_ids" in model_fwd_params:
+                    inputs["mm_token_type_ids"] = torch.zeros(B, seq_len, dtype=torch.long, device=device)
+                # VideoLlama3: requires image_merge_sizes for pixel_unshuffle split
+                if "image_merge_sizes" in model_fwd_params:
+                    inputs["image_merge_sizes"] = torch.tensor(
+                        [merge_size] * B, device=device)
+
+            # ── Path 3: Standard vision (B, C, H, W) with optional image_sizes ──
+            else:
+                img_size = getattr(vision_cfg, "image_size", 224) or 224
+                if isinstance(img_size, (list, tuple)):
+                    img_size = img_size[0]
+                num_channels = getattr(vision_cfg, "num_channels",
+                                       getattr(vision_cfg, "in_channels", 3)) or 3
+                patch_size = getattr(vision_cfg, "patch_size", 14)
+                if isinstance(patch_size, (list, tuple)):
+                    patch_size = patch_size[0]
+                n_vis_tokens = (img_size // patch_size) ** 2 if patch_size > 0 else 196
+
+                # LlavaNext/LlavaOnevision/LlavaNextVideo: need 5D pixel_values
+                # (B, num_patches_per_image, C, H, W) where num_patches comes from
+                # image_grid_pinpoints. image_sizes is required.
+                grid_pinpoints = getattr(config, "image_grid_pinpoints", None)
+                if grid_pinpoints and "image_sizes" in model_fwd_params:
+                    try:
+                        from transformers.models.llava_next.modeling_llava_next import (
+                            image_size_to_num_patches,
+                        )
+                        num_patches = image_size_to_num_patches(
+                            torch.tensor([img_size, img_size]),
+                            grid_pinpoints, img_size,
+                        )
+                    except Exception:
+                        num_patches = 1
+                    n_vis_tokens = num_patches * n_vis_tokens
+                    ids, seq_len = _build_ids(n_vis_tokens)
+                    inputs = {
+                        "pixel_values": torch.randn(B, num_patches, num_channels,
+                                                    img_size, img_size, device=device),
+                        "image_sizes": torch.tensor([[img_size, img_size]] * B, device=device),
+                        "input_ids": ids,
+                        "attention_mask": torch.ones(B, seq_len, dtype=torch.long,
+                                                     device=device),
+                    }
+                else:
+                    ids, seq_len = _build_ids(n_vis_tokens)
+
+                    # Idefics3/SmolVLM: expects 5D pixel_values (B, num_images, C, H, W)
+                    if "pixel_attention_mask" in model_fwd_params:
+                        inputs = {
+                            "pixel_values": torch.randn(B, 1, num_channels, img_size,
+                                                        img_size, device=device),
+                            "pixel_attention_mask": torch.ones(B, 1, img_size, img_size,
+                                                               dtype=torch.long, device=device),
+                            "input_ids": ids,
+                            "attention_mask": torch.ones(B, seq_len, dtype=torch.long,
+                                                         device=device),
+                        }
+                    else:
+                        inputs = {
+                            "pixel_values": torch.randn(B, num_channels, img_size, img_size,
+                                                        device=device),
+                            "input_ids": ids,
+                            "attention_mask": torch.ones(B, seq_len, dtype=torch.long,
+                                                         device=device),
+                        }
+                    # image_sizes: needed by Mistral3, Cohere2Vision, etc.
+                    # Exclude Llava base (crashes with vision_tower.patch_size)
+                    # and VipLlava (similar issue)
+                    no_image_sizes = ("llavamodel" in name_lower_fcg
+                                      or "vipllava" in name_lower_fcg)
+                    if ("image_sizes" in model_fwd_params
+                            and not no_image_sizes):
+                        inputs["image_sizes"] = torch.tensor(
+                            [[img_size, img_size]] * B, device=device)
+                    # aspect_ratio_ids: Mllama requires it
+                    if "aspect_ratio_ids" in model_fwd_params:
+                        max_tiles = getattr(vision_cfg, "max_num_tiles", 4)
+                        inputs["aspect_ratio_ids"] = torch.tensor([[1]] * B, device=device)
+                        inputs["aspect_ratio_mask"] = torch.ones(
+                            B, 1, max_tiles, dtype=torch.long, device=device)
+                        # Mllama expects 5D pixel_values: (B, num_images, max_tiles, C, H, W)
+                        inputs["pixel_values"] = torch.randn(
+                            B, 1, max_tiles, num_channels, img_size, img_size,
+                            device=device)
+                        inputs["cross_attention_mask"] = torch.ones(
+                            B, seq_len, 1, max_tiles,
+                            dtype=torch.long, device=device)
+
+            # Common post-processing for all paths
+            if "token_type_ids" in model_fwd_params and "token_type_ids" not in inputs:
+                sl = inputs["input_ids"].shape[1]
+                inputs["token_type_ids"] = torch.zeros(B, sl, dtype=torch.long, device=device)
 
     return model, inputs, None
 

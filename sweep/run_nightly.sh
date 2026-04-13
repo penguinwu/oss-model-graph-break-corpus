@@ -29,6 +29,7 @@ $PYTHON $PROJ_DIR/sweep/run_sweep.py \
   --python $PYTHON \
   --output-dir $NIGHTLY_DIR \
   --source hf+diffusers --identify-only \
+  --resume \
   > $NIGHTLY_DIR/sweep_static.log 2>&1
 echo "Phase 1 done at $(date)"
 
@@ -42,6 +43,7 @@ $PYTHON $PROJ_DIR/sweep/run_sweep.py \
   --output-dir $NIGHTLY_DIR/dynamic_true \
   --source hf+diffusers --identify-only \
   --dynamic true \
+  --resume \
   > $NIGHTLY_DIR/sweep_dynamic_true.log 2>&1
 echo "Phase 2 done at $(date)"
 
@@ -55,6 +57,7 @@ $PYTHON $PROJ_DIR/sweep/run_sweep.py \
   --output-dir $NIGHTLY_DIR/dynamic_mark \
   --source hf+diffusers --identify-only \
   --dynamic mark \
+  --resume \
   > $NIGHTLY_DIR/sweep_dynamic_mark.log 2>&1
 echo "Phase 3 done at $(date)"
 
@@ -67,6 +70,7 @@ $PYTHON $PROJ_DIR/sweep/run_sweep.py \
   --python $PYTHON \
   --output-dir $NIGHTLY_DIR/custom \
   --source custom --identify-only \
+  --resume \
   > $NIGHTLY_DIR/sweep_custom.log 2>&1
 echo "Phase 4 done at $(date)"
 

@@ -13,6 +13,12 @@
     "timeout_tier": "large",
     "wall_time_s": 95.22
   },
+  "BltForCausalLM": {
+    "discovered": "2026-04-12",
+    "phase_at_timeout": "compile",
+    "source": "hf",
+    "timeout_tier": "very_large"
+  },
   "BltModel": {
     "discovered": "2026-04-01",
     "resolved_status": "full_graph",
@@ -27,6 +33,13 @@
     "timeout_tier": "large",
     "wall_time_s": 125.18
   },
+  "DiaModel": {
+    "discovered": "2026-04-12",
+    "resolved_status": "eager_error",
+    "source": "hf",
+    "timeout_tier": "large",
+    "wall_time_s": 45.0
+  },
   "EdgeTamModel": {
     "discovered": "2026-04-01",
     "resolved_status": "create_error",
@@ -40,6 +53,13 @@
     "source": "hf",
     "timeout_tier": "large",
     "wall_time_s": 570.02
+  },
+  "Florence2Model": {
+    "discovered": "2026-04-12",
+    "resolved_status": "graph_break",
+    "source": "hf",
+    "timeout_tier": "large",
+    "wall_time_s": 135.01
   },
   "GroundingDinoModel": {
     "discovered": "2026-04-01",
@@ -75,6 +95,27 @@
     "source": "hf",
     "timeout_tier": "large",
     "wall_time_s": 100.03
+  },
+  "Qwen2_5OmniForConditionalGeneration": {
+    "discovered": "2026-04-12",
+    "resolved_status": "create_error",
+    "source": "hf",
+    "timeout_tier": "large",
+    "wall_time_s": 453.92
+  },
+  "Qwen3OmniMoeForConditionalGeneration": {
+    "discovered": "2026-04-12",
+    "resolved_status": "create_error",
+    "source": "hf",
+    "timeout_tier": "large",
+    "wall_time_s": 240.02
+  },
+  "RwkvForCausalLM": {
+    "discovered": "2026-04-12",
+    "resolved_status": "graph_break",
+    "source": "hf",
+    "timeout_tier": "large",
+    "wall_time_s": 445.16
   },
   "RwkvModel": {
     "discovered": "2026-04-01",
