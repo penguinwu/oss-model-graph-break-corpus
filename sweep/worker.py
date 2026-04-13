@@ -1985,8 +1985,70 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
 
             # ── Model-specific overrides (before generic paths) ──
 
+            # Mistral3/LightOnOcr: standard 4D pixel_values + image_sizes,
+            # but n_vis must account for spatial_merge_size
+            if name_lower_fcg in ("mistral3model", "lightonocrmodel"):
+                img_size = getattr(vision_cfg, "image_size", 224) or 224
+                if isinstance(img_size, (list, tuple)):
+                    img_size = img_size[0]
+                num_ch = getattr(vision_cfg, "num_channels", 3) or 3
+                patch_size = getattr(vision_cfg, "patch_size", 14)
+                merge_size = getattr(config, "spatial_merge_size", 2)
+                patches_per_side = img_size // patch_size
+                # After spatial merging: features = (patches_per_side / merge_size) ^ 2
+                n_vis = (patches_per_side // merge_size) ** 2
+                ids, seq_len = _build_ids(n_vis)
+                inputs = {
+                    "pixel_values": torch.randn(B, num_ch, img_size, img_size, device=device),
+                    "image_sizes": torch.tensor([[img_size, img_size]] * B, device=device),
+                    "input_ids": ids,
+                    "attention_mask": torch.ones(B, seq_len, dtype=torch.long, device=device),
+                }
+
+            # Idefics3/SmolVLM/AyaVision: 5D pixel_values + pixel_attention_mask,
+            # n_vis must account for pixel_shuffle scale_factor
+            elif name_lower_fcg in ("idefics3model", "smolvlmmodel", "ayavisionmodel"):
+                img_size = getattr(vision_cfg, "image_size", 256) or 256
+                if isinstance(img_size, (list, tuple)):
+                    img_size = img_size[0]
+                num_ch = getattr(vision_cfg, "num_channels", 3) or 3
+                patch_size = getattr(vision_cfg, "patch_size", 32)
+                if isinstance(patch_size, (list, tuple)):
+                    patch_size = patch_size[0]
+                scale = getattr(config, "scale_factor", 2)
+                patches_per_side = img_size // patch_size
+                n_vis = (patches_per_side // scale) ** 2
+                ids, seq_len = _build_ids(n_vis)
+                inputs = {
+                    "pixel_values": torch.randn(B, 1, num_ch, img_size, img_size, device=device),
+                    "pixel_attention_mask": torch.ones(B, 1, img_size, img_size,
+                                                       dtype=torch.long, device=device),
+                    "input_ids": ids,
+                    "attention_mask": torch.ones(B, seq_len, dtype=torch.long, device=device),
+                }
+
+            # Cohere2Vision: similar to Idefics3 but uses downsample_factor
+            elif name_lower_fcg == "cohere2visionmodel":
+                img_size = getattr(vision_cfg, "image_size", 256) or 256
+                if isinstance(img_size, (list, tuple)):
+                    img_size = img_size[0]
+                num_ch = getattr(vision_cfg, "num_channels", 3) or 3
+                patch_size = getattr(vision_cfg, "patch_size", 32)
+                if isinstance(patch_size, (list, tuple)):
+                    patch_size = patch_size[0]
+                scale = getattr(config, "downsample_factor", 2)
+                patches_per_side = img_size // patch_size
+                n_vis = (patches_per_side // scale) ** 2
+                ids, seq_len = _build_ids(n_vis)
+                inputs = {
+                    "pixel_values": torch.randn(B, num_ch, img_size, img_size, device=device),
+                    "image_sizes": torch.tensor([[img_size, img_size]] * B, device=device),
+                    "input_ids": ids,
+                    "attention_mask": torch.ones(B, seq_len, dtype=torch.long, device=device),
+                }
+
             # DeepseekVLHybrid: needs both pixel_values and high_res_pixel_values
-            if "deepseekvlhybrid" in name_lower_fcg:
+            elif "deepseekvlhybrid" in name_lower_fcg:
                 img_size = getattr(vision_cfg, "image_size", 224) or 224
                 if isinstance(img_size, (list, tuple)):
                     img_size = img_size[0]
