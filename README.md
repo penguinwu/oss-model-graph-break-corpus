@@ -288,6 +288,7 @@ python3 sweep/worker.py --model hf/ModelName --device cuda
 | `tools/generate_index.py` | Generate corpus dashboard (docs/index.html) |
 | `tools/generate_traces.py` | Pre-generate tlparse reports for top N models |
 | `tools/feedback_monitor.py` | Monitor GChat feedback space for user reports |
+| `tools/generate_nightly_summary.py` | Generate nightly comparison markdown (auto-run by `run_nightly.sh`) |
 | `tools/github_issue_monitor.py` | Monitor GitHub issues for new activity |
 | `scripts/setup_env.sh` | One-command virtual environment setup |
 

@@ -81,6 +81,10 @@ if [ -f "$PROJ_DIR/tools/daily_summary.py" ]; then
     $PYTHON $PROJ_DIR/tools/daily_summary.py > $NIGHTLY_DIR/summary.txt 2>&1 || true
 fi
 
+# Generate nightly summary markdown for results/
+echo "Generating nightly summary..."
+python3 $PROJ_DIR/tools/generate_nightly_summary.py --date $DATE 2>&1 || true
+
 # Record versions
 $PYTHON -c "
 import json, torch
