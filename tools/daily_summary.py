@@ -98,7 +98,7 @@ def get_since_timestamp(args):
     """Determine the lookback window.
 
     Priority: --since flag > state DB > day-of-week heuristic.
-    Monday morning looks back to Friday 9 AM; other days look back 24h.
+    Monday looks back 48h (Sat morning) — Friday's standup covers Thu-Fri.
     """
     now = datetime.now(timezone.utc)
 
@@ -117,10 +117,11 @@ def get_since_timestamp(args):
         except (ValueError, OSError):
             pass
 
-    # Day-of-week heuristic: Monday looks back 72h, others 24h
+    # Day-of-week heuristic: Monday looks back 48h (Sat morning), others 24h
+    # Friday's standup already covers Thu-Fri, so Monday only needs Sat-Sun
     weekday = now.weekday()  # 0=Monday
     if weekday == 0:
-        return now - timedelta(hours=72)
+        return now - timedelta(hours=48)
     else:
         return now - timedelta(hours=24)
 
@@ -209,11 +210,11 @@ def get_recent_issue_comments(token, since_dt):
 def compose_summary(since_dt, commits, unpushed, open_issues, recent_comments):
     """Build the daily summary message."""
     now = datetime.now(timezone.utc)
-    weekday = now.weekday()
 
-    # Header
-    if weekday == 0:
-        period = "weekend"
+    # Derive period label from actual lookback window, not day-of-week
+    gap_hours = (now - since_dt).total_seconds() / 3600
+    if gap_hours > 36:
+        period = "the weekend"
     else:
         period = "yesterday"
 
