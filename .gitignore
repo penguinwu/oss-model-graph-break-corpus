@@ -7,6 +7,7 @@ sweep_results/
 *.tmp
 .feedback_monitor_state.json
 .feedback_monitor_audit.jsonl
+feedback.db
 docs/traces/
 tools/feedback_state.db
 data/pt2-issues/*_backup.json
