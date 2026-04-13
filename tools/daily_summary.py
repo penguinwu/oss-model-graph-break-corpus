@@ -190,7 +190,7 @@ def get_recent_issue_comments(token, since_dt):
     if not data:
         return {}
 
-    # Group by issue number
+    # Group by issue number, filtering out self-comments from our bot account
     comments_by_issue = {}
     for comment in data:
         # Extract issue number from issue_url
@@ -200,6 +200,9 @@ def get_recent_issue_comments(token, since_dt):
         except (ValueError, IndexError):
             continue
         user = comment.get("user", {}).get("login", "unknown")
+        # Skip comments by our own bot/owner account to avoid echo
+        if user == "penguinwu":
+            continue
         if issue_num not in comments_by_issue:
             comments_by_issue[issue_num] = []
         comments_by_issue[issue_num].append(user)
