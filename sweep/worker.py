@@ -2256,14 +2256,15 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
             "pixel_values": torch.randn(B, 3, img_size, img_size, device=device),
         }
 
-    # RagModel: needs context_input_ids when no retriever is set
+    # RagModel: context_input_ids first dim must be B*n_docs
     if name_lower == "ragmodel":
+        n_docs = getattr(config, "n_docs", 5)
         inputs = {
             "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
             "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
-            "context_input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
-            "context_attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
-            "doc_scores": torch.randn(B, 1, device=device),
+            "context_input_ids": torch.randint(0, vocab_size, (B * n_docs, 32), device=device),
+            "context_attention_mask": torch.ones(B * n_docs, 32, dtype=torch.long, device=device),
+            "doc_scores": torch.randn(B, n_docs, device=device),
         }
 
     # Ernie4_5_VLMoeVisionTransformerPretrainedModel: needs hidden_states + grid_thw
@@ -2333,13 +2334,56 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
     if variant == "causal_lm" and "musicgen" in name_lower:
         inputs.pop("labels", None)
 
-    # Musicgen/MusicgenMelody ForConditionalGeneration: need decoder_input_ids
-    # Shape: (B * num_codebooks, seq_len) — decoder generates codebook tokens in parallel
+    # GitForCausalLM: loss path shifts logits by num_image_tokens, causing
+    # batch_size mismatch in cross_entropy when no pixel_values provided.
+    if variant == "causal_lm" and "git" in name_lower:
+        inputs.pop("labels", None)
+
+    # MoshiForConditionalGeneration: needs both user and moshi audio codes
+    if name_lower == "moshimodel" and variant == "conditional_generation":
+        num_codebooks = getattr(config, "num_codebooks", 8)
+        audio_vocab = getattr(config, "audio_vocab_size", 2048)
+        seq_len = inputs.get("input_ids", torch.empty(0, 32)).shape[-1]
+        inputs["user_audio_codes"] = torch.randint(
+            0, min(audio_vocab, 256), (B, num_codebooks, seq_len), device=device
+        )
+        inputs["moshi_audio_codes"] = torch.randint(
+            0, min(audio_vocab, 256), (B, num_codebooks, seq_len), device=device
+        )
+
+    # PeAudioFrameLevelModel: dual-encoder, needs both input_ids and 3D input_values
+    if name_lower == "peaudioframelevelmodel":
+        text_vocab = getattr(config, "vocab_size", 32000)
+        inputs = {
+            "input_ids": torch.randint(0, min(text_vocab, 256), (B, 32), device=device),
+            "input_values": torch.randn(B, 1, 16000, device=device),
+        }
+
+    # PeAudioVideoModel: needs at least 2 of input_ids/input_values/pixel_values_videos
+    if name_lower == "peaudiovideomodel":
+        text_vocab = getattr(config, "vocab_size", 32000)
+        inputs = {
+            "input_ids": torch.randint(0, min(text_vocab, 256), (B, 32), device=device),
+            "input_values": torch.randn(B, 1, 16000, device=device),
+        }
+
+    # PI0: robotics model needs state tensor and input_ids (text)
+    if "pi0" in name_lower:
+        state_dim = getattr(config, "max_action_dim", 32)
+        inputs["state"] = torch.randn(B, state_dim, device=device)
+
+    # Musicgen/MusicgenMelody ForConditionalGeneration: encoder gets (B, seq),
+    # decoder gets (B * num_codebooks, seq) — different batch sizes.
     if variant == "conditional_generation" and "musicgen" in name_lower:
         dec_cfg = getattr(config, "decoder", None)
         num_codebooks = getattr(dec_cfg, "num_codebooks", 4) if dec_cfg else 4
         dec_vocab = getattr(dec_cfg, "vocab_size", 2048) if dec_cfg else 2048
-        inputs["decoder_input_ids"] = torch.randint(0, min(dec_vocab, 1000), (B * num_codebooks, 32), device=device)
+        enc_vocab = min(getattr(config, "vocab_size", 32000) or 32000, 256)
+        inputs = {
+            "input_ids": torch.randint(0, enc_vocab, (B, 32), device=device),
+            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
+            "decoder_input_ids": torch.randint(0, min(dec_vocab, 256), (B * num_codebooks, 32), device=device),
+        }
 
     # ForConditionalGeneration: ensure multimodal inputs for vision-language models.
     # Many base model handlers above force text-only inputs (via _vl_text_only_models
@@ -2772,6 +2816,92 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
                 sl = inputs["input_ids"].shape[1]
                 inputs["token_type_ids"] = torch.zeros(B, sl, dtype=torch.long, device=device)
 
+    # ClvpModelForConditionalGeneration: text+speech contrastive model
+    if name_lower == "clvpmodel" and variant == "conditional_generation":
+        speech_cfg = getattr(config, "speech_config", None)
+        text_cfg = getattr(config, "text_config", config)
+        text_voc = min(getattr(text_cfg, "vocab_size", 256) or 256, 256)
+        num_mel = getattr(speech_cfg, "num_mel_bins", 80) if speech_cfg else 80
+        inputs = {
+            "input_ids": torch.randint(0, text_voc, (B, 32), device=device),
+            "input_features": torch.randn(B, num_mel, 100, device=device),
+        }
+
+    # Qwen3OmniMoeTalkerForConditionalGeneration: text-only
+    if name_lower in ("qwen3omnioetalkermodel", "qwen3omnimoetalkermodel") and variant == "conditional_generation":
+        text_cfg = getattr(config, "text_config", config)
+        text_voc = min(getattr(text_cfg, "vocab_size", 32000) or 32000, 1000)
+        inputs = {
+            "input_ids": torch.randint(0, text_voc, (B, 32), device=device),
+            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
+        }
+
+    # ── Model-specific Audio FCG overrides ──
+    # Qwen2Audio: audio token count must match encoder output exactly.
+    # The encoder pipeline has multiple downsampling stages; use
+    # _get_feat_extract_output_lengths to compute the final audio feature count.
+    if name_lower == "qwen2audiomodel" and variant == "conditional_generation":
+        audio_cfg = getattr(config, "audio_config", config)
+        text_cfg = getattr(config, "text_config", config)
+        text_voc = min(getattr(text_cfg, "vocab_size", 32000) or 32000, 1000)
+        num_mel = getattr(audio_cfg, "num_mel_bins", 128)
+        mel_len = 3000
+        # Probe encoder to get actual output feature count after all downsampling
+        n_feat = mel_len // 16  # conservative fallback
+        feat_mask_len = mel_len // 4
+        audio_enc = getattr(model, "audio_tower", None)
+        if audio_enc is not None and hasattr(audio_enc, "_get_feat_extract_output_lengths"):
+            with torch.no_grad():
+                probe = torch.randn(1, num_mel, mel_len, device=device)
+                probe_out = audio_enc(probe)
+                feat_mask_len = probe_out.last_hidden_state.shape[1] if hasattr(probe_out, "last_hidden_state") else probe_out.shape[1]
+                _, out_lens = audio_enc._get_feat_extract_output_lengths(
+                    torch.tensor([feat_mask_len], device=device)
+                )
+                n_feat = out_lens[0].item()
+        text_len = 8
+        seq_len = text_len + n_feat
+        ids = torch.randint(0, text_voc, (B, seq_len), device=device)
+        audio_token_id = getattr(config, "audio_token_id", None)
+        if audio_token_id is not None:
+            ids[:, :n_feat] = audio_token_id
+            if audio_token_id >= text_voc:
+                model.resize_token_embeddings(audio_token_id + 1)
+        inputs = {
+            "input_ids": ids,
+            "attention_mask": torch.ones(B, seq_len, dtype=torch.long, device=device),
+            "input_features": torch.randn(B, num_mel, mel_len, device=device),
+            "feature_attention_mask": torch.ones(B, feat_mask_len, dtype=torch.long, device=device),
+        }
+
+    # Voxtral: text-only avoids broken audio path
+    if name_lower == "voxtralmodel" and variant == "conditional_generation":
+        text_cfg = getattr(config, "text_config", config)
+        text_voc = min(getattr(text_cfg, "vocab_size", 32000) or 32000, 1000)
+        inputs = {
+            "input_ids": torch.randint(0, text_voc, (B, 32), device=device),
+            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
+        }
+
+    # VoxtralRealtime: input_ids seq_len must match audio pooler output length
+    if name_lower == "voxtralrealtimemodel" and variant == "conditional_generation":
+        text_cfg = getattr(config, "text_config", config)
+        audio_cfg = getattr(config, "audio_config", config)
+        text_voc = min(getattr(text_cfg, "vocab_size", 32000) or 32000, 1000)
+        num_mel = getattr(audio_cfg, "num_mel_bins", getattr(audio_cfg, "feature_size", 128))
+        max_src = getattr(audio_cfg, "max_source_positions", 1500)
+        mel_len = max_src * 2
+        feats = torch.randn(B, num_mel, mel_len, device=device)
+        # Probe audio encoder to get pooler output seq_len
+        with torch.no_grad():
+            audio_out = model.get_audio_features(input_features=feats)
+            text_len = audio_out.pooler_output.shape[1]
+        inputs = {
+            "input_ids": torch.randint(0, text_voc, (B, text_len), device=device),
+            "attention_mask": torch.ones(B, text_len, dtype=torch.long, device=device),
+            "input_features": feats,
+        }
+
     # ── Audio ForConditionalGeneration: need input_ids + audio features ──
     # Audio FCG models are classified as "audio" by _detect_hf_input_type and get
     # audio-only inputs. But as FCG they need both audio AND text (input_ids with
@@ -2787,9 +2917,10 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
             # max_source_positions * 2; GlmAsr uses conv downsampling.
             max_src = getattr(audio_cfg, "max_source_positions", 1500)
             audio_seq_len = max_src * 2  # 3000 for most models
-            # Audio token count must match encoder output length.
-            # Whisper-style encoder: conv1 (stride=1) + conv2 (stride=2) → seq/2
-            n_audio_tokens = audio_seq_len // 2
+            # Audio token count: use a small fixed count. The audio encoder's
+            # output length varies per model; exact matching requires model-specific
+            # handlers (Qwen2Audio, Voxtral need ~1500 tokens = encoder output).
+            n_audio_tokens = 8
             text_len = 8
             seq_len = text_len + n_audio_tokens
             ids = torch.randint(0, text_voc, (B, seq_len), device=device)

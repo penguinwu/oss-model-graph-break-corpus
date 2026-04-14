@@ -79,6 +79,14 @@ def enumerate_hf():
         _SKIP_MODELS = {
             "T5GemmaEncoderModel",  # Raises "only supports encoder-only" — use T5GemmaModel instead
             "BarkModel",            # Abstract — forward() is _forward_unimplemented
+            "BartPretrainedModel",  # Abstract — forward() is _forward_unimplemented
+            "PretrainedBartModel",  # Abstract — forward() is _forward_unimplemented
+            "PretrainedFSMTModel",  # Abstract — forward() is _forward_unimplemented
+            "Qwen3OmniMoeTalkerForConditionalGeneration",   # Internal: needs inputs_embeds from parent Thinker
+            "Qwen3OmniMoeCode2WavTransformerModel",         # Internal: does not accept input_ids
+            "Qwen2_5OmniTalkerForConditionalGeneration",    # Internal: needs inputs_embeds from parent Thinker
+            "Qwen2_5OmniToken2WavModel",                    # Requires batch_size=1, internal component
+            "PI0Model",             # Internal: requires action_embeds positional arg from PI0FCG
         }
         if name in _SKIP_MODELS:
             continue
