@@ -383,6 +383,14 @@ def _fix_config(model_name, config):
         if getattr(config, "topk_group", None) is None:
             config.topk_group = 1
 
+    # --- DeepseekV2: align moe_intermediate_size for grouped_mm stride constraint ---
+    # grouped_mm requires strides to be multiples of 16 bytes (8 elements in bf16).
+    # Default moe_intermediate_size=1407 is not a multiple of 8 → stride error.
+    if "deepseekv2" in name_lower:
+        moe_is = getattr(config, "moe_intermediate_size", None)
+        if moe_is is not None and moe_is % 8 != 0:
+            config.moe_intermediate_size = ((moe_is + 7) // 8) * 8
+
     # --- GPTNeoXModel: rotary_pct is None ---
     if name_lower == "gptneoxmodel":
         if getattr(config, "rotary_pct", None) is None:
@@ -711,6 +719,12 @@ def _fix_config(model_name, config):
         if nh:
             config.num_key_value_heads = nh
 
+    # --- GlmMoeDsa: MLA attention — same fix as LongcatFlash ---
+    if "glmmoedsa" in name_lower:
+        nh = getattr(config, "num_attention_heads", None)
+        if nh:
+            config.num_key_value_heads = nh
+
     # --- RecurrentGemmaModel: ensure block_types includes 'attention' after num_hidden_layers reduction ---
     # The model uses layers_block_type = (block_types * 100)[:num_hidden_layers].
     # Default block_types = ['recurrent', 'recurrent', 'attention'] — with num_hidden_layers=2,
@@ -911,7 +925,8 @@ def _fix_config(model_name, config):
     # Sub-configs (thinker, talker, code2wav) all have it, but the parent doesn't.
     if "qwen3omnimoe" in name_lower:
         if not hasattr(config, "initializer_range") or getattr(config, "initializer_range", None) is None:
-            config.initializer_range = 0.02
+            # Use __dict__ to bypass @strict decorator that blocks setattr
+            config.__dict__["initializer_range"] = 0.02
 
     # --- ZambaModel: use_mamba_kernels=False (no causal-conv1d), layers_block_type ---
     if "zamba" in name_lower and "zamba2" not in name_lower:
@@ -934,22 +949,49 @@ def _fix_config(model_name, config):
                     config.num_hidden_layers = needed
                     config.layers_block_type = list(full_lbt[:needed])
 
-    # --- PPOCRV5ServerDetModel: intraclass_block_config is None by default ---
+    # --- Zamba2Model: needs enough layers to include at least one hybrid layer ---
+    # Zamba2's HybridMambaAttentionDynamicCache.get_seq_length accesses
+    # self.transformer_layers[0] which is empty if no hybrid layers exist.
+    # Default has 54 layers with first hybrid at index 6 — need at least 7 layers.
+    if "zamba2" in name_lower:
+        lbt = getattr(config, "layers_block_type", None)
+        if lbt:
+            hybrid_idxs = [i for i, t in enumerate(lbt) if t == "hybrid"]
+            if not hybrid_idxs:
+                # No hybrid layers after reduction — expand to include first one
+                full_lbt = getattr(type(config)(), "layers_block_type", lbt)
+                full_hybrid_idxs = [i for i, t in enumerate(full_lbt) if t == "hybrid"]
+                if full_hybrid_idxs:
+                    needed = full_hybrid_idxs[0] + 1  # include first hybrid
+                    config.num_hidden_layers = needed
+                    config.layers_block_type = list(full_lbt[:needed])
+
+    # --- xLSTM: num_blocks must match num_hidden_layers after reduction ---
+    if "xlstm" in name_lower:
+        config.num_blocks = getattr(config, "num_hidden_layers", 2)
+
+    # --- PPOCRV5ServerDetModel: multiple None configs by default ---
+    # Each conv entry is [kernel_size, stride, padding]. All convs in a group are
+    # summed together, so they must produce the same output shape → stride=1, pad=(k-1)/2.
     if "ppocrv5" in name_lower and "serverdet" in name_lower.replace("_", ""):
         if getattr(config, "intraclass_block_config", None) is None:
             config.intraclass_block_config = {
                 "reduce_channel": [1, 1, 0],
-                "vertical_long_to_small_conv_longratio": [3, 1, 1],
-                "vertical_long_to_small_conv_midratio": [3, 1, 1],
-                "vertical_long_to_small_conv_shortratio": [3, 1, 1],
-                "horizontal_small_to_long_conv_longratio": [1, 3, 1],
-                "horizontal_small_to_long_conv_midratio": [1, 3, 1],
-                "horizontal_small_to_long_conv_shortratio": [1, 3, 1],
-                "symmetric_conv_long_longratio": [3, 3, 1],
-                "symmetric_conv_long_midratio": [3, 3, 1],
-                "symmetric_conv_long_shortratio": [3, 3, 1],
+                "vertical_long_to_small_conv_longratio": [[7, 1], 1, [3, 0]],
+                "vertical_long_to_small_conv_midratio": [[5, 1], 1, [2, 0]],
+                "vertical_long_to_small_conv_shortratio": [[3, 1], 1, [1, 0]],
+                "horizontal_small_to_long_conv_longratio": [[1, 7], 1, [0, 3]],
+                "horizontal_small_to_long_conv_midratio": [[1, 5], 1, [0, 2]],
+                "horizontal_small_to_long_conv_shortratio": [[1, 3], 1, [0, 1]],
+                "symmetric_conv_long_longratio": [7, 1, 3],
+                "symmetric_conv_long_midratio": [5, 1, 2],
+                "symmetric_conv_long_shortratio": [3, 1, 1],
                 "return_channel": [1, 1, 0],
             }
+        if getattr(config, "scale_factor_list", None) is None:
+            config.scale_factor_list = [1, 2, 4, 8]
+        if getattr(config, "kernel_list", None) is None:
+            config.kernel_list = [7, 5, 3, 3]
 
     return config
 
@@ -1531,15 +1573,21 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
         inputs["bbox"] = torch.rand(B, 32, 4, device=device) * 1000
 
     # Pix2StructVisionModel needs flattened_patches
+    # First 2 columns are row/col position indices fed into nn.Embedding(seq_len, ...).
+    # Must be valid non-negative integers; random floats cause CUDA OOB assert.
     if name_lower == "pix2structvisionmodel":
         hidden = getattr(config, "hidden_size", 768)
         patch_embed_dim = getattr(config, "patch_embed_hidden_size", None)
         num_channels = getattr(config, "num_channels", 3)
         patch_size = getattr(config, "patch_size", 16)
-        # flattened_patches: (B, seq_len, patch_size*patch_size*channels + 2)
+        seq_len = getattr(config, "seq_len", 4096)
         flat_dim = patch_size * patch_size * num_channels + 2
+        flattened_patches = torch.randn(B, 32, flat_dim, device=device)
+        # Columns 0,1 are position indices — must be valid embedding indices
+        flattened_patches[:, :, 0] = torch.randint(0, seq_len, (B, 32), device=device).float()
+        flattened_patches[:, :, 1] = torch.randint(0, seq_len, (B, 32), device=device).float()
         inputs = {
-            "flattened_patches": torch.randn(B, 32, flat_dim, device=device),
+            "flattened_patches": flattened_patches,
             "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
         }
 
@@ -2184,10 +2232,14 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
     if name_lower == "pix2structmodel" and variant == "conditional_generation":
         num_channels = getattr(config, "num_channels", 3)
         patch_size = getattr(config, "patch_size", 16)
+        seq_len = getattr(config, "seq_len", 4096)
         flat_dim = patch_size * patch_size * num_channels + 2
         dec_vocab = getattr(getattr(config, "text_config", config), "vocab_size", 1000)
+        flattened_patches = torch.randn(B, 32, flat_dim, device=device)
+        flattened_patches[:, :, 0] = torch.randint(0, seq_len, (B, 32), device=device).float()
+        flattened_patches[:, :, 1] = torch.randint(0, seq_len, (B, 32), device=device).float()
         inputs = {
-            "flattened_patches": torch.randn(B, 32, flat_dim, device=device),
+            "flattened_patches": flattened_patches,
             "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
             "decoder_input_ids": torch.randint(0, min(dec_vocab, 1000), (B, 32), device=device),
         }
@@ -2215,11 +2267,11 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
         }
 
     # Ernie4_5_VLMoeVisionTransformerPretrainedModel: needs hidden_states + grid_thw
+    # Ernie's PatchEmbed is purely spatial (no temporal_patch_size) — unlike Glm4v/Qwen2VL.
     if "ernie4_5_vl" in name_lower and "visiontransformer" in name_lower:
         in_channels = getattr(config, "in_channels", 3)
-        temporal_patch_size = getattr(config, "temporal_patch_size", 2)
         patch_size = getattr(config, "patch_size", 14)
-        patch_pixel_dim = in_channels * temporal_patch_size * patch_size * patch_size
+        patch_pixel_dim = in_channels * patch_size * patch_size
         grid_thw = torch.tensor([[1, 4, 8]] * B, dtype=torch.long, device=device)
         total_patches = int((grid_thw[:, 0] * grid_thw[:, 1] * grid_thw[:, 2]).sum().item())
         inputs = {
@@ -2227,18 +2279,6 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
             "grid_thw": grid_thw,
         }
 
-    # DeepseekV2: reduce head size to avoid stride alignment errors
-    # "strides should be multiple of 16 bytes" — caused by odd kv head dims
-    if "deepseekv2" in name_lower:
-        # Force head_dim to be 16-byte aligned (float32 = 4 bytes → need multiple of 4)
-        hs = getattr(config, "hidden_size", 4096)
-        nh = getattr(config, "num_attention_heads", 128)
-        head_dim = hs // nh
-        if head_dim % 4 != 0:
-            # Adjust num_attention_heads so head_dim is aligned
-            config.num_attention_heads = max(hs // 128, 4)
-
-    # GlmMoeDsa: text-only (tensor size mismatch comes from vision path)
     if name_lower == "glmmoedsamodel":
         text_cfg = getattr(config, "text_config", config)
         voc = min(getattr(text_cfg, "vocab_size", 32000) or 32000, 1000)
@@ -2247,11 +2287,33 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
             "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
         }
 
-    # CsmBackboneModel: needs codebook-style inputs, not text input_ids
-    if name_lower == "csmbackbonemodel":
-        hidden = getattr(config, "hidden_size", 2048)
+    # DiaModel: text-to-speech with byte-level encoder + multi-channel audio decoder
+    # decoder_input_ids must be 3D: (B, seq_len, num_channels=9) for 9 audio codebooks
+    if "dia" in name_lower and name_lower in ("diamodel", "diamodel"):
+        dec_cfg = getattr(config, "decoder_config", None)
+        num_channels = getattr(dec_cfg, "num_channels", 9) if dec_cfg else 9
+        enc_vocab = getattr(getattr(config, "encoder_config", None), "vocab_size", 256)
+        dec_vocab = getattr(dec_cfg, "vocab_size", 1028) if dec_cfg else 1028
         inputs = {
-            "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
+            "input_ids": torch.randint(0, min(enc_vocab, 256), (B, 32), device=device),
+            "decoder_input_ids": torch.randint(0, min(dec_vocab, 1028), (B, 32, num_channels), device=device),
+        }
+    if name_lower == "diaforconditionalgeneration":
+        dec_cfg = getattr(config, "decoder_config", None)
+        num_channels = getattr(dec_cfg, "num_channels", 9) if dec_cfg else 9
+        enc_vocab = getattr(getattr(config, "encoder_config", None), "vocab_size", 256)
+        dec_vocab = getattr(dec_cfg, "vocab_size", 1028) if dec_cfg else 1028
+        inputs = {
+            "input_ids": torch.randint(0, min(enc_vocab, 256), (B, 32), device=device),
+            "decoder_input_ids": torch.randint(0, min(dec_vocab, 1028), (B, 32, num_channels), device=device),
+        }
+
+    # CsmBackboneModel: audio codebook model — needs 3D input_ids (B, seq_len, num_codebooks)
+    # Embedding layer does .sum(dim=2) over codebook axis; 2D input collapses hidden dim.
+    if name_lower == "csmbackbonemodel":
+        num_codebooks = getattr(config, "num_codebooks", 32)
+        inputs = {
+            "input_ids": torch.randint(0, vocab_size, (B, 32, num_codebooks), device=device),
             "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
         }
 
@@ -2266,13 +2328,26 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
     if variant == "causal_lm" and "input_ids" in inputs:
         inputs["labels"] = inputs["input_ids"].clone()
 
+    # Musicgen ForCausalLM: internally expands batch by num_codebooks, so labels
+    # shape (B, seq_len) mismatches output (B*num_codebooks, seq_len). Remove labels.
+    if variant == "causal_lm" and "musicgen" in name_lower:
+        inputs.pop("labels", None)
+
+    # Musicgen/MusicgenMelody ForConditionalGeneration: need decoder_input_ids
+    # Shape: (B * num_codebooks, seq_len) — decoder generates codebook tokens in parallel
+    if variant == "conditional_generation" and "musicgen" in name_lower:
+        dec_cfg = getattr(config, "decoder", None)
+        num_codebooks = getattr(dec_cfg, "num_codebooks", 4) if dec_cfg else 4
+        dec_vocab = getattr(dec_cfg, "vocab_size", 2048) if dec_cfg else 2048
+        inputs["decoder_input_ids"] = torch.randint(0, min(dec_vocab, 1000), (B * num_codebooks, 32), device=device)
+
     # ForConditionalGeneration: ensure multimodal inputs for vision-language models.
     # Many base model handlers above force text-only inputs (via _vl_text_only_models
     # or model-specific overrides). For base models that's correct — they crash with
     # raw pixel_values. But ForConditionalGeneration wraps the full pipeline (vision
     # encoder + merge + LM), so it needs actual multimodal inputs to test the
     # integration layer where real graph breaks occur.
-    if variant == "conditional_generation" and "pixel_values" not in inputs:
+    if variant == "conditional_generation" and "pixel_values" not in inputs and "flattened_patches" not in inputs:
         vision_cfg = getattr(config, "vision_config", getattr(config, "image_config", None))
         if vision_cfg:
             model_fwd_params = set(inspect.signature(model.forward).parameters.keys())
@@ -2299,11 +2374,21 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
 
             name_lower_fcg = base_model_name.lower()
 
+            # ── Models where FCG should use text-only (vision path broken) ──
+            _fcg_text_only = {
+                # GlmImage: temporal_patch_size=1 causes grid_thw dimension mismatch
+                "glmimagemodel",
+                # PerceptionLM: TimmWrapper/ResNet returns 4D features, projector expects 3D
+                "perceptionlmmodel",
+            }
+            if name_lower_fcg in _fcg_text_only:
+                pass  # keep text-only inputs from base model handler
+
             # ── Model-specific overrides (before generic paths) ──
 
             # Mistral3/LightOnOcr: standard 4D pixel_values + image_sizes,
             # but n_vis must account for spatial_merge_size
-            if name_lower_fcg in ("mistral3model", "lightonocrmodel"):
+            elif name_lower_fcg in ("mistral3model", "lightonocrmodel"):
                 img_size = getattr(vision_cfg, "image_size", 224) or 224
                 if isinstance(img_size, (list, tuple)):
                     img_size = img_size[0]
@@ -2686,6 +2771,42 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
             if "token_type_ids" in model_fwd_params and "token_type_ids" not in inputs:
                 sl = inputs["input_ids"].shape[1]
                 inputs["token_type_ids"] = torch.zeros(B, sl, dtype=torch.long, device=device)
+
+    # ── Audio ForConditionalGeneration: need input_ids + audio features ──
+    # Audio FCG models are classified as "audio" by _detect_hf_input_type and get
+    # audio-only inputs. But as FCG they need both audio AND text (input_ids with
+    # audio token placeholders + input_features mel spectrogram).
+    if variant == "conditional_generation" and "input_ids" not in inputs:
+        audio_cfg = getattr(config, "audio_config", None)
+        text_cfg = getattr(config, "text_config", None)
+        if audio_cfg and text_cfg:
+            text_voc = min(getattr(text_cfg, "vocab_size", 32000) or 32000, 1000)
+            num_mel_bins = getattr(audio_cfg, "num_mel_bins", 128)
+            # Most audio FCG models require specific mel lengths:
+            # Qwen2Audio/Voxtral require exactly 3000 frames; AudioFlamingo3 needs
+            # max_source_positions * 2; GlmAsr uses conv downsampling.
+            max_src = getattr(audio_cfg, "max_source_positions", 1500)
+            audio_seq_len = max_src * 2  # 3000 for most models
+            # Audio token count must match encoder output length.
+            # Whisper-style encoder: conv1 (stride=1) + conv2 (stride=2) → seq/2
+            n_audio_tokens = audio_seq_len // 2
+            text_len = 8
+            seq_len = text_len + n_audio_tokens
+            ids = torch.randint(0, text_voc, (B, seq_len), device=device)
+            audio_token_id = getattr(config, "audio_token_id", None)
+            if audio_token_id is not None:
+                ids[:, :n_audio_tokens] = audio_token_id
+                if audio_token_id >= text_voc:
+                    model.resize_token_embeddings(audio_token_id + 1)
+            inputs = {
+                "input_ids": ids,
+                "attention_mask": torch.ones(B, seq_len, dtype=torch.long, device=device),
+                "input_features": torch.randn(B, num_mel_bins, audio_seq_len, device=device),
+            }
+            fwd_params = set(inspect.signature(model.forward).parameters.keys())
+            if "input_features_mask" in fwd_params or "feature_attention_mask" in fwd_params:
+                mask_key = "feature_attention_mask" if "feature_attention_mask" in fwd_params else "input_features_mask"
+                inputs[mask_key] = torch.ones(B, audio_seq_len, dtype=torch.long, device=device)
 
     return model, inputs, None
 

@@ -67,12 +67,18 @@ def enumerate_hf():
             continue
         if obj is transformers.PreTrainedModel:
             continue
-        if "PreTrained" in name:
+        if "PreTrained" in name or "Pretrained" in name:
+            continue
+
+        # Skip models whose forward() is _forward_unimplemented (abstract base classes)
+        fwd = getattr(obj, "forward", None)
+        if fwd and "unimplemented" in getattr(fwd, "__name__", ""):
             continue
 
         # Skip models that explicitly reject construction
         _SKIP_MODELS = {
             "T5GemmaEncoderModel",  # Raises "only supports encoder-only" — use T5GemmaModel instead
+            "BarkModel",            # Abstract — forward() is _forward_unimplemented
         }
         if name in _SKIP_MODELS:
             continue
