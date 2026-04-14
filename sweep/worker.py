@@ -181,6 +181,24 @@ def _create_config(model_name, config_cls):
                      decoder=dec.to_dict(), model_type="musicgen_melody")
             return MusicgenMelodyConfig.from_dict(d)
 
+    # --- Sub-model configs: extract from parent config ---
+    # Some models (e.g., Aimv2TextModel) are enumerated with the parent config class
+    # (Aimv2Config) but need the sub-config (text_config, depth_decoder_config, etc.)
+    _sub_config_map = {
+        "aimv2textmodel": "text_config",
+        "clapaudiomodel": "audio_config",
+        "csmdepthdecodermodel": "depth_decoder_config",
+        "csmdepthdecoderforcausallm": "depth_decoder_config",
+        "paddleocrtextmodel": "text_config",
+        "qwen3omnimoecode2wavtransformermodel": "code2wav_config",
+    }
+    sub_attr = _sub_config_map.get(name_lower)
+    if sub_attr:
+        parent_config = config_cls()
+        sub_config = getattr(parent_config, sub_attr, None)
+        if sub_config is not None:
+            return sub_config
+
     # Default: standard constructor
     return config_cls()
 
@@ -192,6 +210,15 @@ def _fix_config(model_name, config):
     model construction. This fixes them with sensible defaults.
     """
     name_lower = model_name.lower()
+
+    # --- ProphetNet: rejects num_hidden_layers, uses encoder/decoder_layers ---
+    if "prophetnet" in name_lower:
+        # _reduce_model_size sets num_hidden_layers which ProphetNet's config rejects.
+        # Delete it and ensure encoder/decoder layers are set instead.
+        if hasattr(config, "num_encoder_layers"):
+            config.num_encoder_layers = min(getattr(config, "num_encoder_layers", 2), 2)
+        if hasattr(config, "num_decoder_layers"):
+            config.num_decoder_layers = min(getattr(config, "num_decoder_layers", 2), 2)
 
     # --- Time series: need prediction_length and context_length ---
     if name_lower in ("autoformermodel", "informermodel", "timeseriestransformermodel"):
@@ -856,6 +883,74 @@ def _fix_config(model_name, config):
             if isinstance(rp, dict) and "mrope_section" not in rp:
                 rp["mrope_section"] = [16, 24, 24]
 
+    # --- Gemma3n: num_kv_shared_layers must be < num_hidden_layers ---
+    # Default num_kv_shared_layers=15 but after reduction to 2 layers, first_kv_shared
+    # becomes negative → prev_layers is empty → .index() crashes.
+    if "gemma3n" in name_lower:
+        nkv = getattr(config, "num_kv_shared_layers", 0)
+        nhl = getattr(config, "num_hidden_layers", 35)
+        if nkv >= nhl:
+            config.num_kv_shared_layers = max(nhl - 2, 0)
+
+    # --- Qwen3OmniMoe family: missing attributes on talker sub-config ---
+    # When called as Qwen3OmniMoeTalkerModel, config IS the talker config.
+    # When called as Qwen3OmniMoeModel, talker is at config.talker_config.
+    def _fix_qwen3_omni_talker(talker_cfg):
+        text_cfg = getattr(talker_cfg, "text_config", None)
+        if text_cfg and not hasattr(text_cfg, "shared_expert_intermediate_size"):
+            text_cfg.shared_expert_intermediate_size = getattr(text_cfg, "intermediate_size", 2048)
+        if not hasattr(talker_cfg, "spatial_merge_size") or getattr(talker_cfg, "spatial_merge_size", None) is None:
+            talker_cfg.spatial_merge_size = 2
+
+    if "qwen3omnimoetalk" in name_lower:
+        _fix_qwen3_omni_talker(config)
+    if "qwen3omnimoe" in name_lower and hasattr(config, "talker_config"):
+        _fix_qwen3_omni_talker(config.talker_config)
+
+    # --- Qwen3OmniMoeForConditionalGeneration: top-level config lacks initializer_range ---
+    # Sub-configs (thinker, talker, code2wav) all have it, but the parent doesn't.
+    if "qwen3omnimoe" in name_lower:
+        if not hasattr(config, "initializer_range") or getattr(config, "initializer_range", None) is None:
+            config.initializer_range = 0.02
+
+    # --- ZambaModel: use_mamba_kernels=False (no causal-conv1d), layers_block_type ---
+    if "zamba" in name_lower and "zamba2" not in name_lower:
+        if getattr(config, "use_mamba_kernels", True):
+            config.use_mamba_kernels = False
+        # Zamba's _tied_weights_keys hardcodes layer 2 as shared transformer source.
+        # Need at least 4 layers with layer 2 and one other hybrid layer.
+        n = getattr(config, "num_hidden_layers", 76)
+        lbt = getattr(config, "layers_block_type", None)
+        if lbt and n < len(lbt):
+            # Already truncated by _reduce_model_size — ensure at least 2 hybrid layers
+            hybrid_count = sum(1 for t in lbt if t == "hybrid")
+            if hybrid_count < 2:
+                # Expand to include second hybrid layer (index 7 in default pattern)
+                full_lbt = getattr(type(config)(), "layers_block_type", lbt)
+                # Find first two hybrid indices
+                hybrids = [i for i, t in enumerate(full_lbt) if t == "hybrid"]
+                if len(hybrids) >= 2:
+                    needed = hybrids[1] + 1
+                    config.num_hidden_layers = needed
+                    config.layers_block_type = list(full_lbt[:needed])
+
+    # --- PPOCRV5ServerDetModel: intraclass_block_config is None by default ---
+    if "ppocrv5" in name_lower and "serverdet" in name_lower.replace("_", ""):
+        if getattr(config, "intraclass_block_config", None) is None:
+            config.intraclass_block_config = {
+                "reduce_channel": [1, 1, 0],
+                "vertical_long_to_small_conv_longratio": [3, 1, 1],
+                "vertical_long_to_small_conv_midratio": [3, 1, 1],
+                "vertical_long_to_small_conv_shortratio": [3, 1, 1],
+                "horizontal_small_to_long_conv_longratio": [1, 3, 1],
+                "horizontal_small_to_long_conv_midratio": [1, 3, 1],
+                "horizontal_small_to_long_conv_shortratio": [1, 3, 1],
+                "symmetric_conv_long_longratio": [3, 3, 1],
+                "symmetric_conv_long_midratio": [3, 3, 1],
+                "symmetric_conv_long_shortratio": [3, 3, 1],
+                "return_channel": [1, 1, 0],
+            }
+
     return config
 
 
@@ -865,16 +960,40 @@ def _reduce_model_size(config):
     Graph break behavior is determined by the model architecture (ops used),
     not the model depth/width. 2 layers is sufficient for detection.
     """
-    # Reduce layers
+    # Reduce layers (skip non-int values like tuples)
     for attr in ("num_hidden_layers", "num_layers", "n_layer", "n_layers",
                  "encoder_layers", "decoder_layers", "num_encoder_layers",
                  "num_decoder_layers"):
         val = getattr(config, attr, None)
         if val is not None and isinstance(val, int) and val > 4:
-            setattr(config, attr, 2)
+            try:
+                setattr(config, attr, 2)
+            except (ValueError, AttributeError, NotImplementedError):
+                pass  # Some configs reject certain attributes (e.g. ProphetNet)
+
+    # Truncate layer_types / layers_block_type to match reduced num_hidden_layers
+    n_layers = getattr(config, "num_hidden_layers", None)
+    if isinstance(n_layers, int):
+        for lt_attr in ("layer_types", "layers_block_type"):
+            lt = getattr(config, lt_attr, None)
+            if isinstance(lt, (list, tuple)) and len(lt) > n_layers:
+                setattr(config, lt_attr, list(lt[:n_layers]))
+
+    # Funnel-family: block_sizes must sum to num_hidden_layers
+    block_sizes = getattr(config, "block_sizes", None)
+    if block_sizes is not None and isinstance(block_sizes, (list, tuple)):
+        config.block_sizes = [1, 1]  # 2 layers = 2 blocks of 1
+        for _attr, _val in [("num_hidden_layers", 2), ("num_blocks", 2)]:
+            try:
+                if hasattr(config, _attr):
+                    setattr(config, _attr, _val)
+            except (ValueError, AttributeError, NotImplementedError):
+                pass
 
     # Reduce hidden size for very large models (> 4096)
-    if getattr(config, "hidden_size", 0) > 4096:
+    # Skip if hidden_size is a tuple/list (Swin-family uses per-stage sizes)
+    _hs = getattr(config, "hidden_size", 0)
+    if isinstance(_hs, int) and _hs > 4096:
         scale = config.hidden_size / 1024
         config.hidden_size = 1024
         # Scale down dependent dimensions proportionally
@@ -889,9 +1008,10 @@ def _reduce_model_size(config):
             )
 
     # Ensure hidden_size is divisible by num_attention_heads after reduction
+    # Skip if either is a tuple/list (Swin-family models use per-stage tuples)
     hs = getattr(config, "hidden_size", None)
     nh = getattr(config, "num_attention_heads", None)
-    if hs and nh and hs % nh != 0:
+    if hs and nh and isinstance(hs, int) and isinstance(nh, int) and hs % nh != 0:
         # Find largest power-of-2 divisor of hs that's >= 4
         for heads in (16, 8, 4):
             if hs % heads == 0:
@@ -904,7 +1024,7 @@ def _reduce_model_size(config):
     # Ensure num_attention_heads is divisible by num_key_value_heads
     nh = getattr(config, "num_attention_heads", None)
     nkv = getattr(config, "num_key_value_heads", None)
-    if nh and nkv and nkv > 0 and nh % nkv != 0:
+    if nh and nkv and isinstance(nh, int) and isinstance(nkv, int) and nkv > 0 and nh % nkv != 0:
         # Find largest divisor of nh that's <= nkv
         for k in range(nkv, 0, -1):
             if nh % k == 0:
@@ -2034,6 +2154,112 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
         inputs = {
             "input_values": torch.randn(B, 16000, device=device),
             "decoder_input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
+        }
+
+    # BayesianDetectorModel: expects g_values (green-list scores), not input_ids
+    if name_lower == "bayesiandetectormodel":
+        depth = getattr(config, "watermarking_depth", 3)
+        inputs = {
+            "g_values": torch.randn(B, 32, depth, device=device),
+            "mask": torch.ones(B, 32, dtype=torch.bool, device=device),
+        }
+
+    # SeamlessM4TTextToUnitModel: must NOT pass input_ids, pass inputs_embeds instead
+    if name_lower in ("seamlessm4ttexttounitymodel", "seamlessm4ttexttounitemodel",
+                       "seamlessm4ttexttounitmodel"):
+        hidden = getattr(config, "hidden_size", 1024)
+        inputs = {
+            "inputs_embeds": torch.randn(B, 32, hidden, device=device),
+            "decoder_input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
+        }
+
+    # WhisperForCausalLM: decoder-only — needs input_ids (no encoder, no decoder_input_ids)
+    if name_lower == "whispermodel" and variant == "causal_lm":
+        inputs = {
+            "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
+            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
+        }
+
+    # Pix2StructForConditionalGeneration: needs flattened_patches + decoder_input_ids
+    if name_lower == "pix2structmodel" and variant == "conditional_generation":
+        num_channels = getattr(config, "num_channels", 3)
+        patch_size = getattr(config, "patch_size", 16)
+        flat_dim = patch_size * patch_size * num_channels + 2
+        dec_vocab = getattr(getattr(config, "text_config", config), "vocab_size", 1000)
+        inputs = {
+            "flattened_patches": torch.randn(B, 32, flat_dim, device=device),
+            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
+            "decoder_input_ids": torch.randint(0, min(dec_vocab, 1000), (B, 32), device=device),
+        }
+
+    # UdopEncoderModel: needs bbox (float, shape B,seq,4) + pixel_values
+    if name_lower == "udopencodermodel":
+        img_size = getattr(config, "image_size", 224)
+        if isinstance(img_size, (list, tuple)):
+            img_size = img_size[0]
+        inputs = {
+            "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
+            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
+            "bbox": torch.rand(B, 32, 4, device=device) * 1000,
+            "pixel_values": torch.randn(B, 3, img_size, img_size, device=device),
+        }
+
+    # RagModel: needs context_input_ids when no retriever is set
+    if name_lower == "ragmodel":
+        inputs = {
+            "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
+            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
+            "context_input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
+            "context_attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
+            "doc_scores": torch.randn(B, 1, device=device),
+        }
+
+    # Ernie4_5_VLMoeVisionTransformerPretrainedModel: needs hidden_states + grid_thw
+    if "ernie4_5_vl" in name_lower and "visiontransformer" in name_lower:
+        in_channels = getattr(config, "in_channels", 3)
+        temporal_patch_size = getattr(config, "temporal_patch_size", 2)
+        patch_size = getattr(config, "patch_size", 14)
+        patch_pixel_dim = in_channels * temporal_patch_size * patch_size * patch_size
+        grid_thw = torch.tensor([[1, 4, 8]] * B, dtype=torch.long, device=device)
+        total_patches = int((grid_thw[:, 0] * grid_thw[:, 1] * grid_thw[:, 2]).sum().item())
+        inputs = {
+            "hidden_states": torch.randn(total_patches, patch_pixel_dim, device=device),
+            "grid_thw": grid_thw,
+        }
+
+    # DeepseekV2: reduce head size to avoid stride alignment errors
+    # "strides should be multiple of 16 bytes" — caused by odd kv head dims
+    if "deepseekv2" in name_lower:
+        # Force head_dim to be 16-byte aligned (float32 = 4 bytes → need multiple of 4)
+        hs = getattr(config, "hidden_size", 4096)
+        nh = getattr(config, "num_attention_heads", 128)
+        head_dim = hs // nh
+        if head_dim % 4 != 0:
+            # Adjust num_attention_heads so head_dim is aligned
+            config.num_attention_heads = max(hs // 128, 4)
+
+    # GlmMoeDsa: text-only (tensor size mismatch comes from vision path)
+    if name_lower == "glmmoedsamodel":
+        text_cfg = getattr(config, "text_config", config)
+        voc = min(getattr(text_cfg, "vocab_size", 32000) or 32000, 1000)
+        inputs = {
+            "input_ids": torch.randint(0, voc, (B, 32), device=device),
+            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
+        }
+
+    # CsmBackboneModel: needs codebook-style inputs, not text input_ids
+    if name_lower == "csmbackbonemodel":
+        hidden = getattr(config, "hidden_size", 2048)
+        inputs = {
+            "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
+            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
+        }
+
+    # Qwen2_5OmniTalkerForConditionalGeneration: text-only
+    if name_lower == "qwen2_5omnitalkermodel" and variant == "conditional_generation":
+        inputs = {
+            "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
+            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
         }
 
     # ForCausalLM: add labels for loss computation (tests the loss path too)

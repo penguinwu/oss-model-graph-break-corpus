@@ -103,6 +103,13 @@
     "timeout_tier": "large",
     "wall_time_s": 453.92
   },
+  "Qwen2_5_VLModel": {
+    "discovered": "2026-04-14",
+    "resolved_status": "full_graph",
+    "source": "hf",
+    "timeout_tier": "large",
+    "wall_time_s": 85.0
+  },
   "Qwen3OmniMoeForConditionalGeneration": {
     "discovered": "2026-04-12",
     "resolved_status": "create_error",
@@ -142,12 +149,26 @@
     "source": "hf",
     "timeout_tier": "very_large"
   },
+  "ZambaForCausalLM": {
+    "discovered": "2026-04-14",
+    "resolved_status": "eager_error",
+    "source": "hf",
+    "timeout_tier": "large",
+    "wall_time_s": 235.02
+  },
   "ZambaModel": {
     "discovered": "2026-04-01",
     "resolved_status": "eager_error",
     "source": "hf",
     "timeout_tier": "large",
     "wall_time_s": 220.01
+  },
+  "xLSTMForCausalLM": {
+    "discovered": "2026-04-14",
+    "resolved_status": "eager_error",
+    "source": "hf",
+    "timeout_tier": "large",
+    "wall_time_s": 125.0
   },
   "xLSTMModel": {
     "discovered": "2026-04-02",

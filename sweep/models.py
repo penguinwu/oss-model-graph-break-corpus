@@ -70,6 +70,13 @@ def enumerate_hf():
         if "PreTrained" in name:
             continue
 
+        # Skip models that explicitly reject construction
+        _SKIP_MODELS = {
+            "T5GemmaEncoderModel",  # Raises "only supports encoder-only" — use T5GemmaModel instead
+        }
+        if name in _SKIP_MODELS:
+            continue
+
         # Determine which variant this is
         variant = None
         for suffix, var_name in _SUFFIXES:
