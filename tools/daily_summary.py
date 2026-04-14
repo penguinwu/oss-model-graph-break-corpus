@@ -70,12 +70,12 @@ def get_gh_token():
     return None
 
 
-def proxy_get(url, token):
+def proxy_get(url, token, max_size=150000):
     """GET a URL via the web proxy. Returns parsed JSON or None."""
     import urllib.request
     payload = {
         "url": url,
-        "max_size": 100000,
+        "max_size": max_size,
         "headers": {
             "Authorization": f"token {token}",
             "Accept": "application/vnd.github.v3+json",
@@ -155,27 +155,66 @@ def get_unpushed_commits():
         return 0
 
 
-def get_github_issues(token):
-    """Get all open issues with comment counts."""
-    data = proxy_get(f"{API_BASE}/issues?state=all&per_page=30", token)
-    if not data:
-        return [], []
+def paginated_get(url_template, token, per_page=10, max_items=100):
+    """Fetch GitHub issues in small pages to stay under proxy size limits.
 
-    open_issues = []
-    recently_closed = []
-    for issue in data:
-        entry = {
+    GitHub REST always returns full issue objects including body (often 5-15KB
+    each with stack traces and code blocks). Fetching in small pages of 10
+    keeps each response under ~100KB, avoiding proxy truncation.
+    """
+    all_items = []
+    page = 1
+    while len(all_items) < max_items:
+        url = f"{url_template}&page={page}&per_page={per_page}"
+        # Small per_page → small response → 100KB is plenty
+        data = proxy_get(url, token, max_size=150000)
+        if not data:
+            break
+        all_items.extend(data)
+        if len(data) < per_page:
+            break  # Last page
+        page += 1
+    return all_items[:max_items]
+
+
+def _parse_rest_issues(raw_issues, state_str):
+    """Extract only the fields we need from REST API issue objects."""
+    result = []
+    for issue in raw_issues:
+        if "pull_request" in issue:
+            continue
+        result.append({
             "number": issue["number"],
             "title": issue["title"][:80],
-            "state": issue["state"],
+            "state": state_str,
             "comments": issue["comments"],
             "labels": [l["name"] for l in issue.get("labels", [])],
             "updated_at": issue.get("updated_at", ""),
-        }
-        if issue["state"] == "open":
-            open_issues.append(entry)
-        else:
-            recently_closed.append(entry)
+        })
+    return result
+
+
+def get_github_issues(token):
+    """Get open issues and recently closed issues with comment counts.
+
+    Paginates in small batches (10 per page) to avoid proxy truncation.
+    GitHub REST returns full issue bodies (stack traces, code blocks) which
+    makes each issue 5-15KB — at per_page=100 that's 500KB-1.5MB.
+    """
+    open_data = paginated_get(
+        f"{API_BASE}/issues?state=open", token, per_page=10, max_items=100,
+    )
+    if not open_data:
+        print("  WARNING: Failed to fetch open issues from GitHub", file=sys.stderr)
+        return [], []
+
+    open_issues = _parse_rest_issues(open_data, "open")
+
+    closed_data = paginated_get(
+        f"{API_BASE}/issues?state=closed&sort=updated&direction=desc",
+        token, per_page=10, max_items=30,
+    )
+    recently_closed = _parse_rest_issues(closed_data, "closed") if closed_data else []
 
     return open_issues, recently_closed
 
