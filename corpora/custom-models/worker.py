@@ -495,35 +495,36 @@ def main():
                 results.append(result)
                 continue
 
-            print(f"\n{'='*60}")
-            print(f"Testing: {spec['name']} [{mode}]")
-            print(f"{'='*60}")
+            print(f"\n{'='*60}", file=sys.stderr)
+            print(f"Testing: {spec['name']} [{mode}]", file=sys.stderr)
+            print(f"{'='*60}", file=sys.stderr)
 
             result = run_test(spec, proxy_url, mode=mode)
             results.append(result)
 
             status = result.get("status", "unknown")
             breaks = result.get("graph_break_count", "N/A")
-            print(f"  Status: {status} | Graph breaks: {breaks}")
+            print(f"  Status: {status} | Graph breaks: {breaks}", file=sys.stderr)
 
         if result.get("break_reasons"):
             for br in result["break_reasons"][:5]:
-                print(f"    [{br['type']}] at {br['location']}")
+                loc = br.get('location', br.get('file', 'unknown'))
+                print(f"    [{br['type']}] at {loc}", file=sys.stderr)
 
     # Summary
-    print(f"\n{'='*60}")
-    print("SUMMARY")
-    print(f"{'='*60}")
+    print(f"\n{'='*60}", file=sys.stderr)
+    print("SUMMARY", file=sys.stderr)
+    print(f"{'='*60}", file=sys.stderr)
     for r in results:
         status = r.get("status", "unknown")
         breaks = r.get("graph_break_count", "N/A")
         params = r.get("params_M", "?")
-        print(f"  {r['name']:35s} | {status:15s} | breaks={breaks} | {params}M")
+        print(f"  {r['name']:35s} | {status:15s} | breaks={breaks} | {params}M", file=sys.stderr)
 
     if args.output:
         with open(args.output, "w") as f:
             json.dump({"models": results}, f, indent=2)
-        print(f"\nResults saved to {args.output}")
+        print(f"\nResults saved to {args.output}", file=sys.stderr)
 
     if args.model_json and len(results) == 1:
         # Single model mode (sweep runner integration) — output one JSON line
