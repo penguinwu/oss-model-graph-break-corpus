@@ -652,25 +652,6 @@ def _fix_config(model_name, config):
                 # Scale default [8,12,12] proportionally to target
                 rp["mrope_section"] = [target * 8 // 32, target * 12 // 32, target - target * 8 // 32 - target * 12 // 32]
 
-    # --- Generic: truncate layer_types to match reduced num_hidden_layers ---
-    for cfg_obj in [config, getattr(config, "text_config", None)]:
-        if cfg_obj is None:
-            continue
-        n = getattr(cfg_obj, "num_hidden_layers", None)
-        if n is not None:
-            lt = getattr(cfg_obj, "layer_types", None)
-            if lt is not None and isinstance(lt, list) and len(lt) > n:
-                # Collect unique types from full list to ensure all are represented
-                all_types = list(dict.fromkeys(lt))  # Deduplicated, preserves order
-                if n >= len(all_types):
-                    # Fill with one of each type, then repeat last
-                    new_lt = all_types[:n]
-                    while len(new_lt) < n:
-                        new_lt.append(all_types[-1])
-                else:
-                    # Not enough layers for all types — take first n
-                    new_lt = lt[:n]
-                cfg_obj.layer_types = new_lt
 
     # --- Jamba: attn_layer_period must be ≤ num_hidden_layers ---
     if name_lower == "jambamodel":
@@ -1013,13 +994,28 @@ def _reduce_model_size(config):
             except (ValueError, AttributeError, NotImplementedError):
                 pass  # Some configs reject certain attributes (e.g. ProphetNet)
 
-    # Truncate layer_types / layers_block_type to match reduced num_hidden_layers
-    n_layers = getattr(config, "num_hidden_layers", None)
-    if isinstance(n_layers, int):
+    # Truncate layer_types / layers_block_type to match reduced num_hidden_layers.
+    # Must include all unique types from the original list (hybrid models need both
+    # linear_attention AND full_attention layers to initialize caches correctly).
+    for cfg_obj in [config] + [getattr(config, sub, None) for sub in ("text_config",)]:
+        if cfg_obj is None:
+            continue
+        n_layers = getattr(cfg_obj, "num_hidden_layers", None)
+        if not isinstance(n_layers, int):
+            continue
         for lt_attr in ("layer_types", "layers_block_type"):
-            lt = getattr(config, lt_attr, None)
+            lt = getattr(cfg_obj, lt_attr, None)
             if isinstance(lt, (list, tuple)) and len(lt) > n_layers:
-                setattr(config, lt_attr, list(lt[:n_layers]))
+                all_types = list(dict.fromkeys(lt))  # unique, order-preserving
+                if len(all_types) > n_layers:
+                    # Need more layers to fit all types — expand
+                    n_layers = len(all_types)
+                    cfg_obj.num_hidden_layers = n_layers
+                # One of each type, then repeat last to fill
+                new_lt = list(all_types)
+                while len(new_lt) < n_layers:
+                    new_lt.append(all_types[-1])
+                setattr(cfg_obj, lt_attr, new_lt)
 
     # Funnel-family: block_sizes must sum to num_hidden_layers
     block_sizes = getattr(config, "block_sizes", None)
