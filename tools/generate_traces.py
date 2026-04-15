@@ -71,8 +71,8 @@ def main():
     )
     parser.add_argument("--top", type=int, default=30,
                         help="Number of top model-mode pairs to generate (default: 30)")
-    parser.add_argument("--version", default="v2.10",
-                        help="PyTorch version (default: v2.10)")
+    parser.add_argument("--version", default="pt2.10",
+                        help="PyTorch version (default: pt2.10)")
     parser.add_argument("--output-dir",
                         help="Output directory (default: docs/traces/)")
     parser.add_argument("--skip-existing", action="store_true",

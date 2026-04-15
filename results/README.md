@@ -6,19 +6,19 @@ Per-version summaries and nightly tracking for `torch.compile` quality across op
 
 | Version | eval full\_graph | train full\_graph | eval break | train break | Models | Fixes | Regressions |
 |---------|-----------------|-------------------|------------|-------------|--------|-------|-------------|
-| [2.8](v2.8.md)   | 298 (64%) | 288 (62%) | 96  | 106 | 468 | —  | — |
-| [2.9](v2.9.md)   | 324 (69%) | 314 (67%) | 101 | 110 | 468 | 0  | 0 |
-| [2.10](v2.10.md) | 337 (72%) | 323 (69%) | 90  | 105 | 468 | 12 | 0 |
-| [2.11](v2.11.md) | 350 (74%) | 333 (70%) | 87  | 104 | 473 | 2  | 0 |
+| [2.8](pt2.8.md)   | 298 (64%) | 288 (62%) | 96  | 106 | 468 | —  | — |
+| [2.9](pt2.9.md)   | 324 (69%) | 314 (67%) | 101 | 110 | 468 | 0  | 0 |
+| [2.10](pt2.10.md) | 337 (72%) | 323 (69%) | 90  | 105 | 468 | 12 | 0 |
+| [2.11](pt2.11.md) | 350 (74%) | 333 (70%) | 87  | 104 | 473 | 2  | 0 |
 
 **Zero full\_graph→graph\_break regressions across all releases.**
 
 ## Release Summaries
 
-- [v2.11](v2.11.md) — Latest release. 473 models, 2 fixes (FalconMamba, Mamba), 5 new models (Gemma4 + NomicBert)
-- [v2.10](v2.10.md) — 12 graph break fixes, largest batch of genuine fixes
-- [v2.9](v2.9.md) — Baseline improvements from worker fixes (eager\_error reduction)
-- [v2.8](v2.8.md) — First sweep, baseline for all comparisons
+- [pt2.11](pt2.11.md) — Latest release. 473 models, 2 fixes (FalconMamba, Mamba), 5 new models (Gemma4 + NomicBert)
+- [pt2.10](pt2.10.md) — 12 graph break fixes, largest batch of genuine fixes
+- [pt2.9](pt2.9.md) — Baseline improvements from worker fixes (eager\_error reduction)
+- [pt2.8](pt2.8.md) — First sweep, baseline for all comparisons
 
 ## Nightly Tracking
 

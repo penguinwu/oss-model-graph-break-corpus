@@ -152,7 +152,7 @@ def compare_results(model_name, old, new):
 
 def get_auto_models():
     """Select ~10 models with varying break counts for comparison."""
-    explain_path = os.path.join(REPO_ROOT, "sweep_results", "v2.10", "explain_results.json")
+    explain_path = os.path.join(REPO_ROOT, "sweep_results", "pt2.10", "explain_results.json")
     with open(explain_path) as f:
         data = json.load(f)
 

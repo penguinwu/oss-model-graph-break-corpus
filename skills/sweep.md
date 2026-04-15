@@ -26,7 +26,7 @@ Never just say "sweeping all."
 
 ## 2. Proven Baseline Settings
 
-These settings have been validated across v2.8, v2.9, v2.10, v2.11 sweeps:
+These settings have been validated across pt2.8, pt2.9, pt2.10, pt2.11 sweeps:
 
 | Setting | Value | Rationale |
 |---------|-------|-----------|

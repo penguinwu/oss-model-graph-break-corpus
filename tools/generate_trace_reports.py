@@ -194,8 +194,8 @@ def main():
     parser = argparse.ArgumentParser(
         description="Batch-generate tlparse HTML reports for trace directories",
     )
-    parser.add_argument("--version", default="v2.10",
-                        help="PyTorch version directory (default: v2.10)")
+    parser.add_argument("--version", default="pt2.10",
+                        help="PyTorch version directory (default: pt2.10)")
     parser.add_argument("--output-dir",
                         help="Output directory for reports (default: sweep_results/<version>/trace_reports)")
     parser.add_argument("--skip-existing", action="store_true",

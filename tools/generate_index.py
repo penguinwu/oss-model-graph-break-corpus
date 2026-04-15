@@ -50,7 +50,7 @@ def load_corpus():
         return json.load(f)
 
 
-def load_explain(version="v2.10"):
+def load_explain(version="pt2.10"):
     path = os.path.join(REPO_ROOT, "sweep_results", version, "explain_results.json")
     if not os.path.exists(path):
         return {}
@@ -276,8 +276,8 @@ def main():
     parser = argparse.ArgumentParser(description="Generate corpus dashboard HTML page")
     parser.add_argument("--output", default=os.path.join(REPO_ROOT, "docs", "index.html"),
                         help="Output path (default: docs/index.html)")
-    parser.add_argument("--version", default="v2.10",
-                        help="PyTorch version for explain data (default: v2.10)")
+    parser.add_argument("--version", default="pt2.10",
+                        help="PyTorch version for explain data (default: pt2.10)")
     args = parser.parse_args()
 
     print("Loading corpus data...")

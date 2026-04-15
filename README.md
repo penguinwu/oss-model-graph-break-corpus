@@ -157,7 +157,7 @@ The dashboard shows each model's status, break count, root cause category, fixab
 
 ### Trace reports
 
-Pre-generated trace directories exist in `sweep_results/v2.10/traces/` (214 model-mode combinations). To generate browsable HTML reports for the top models:
+Pre-generated trace directories exist in `sweep_results/pt2.10/traces/` (214 model-mode combinations). To generate browsable HTML reports for the top models:
 
 ```bash
 # Generate tlparse reports for the top 30 models by break count
@@ -202,9 +202,9 @@ Each variant is a separate entry in the corpus, so you can compare compile quali
 
 `corpus/corpus.json` — models with eval + train results across static and dynamic configurations. Each model includes status, compile time, error details. See `corpus/summary.md` for a human-readable overview.
 
-`corpus/golden_set.json` — 2,133 expected-status checks for regression detection. Run `python3 tools/validate.py` to verify the corpus matches the golden set.
+`corpus/golden_set.json` — 1,464 expected-status checks for regression detection. Run `python3 tools/validate.py` to verify the corpus matches the golden set.
 
-Sweep results by version: `sweep_results/{v2.8,v2.9,v2.10,v2.11}/` — JSONL checkpoints for identify and explain passes. See [`results/`](results/) for human-readable summaries and nightly tracking.
+Sweep results by version: `sweep_results/{pt2.8,pt2.9,pt2.10,pt2.11}/` — JSONL checkpoints for identify and explain passes. See [`results/`](results/) for human-readable summaries and nightly tracking.
 
 ## Debugging Graph Breaks
 
