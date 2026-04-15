@@ -137,11 +137,19 @@ def merge_explain_into_mode(mode_data, explain_result):
 
 
 def update_corpus(corpus, identify_idx, explain_idx, versions):
-    """Update corpus with sweep results. Returns (updated_corpus, changelog_entries)."""
+    """Update corpus with sweep results. Returns (updated_corpus, changelog_entries).
+
+    Changelog entries for new models include a '_pre_merge_names' key on the
+    first entry, listing the model names that existed before the merge.
+    This is used by format_changelog to classify new families vs new configs.
+    """
     changelog = []
     models_by_name = {}
     for m in corpus["models"]:
         models_by_name[m["name"]] = m
+
+    # Snapshot existing names before merge (for family vs config classification)
+    pre_merge_names = set(models_by_name.keys())
 
     # Track which models appear in sweep
     sweep_model_names = set()
@@ -221,10 +229,59 @@ def update_corpus(corpus, identify_idx, explain_idx, versions):
     corpus["models"] = ordered
     corpus["summary"] = compute_summary(ordered)
 
-    return corpus, changelog
+    return corpus, changelog, pre_merge_names
 
 
-def format_changelog(changelog, sweep_dir, versions, corpus):
+# HF model class suffixes, longest first for greedy stripping
+_HF_SUFFIXES = sorted([
+    "ForCausalLM", "ForConditionalGeneration", "ForSequenceClassification",
+    "ForTokenClassification", "ForQuestionAnswering", "ForMaskedLM",
+    "ForMultipleChoice", "ForPreTraining", "ForImageClassification",
+    "LMHeadModel", "DoubleHeadsModel", "WithLMHeadModel",
+    "EncoderModel", "DecoderModel", "TextModel", "VisionModel",
+    "AudioModel", "BaseModel", "Model",
+], key=len, reverse=True)
+
+
+def _model_family(name):
+    """Extract model family from a HF class name by stripping task suffixes.
+
+    E.g. 'LlamaForCausalLM' → 'Llama', 'Gemma3Model' → 'Gemma3'.
+    """
+    for suffix in _HF_SUFFIXES:
+        if name.endswith(suffix) and len(name) > len(suffix):
+            return name[:-len(suffix)]
+    return name
+
+
+def _classify_new_models(new_model_entries, existing_model_names):
+    """Split new model entries into new families vs new configurations.
+
+    Returns (new_families, new_configs) where each is a list of changelog entries.
+    A 'new family' is a model whose family name doesn't appear among existing models.
+    A 'new config' is a variant (e.g. ForCausalLM) of an already-present family.
+    """
+    existing_families = {_model_family(n) for n in existing_model_names}
+
+    # Deduplicate: a model can appear twice (eval + train); classify once per name
+    seen = set()
+    new_families = []
+    new_configs = []
+    for entry in sorted(new_model_entries, key=lambda x: x["name"]):
+        name = entry["name"]
+        if name in seen:
+            continue
+        seen.add(name)
+        family = _model_family(name)
+        if family in existing_families:
+            new_configs.append(entry)
+        else:
+            new_families.append(entry)
+            existing_families.add(family)  # subsequent variants of this family → config
+    return new_families, new_configs
+
+
+def format_changelog(changelog, sweep_dir, versions, corpus, pre_merge_names=None):
     """Format changelog entries into markdown."""
     lines = ["# Corpus Update Changelog\n"]
 
@@ -278,9 +335,41 @@ def format_changelog(changelog, sweep_dir, versions, corpus):
         lines.append("")
 
     if new_models:
-        lines.append(f"### New Models ({len(new_models)})")
-        for c in sorted(new_models, key=lambda x: x["name"]):
-            lines.append(f"- **{c['name']}** ({c['mode']}): {c['new_status']}")
+        # Classify into new families vs new configurations
+        existing_names = pre_merge_names or set()
+        new_families, new_configs = _classify_new_models(new_models, existing_names)
+
+        # Deduplicate: each model name listed once (eval entry preferred)
+        def _dedup(entries):
+            seen = set()
+            out = []
+            for c in sorted(entries, key=lambda x: (x["name"], x["mode"])):
+                if c["name"] not in seen:
+                    seen.add(c["name"])
+                    out.append(c)
+            return out
+
+        new_families_dedup = _dedup(new_families)
+        new_configs_dedup = _dedup(new_configs)
+
+        lines.append(f"### New Model Families ({len(new_families_dedup)})")
+        lines.append("Entirely new architectures not previously in the corpus.\n")
+        if new_families_dedup:
+            for c in new_families_dedup:
+                lines.append(f"- **{c['name']}** ({c['mode']}): {c['new_status']}")
+        else:
+            lines.append("_(none)_")
+        lines.append("")
+
+        lines.append(f"### New Configurations ({len(new_configs_dedup)})")
+        lines.append("Task-head variants (ForCausalLM, ForConditionalGeneration, etc.) "
+                      "of model families already in the corpus.\n")
+        if new_configs_dedup:
+            for c in new_configs_dedup:
+                family = _model_family(c["name"])
+                lines.append(f"- **{c['name']}** ({c['mode']}): {c['new_status']}  ← {family}")
+        else:
+            lines.append("_(none)_")
         lines.append("")
 
     return "\n".join(lines)
@@ -345,10 +434,10 @@ def main():
 
     # Merge
     print("\nMerging sweep results into corpus...")
-    corpus, changelog = update_corpus(corpus, identify_idx, explain_idx, versions)
+    corpus, changelog, pre_merge_names = update_corpus(corpus, identify_idx, explain_idx, versions)
 
     # Format changelog
-    changelog_text = format_changelog(changelog, str(sweep_dir), versions, corpus)
+    changelog_text = format_changelog(changelog, str(sweep_dir), versions, corpus, pre_merge_names)
 
     # Print summary
     status_changes = [c for c in changelog if c["type"] == "status_change"]
@@ -360,7 +449,10 @@ def main():
     print(f"    Regressions (full_graph→break): {len(regressions)}")
     print(f"    Fixes (break→full_graph): {len(fixes)}")
     print(f"    Other: {len(status_changes) - len(regressions) - len(fixes)}")
-    print(f"  New models: {len(new_models)}")
+    new_fam, new_cfg = _classify_new_models(new_models, pre_merge_names)
+    print(f"  New entries: {len(new_models)}")
+    print(f"    New model families: {len(new_fam)}")
+    print(f"    New configurations: {len(new_cfg)}")
 
     if args.dry_run:
         print("\n--- DRY RUN — no files written ---")
