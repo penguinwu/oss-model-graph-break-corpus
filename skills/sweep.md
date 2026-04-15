@@ -158,6 +158,18 @@ Report should include:
 
 Don't just dump numbers. Lead with what's **different** from last time.
 
+### Step 5: Update documentation and artifacts
+After the sweep is validated and results are final:
+- [ ] Update `results/v2.X.md` with current model counts, status breakdown, and changes
+- [ ] Update `corpus/summary.md` with refreshed stats
+- [ ] Update `README.md` model counts and results-at-a-glance section
+- [ ] Update `docs/error-models.md` if error models changed
+- [ ] Regenerate `docs/index.html` dashboard: `python3 tools/generate_index.py`
+- [ ] Commit all doc updates together
+- [ ] Verify actual git state (`git log origin/main..HEAD`) before reporting push counts
+
+This is NOT optional — stale docs erode trust in the corpus.
+
 ## 9. Interpreting Results (Reference)
 
 ### Status meanings
