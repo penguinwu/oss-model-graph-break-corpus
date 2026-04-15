@@ -61,6 +61,12 @@
     "timeout_tier": "large",
     "wall_time_s": 135.01
   },
+  "Gemma3nForConditionalGeneration": {
+    "discovered": "2026-04-15",
+    "phase_at_timeout": "compile",
+    "source": "hf",
+    "timeout_tier": "very_large"
+  },
   "GroundingDinoModel": {
     "discovered": "2026-04-01",
     "resolved_status": "graph_break",

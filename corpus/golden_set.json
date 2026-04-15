@@ -208,15 +208,6 @@
       }
     },
     {
-      "name": "BarkModel",
-      "eval": {
-        "status": "eager_error"
-      },
-      "train": {
-        "status": "eager_error"
-      }
-    },
-    {
       "name": "BarkSemanticModel",
       "eval": {
         "status": "full_graph"
@@ -952,33 +943,6 @@
       },
       "train": {
         "status": "full_graph"
-      }
-    },
-    {
-      "name": "EdgeTamModel",
-      "eval": {
-        "status": "create_error"
-      },
-      "train": {
-        "status": "create_error"
-      }
-    },
-    {
-      "name": "EdgeTamVideoModel",
-      "eval": {
-        "status": "eager_error"
-      },
-      "train": {
-        "status": "eager_error"
-      }
-    },
-    {
-      "name": "EdgeTamVisionModel",
-      "eval": {
-        "status": "create_error"
-      },
-      "train": {
-        "status": "create_error"
       }
     },
     {
@@ -3052,15 +3016,6 @@
       }
     },
     {
-      "name": "Qwen2_5OmniToken2WavModel",
-      "eval": {
-        "status": "eager_error"
-      },
-      "train": {
-        "status": "eager_error"
-      }
-    },
-    {
       "name": "Qwen2_5_VLModel",
       "eval": {
         "status": "full_graph"
@@ -3103,15 +3058,6 @@
       },
       "train": {
         "status": "graph_break"
-      }
-    },
-    {
-      "name": "Qwen3OmniMoeTalkerModel",
-      "eval": {
-        "status": "create_error"
-      },
-      "train": {
-        "status": "create_error"
       }
     },
     {
@@ -3331,15 +3277,6 @@
       }
     },
     {
-      "name": "Sam2VideoModel",
-      "eval": {
-        "status": "eager_error"
-      },
-      "train": {
-        "status": "eager_error"
-      }
-    },
-    {
       "name": "Sam2VisionModel",
       "eval": {
         "status": "full_graph"
@@ -3367,30 +3304,12 @@
       }
     },
     {
-      "name": "Sam3TrackerVideoModel",
-      "eval": {
-        "status": "eager_error"
-      },
-      "train": {
-        "status": "eager_error"
-      }
-    },
-    {
       "name": "Sam3ViTModel",
       "eval": {
         "status": "full_graph"
       },
       "train": {
         "status": "full_graph"
-      }
-    },
-    {
-      "name": "Sam3VideoModel",
-      "eval": {
-        "status": "eager_error"
-      },
-      "train": {
-        "status": "eager_error"
       }
     },
     {
@@ -4213,51 +4132,6 @@
       }
     },
     {
-      "name": "Gemma4AudioModel",
-      "eval": {
-        "status": "full_graph"
-      },
-      "train": {
-        "status": "full_graph"
-      }
-    },
-    {
-      "name": "Gemma4Model",
-      "eval": {
-        "status": "full_graph"
-      },
-      "train": {
-        "status": "full_graph"
-      }
-    },
-    {
-      "name": "Gemma4TextModel",
-      "eval": {
-        "status": "full_graph"
-      },
-      "train": {
-        "status": "full_graph"
-      }
-    },
-    {
-      "name": "Gemma4VisionModel",
-      "eval": {
-        "status": "full_graph"
-      },
-      "train": {
-        "status": "full_graph"
-      }
-    },
-    {
-      "name": "NomicBertModel",
-      "eval": {
-        "status": "full_graph"
-      },
-      "train": {
-        "status": "full_graph"
-      }
-    },
-    {
       "name": "AfmoeForCausalLM",
       "eval": {
         "status": "full_graph"
@@ -4516,15 +4390,6 @@
       },
       "train": {
         "status": "full_graph"
-      }
-    },
-    {
-      "name": "ClvpModelForConditionalGeneration",
-      "eval": {
-        "status": "eager_error"
-      },
-      "train": {
-        "status": "eager_error"
       }
     },
     {
@@ -5857,15 +5722,6 @@
       },
       "train": {
         "status": "graph_break"
-      }
-    },
-    {
-      "name": "PI0ForConditionalGeneration",
-      "eval": {
-        "status": "eager_error"
-      },
-      "train": {
-        "status": "eager_error"
       }
     },
     {

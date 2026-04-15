@@ -281,6 +281,38 @@ def check_dynamic_results(corpus, result):
                  f"{len(missing_true)} models missing dynamic_true" if not ok_true else "")
 
 
+def check_corpus_model_availability(corpus, result):
+    """Check that every corpus model exists in current enumerate_all().
+
+    Models can become orphans when transformers/diffusers versions change.
+    This catches them before they silently accumulate stale data.
+    """
+    sweep_dir = REPO_ROOT / "sweep"
+    if not (sweep_dir / "models.py").exists():
+        result.check("model_availability", True, "sweep/models.py not found, skipping")
+        return
+
+    try:
+        sys.path.insert(0, str(sweep_dir))
+        from models import enumerate_all
+        available = {s["name"] for s in enumerate_all()}
+    except Exception as e:
+        result.check("model_availability", True, f"enumerate_all() failed: {e}, skipping")
+        return
+    finally:
+        if str(sweep_dir) in sys.path:
+            sys.path.remove(str(sweep_dir))
+
+    corpus_names = {m["name"] for m in corpus["models"]}
+    orphans = sorted(corpus_names - available)
+
+    ok = len(orphans) == 0
+    result.check("model_availability", ok,
+                 f"{len(orphans)} corpus models not in current enumerate_all(): "
+                 f"{', '.join(orphans[:10])}" + (" ..." if len(orphans) > 10 else "")
+                 if not ok else "")
+
+
 # ─── Tool Output Checks ──────────────────────────────────────────────
 
 
@@ -381,6 +413,7 @@ def main():
     check_metadata_versions(corpus, result)
     check_error_field_consistency(corpus, result)
     check_dynamic_results(corpus, result)
+    check_corpus_model_availability(corpus, result)
 
     # Tool output checks
     if not args.skip_tools:
