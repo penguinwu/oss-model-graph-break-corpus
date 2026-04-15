@@ -1454,8 +1454,8 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
             "spatial_shapes": torch.tensor([[num_patches_h, num_patches_h]] * B, dtype=torch.long, device=device),
         }
 
-    # Video inference session models — need inference_session (stateful, not compilable)
-    # Skip: EdgeTamVideoModel, Sam2VideoModel, Sam3TrackerVideoModel, Sam3VideoModel
+    # PI0ForConditionalGeneration: skipped in models.py (image_token_id == vocab_size,
+    # can't reduce model and keep image token embedding valid). Keep base PI0Model handler below.
 
     # InstructBlip needs qformer_input_ids
     if "instructblip" in name_lower and "qformer_input_ids" not in inputs:

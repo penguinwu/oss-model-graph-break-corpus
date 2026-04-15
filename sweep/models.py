@@ -86,7 +86,11 @@ def enumerate_hf():
             "Qwen3OmniMoeCode2WavTransformerModel",         # Internal: does not accept input_ids
             "Qwen2_5OmniTalkerForConditionalGeneration",    # Internal: needs inputs_embeds from parent Thinker
             "Qwen2_5OmniToken2WavModel",                    # Requires batch_size=1, internal component
-            "PI0Model",             # Internal: requires action_embeds positional arg from PI0FCG
+            "Sam2VideoModel",       # Stateful: forward() requires inference_session with frame tracking state
+            "Sam3VideoModel",       # Stateful: forward() requires inference_session with frame tracking state
+            "Sam3TrackerVideoModel",# Stateful: forward() requires inference_session with frame tracking state
+            "EdgeTamVideoModel",    # Stateful: forward() requires inference_session with frame tracking state
+            "PI0ForConditionalGeneration",  # image_token_id (257152) == vocab_size; reduced model can't embed image tokens
         }
         if name in _SKIP_MODELS:
             continue
