@@ -41,9 +41,9 @@ SMOKE_MODELS = [
       "hf_config": "LongformerConfig"}, "graph_break"),
     ({"name": "T5Model", "source": "hf", "hf_class": "T5Model",
       "hf_config": "T5Config", "input_type": "seq2seq"}, "graph_break"),
-    # eager_error (1) — fails in eager forward
+    # graph_break (4th) — was eager_error, fixed upstream in transformers 5.4.0
     ({"name": "OlmoHybridModel", "source": "hf", "hf_class": "OlmoHybridModel",
-      "hf_config": "OlmoHybridConfig"}, "eager_error"),
+      "hf_config": "OlmoHybridConfig"}, "graph_break"),
     # create_error (1) — missing detectron2 dependency
     ({"name": "LayoutLMv2Model", "source": "hf", "hf_class": "LayoutLMv2Model",
       "hf_config": "LayoutLMv2Config"}, "create_error"),
@@ -62,13 +62,10 @@ def run_single_model(python_bin, spec, device):
         "--device", device,
         "--mode", "eval",
     ]
-    env = os.environ.copy()
-    env["CUDA_VISIBLE_DEVICES"] = "0"
-
     try:
         proc = subprocess.run(
             cmd, capture_output=True, text=True,
-            timeout=TIMEOUT_PER_MODEL, env=env,
+            timeout=TIMEOUT_PER_MODEL,
         )
         if proc.returncode != 0 and not proc.stdout.strip():
             return {"status": "worker_crash", "error": proc.stderr[-500:]}

@@ -1,6 +1,6 @@
 # OSS Model Compiler Quality Corpus
 
-A reusable corpus of **732 open-source models** (424 families) for measuring and improving `torch.compile` quality. Structured, reproducible, extensible.
+A reusable corpus of **716 open-source models** (424 families) for measuring and improving `torch.compile` quality. Structured, reproducible, extensible.
 
 The first application tracks `fullgraph=True` success rates across PyTorch versions. But the corpus is designed to extend to other compiler quality studies: dynamic shape behavior, recompilation patterns, graph break taxonomy, and fix validation.
 
@@ -8,7 +8,7 @@ The first application tracks `fullgraph=True` success rates across PyTorch versi
 
 Compiler developers working on `torch.compile`. Three workflows:
 
-1. **Find & fix graph breaks** — reproduce any break with one command, see root causes and fix hints, prioritize by impact across 732 models
+1. **Find & fix graph breaks** — reproduce any break with one command, see root causes and fix hints, prioritize by impact across 716 models
 2. **Prioritize work** — see which break categories affect the most models, track version-over-version progress, identify high-ROI fixes
 3. **Validate tools** — test graph break fix skills, compiler changes, or diagnostics against a known corpus of real-world breaks
 
@@ -16,13 +16,12 @@ Compiler developers working on `torch.compile`. Three workflows:
 
 |  | eval | train |
 |---|---|---|
-| **full\_graph** | 533 (73%) | 490 (67%) |
-| **graph\_break** | 171 (23%) | 219 (30%) |
-| **error** | 28 (4%) | 21 (3%) |
+| **full\_graph** | 521 (73%) | 478 (67%) |
+| **graph\_break** | 169 (24%) | 217 (30%) |
+| **error** | 26 (4%) | 21 (3%) |
 
-- **732 models** across 424 model families — base models, ForCausalLM, and ForConditionalGeneration
-- **696 models** (95.1%) work in both eval and train modes
-- **235 models** (32%) have graph breaks in at least one mode
+- **716 models** across model families — base models, ForCausalLM, and ForConditionalGeneration
+- **242 models** have graph breaks in at least one mode (including dynamic shapes)
 - All graph breaks come from HF Transformers; Diffusers models compile clean
 - ForConditionalGeneration has the highest break rate (~43%) — vision-text merge paths
 
@@ -37,7 +36,7 @@ Compiler developers working on `torch.compile`. Three workflows:
 
 Steady improvement across four releases. **Zero full\_graph→graph\_break regressions** in any release.
 
-The 2.10 expanded corpus (732 models) adds ForCausalLM and ForConditionalGeneration variants, testing the full model stack users actually compile.
+The 2.10 expanded corpus (716 models) adds ForCausalLM and ForConditionalGeneration variants, testing the full model stack users actually compile.
 
 Nightly tracking and per-version details: [`results/`](results/)
 
@@ -146,7 +145,7 @@ python3 tools/validate.py
 
 ### Corpus dashboard
 
-A browsable HTML dashboard of all 732 models is available at `docs/index.html`:
+A browsable HTML dashboard of all 716 models is available at `docs/index.html`:
 
 ```bash
 python3 tools/generate_index.py    # generates docs/index.html
@@ -202,7 +201,7 @@ Each variant is a separate entry in the corpus, so you can compare compile quali
 
 `corpus/corpus.json` — models with eval + train results across static and dynamic configurations. Each model includes status, compile time, error details. See `corpus/summary.md` for a human-readable overview.
 
-`corpus/golden_set.json` — 1,464 expected-status checks for regression detection. Run `python3 tools/validate.py` to verify the corpus matches the golden set.
+`corpus/golden_set.json` — 1,432 expected-status checks for regression detection. Run `python3 tools/validate.py` to verify the corpus matches the golden set.
 
 Sweep results by version: `sweep_results/{pt2.8,pt2.9,pt2.10,pt2.11}/` — JSONL checkpoints for identify and explain passes. See [`results/`](results/) for human-readable summaries and nightly tracking.
 
