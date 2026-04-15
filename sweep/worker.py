@@ -277,15 +277,30 @@ def _fix_config(model_name, config):
             nh = getattr(config, "num_attention_heads", 32)
             config.head_dim = hs // nh
 
-    # --- Ministral3Model: rope_theta is None ---
-    if name_lower == "ministral3model":
-        if getattr(config, "rope_theta", None) is None:
-            config.rope_theta = 10000.0
+    # --- Table-driven None config fixes ---
+    # Models where default config has None for required fields.
+    # Format: model_name → {attr: default_value}
+    _CONFIG_NONE_DEFAULTS = {
+        "ministral3model": {"rope_theta": 10000.0},
+        "nemotronmodel": {"partial_rotary_factor": 0.5},
+        "moonshinestreamingmodel": {},  # num_key_value_heads handled below
+        "pix2structtextmodel": {"initializer_range": 0.02},
+        "dots1model": {"hidden_size": 768, "n_routed_experts": 4,
+                       "n_shared_experts": 1, "num_experts_per_tok": 2},
+        "esmmodel": {"vocab_size": 33, "position_embedding_type": "absolute",
+                     "emb_layer_norm_before": False, "pad_token_id": 0},
+        "bayesiandetectormodel": {"watermarking_depth": 3},
+        "gptneoxmodel": {"rotary_pct": 0.25, "rotary_emb_base": 10000},
+        "deepseekv2model": {"num_experts_per_tok": 6, "n_group": 1, "topk_group": 1},
+        "lfm2moemodel": {"num_local_experts": 8, "num_experts_per_tok": 2},
+    }
+    defaults = _CONFIG_NONE_DEFAULTS.get(name_lower, {})
+    for attr, default in defaults.items():
+        if getattr(config, attr, None) is None:
+            setattr(config, attr, default)
 
-    # --- NemotronModel: partial_rotary_factor and num_key_value_heads are None ---
-    if name_lower == "nemotronmodel":
-        if getattr(config, "partial_rotary_factor", None) is None:
-            config.partial_rotary_factor = 0.5
+    # num_key_value_heads defaults to num_attention_heads for several models
+    if name_lower in ("nemotronmodel", "moonshinestreamingmodel"):
         if getattr(config, "num_key_value_heads", None) is None:
             config.num_key_value_heads = getattr(config, "num_attention_heads", 8)
 
@@ -298,65 +313,24 @@ def _fix_config(model_name, config):
             if pad is not None and pad >= vocab:
                 text_cfg.vocab_size = pad + 1
 
-    # --- MoonshineStreamingModel: missing num_key_value_heads ---
-    if name_lower == "moonshinestreamingmodel":
-        if not hasattr(config, "num_key_value_heads") or config.num_key_value_heads is None:
-            config.num_key_value_heads = getattr(config, "num_attention_heads", 8)
-
-    # --- Pix2StructTextModel: missing initializer_range ---
-    if name_lower == "pix2structtextmodel":
-        if not hasattr(config, "initializer_range"):
-            config.initializer_range = 0.02
-
     # --- Qwen3OmniMoeTalkerModel: missing pad_token_id + vocab_size + num_hidden_layers ---
     if name_lower in ("qwen3omnioetalkermodel", "qwen3omnimoetalkermodel"):
-        if not hasattr(config, "pad_token_id") or config.pad_token_id is None:
+        if getattr(config, "pad_token_id", None) is None:
             config.pad_token_id = 0
         text_cfg = getattr(config, "text_config", None)
         if text_cfg:
-            if not hasattr(config, "vocab_size") or getattr(config, "vocab_size", None) is None:
+            if getattr(config, "vocab_size", None) is None:
                 config.vocab_size = getattr(text_cfg, "vocab_size", 3072)
-            if not hasattr(config, "num_hidden_layers") or getattr(config, "num_hidden_layers", None) is None:
+            if getattr(config, "num_hidden_layers", None) is None:
                 config.num_hidden_layers = getattr(text_cfg, "num_hidden_layers", 20)
-
-    # --- Dots1Model: hidden_size, MoE expert counts are None ---
-    if name_lower == "dots1model":
-        if getattr(config, "hidden_size", None) is None:
-            config.hidden_size = 768
-        if getattr(config, "n_routed_experts", None) is None:
-            config.n_routed_experts = 4
-        if getattr(config, "n_shared_experts", None) is None:
-            config.n_shared_experts = 1
-        if getattr(config, "num_experts_per_tok", None) is None:
-            config.num_experts_per_tok = 2
-
-    # --- EsmModel: vocab_size + position_embedding_type + emb_layer_norm + pad_token_id ---
-    if name_lower == "esmmodel":
-        if getattr(config, "vocab_size", None) is None:
-            config.vocab_size = 33
-        if getattr(config, "position_embedding_type", None) is None:
-            config.position_embedding_type = "absolute"
-        if getattr(config, "emb_layer_norm_before", None) is None:
-            config.emb_layer_norm_before = False
-        if getattr(config, "pad_token_id", None) is None:
-            config.pad_token_id = 0
-
-    # --- BayesianDetectorModel: watermarking_depth is None ---
-    if name_lower == "bayesiandetectormodel":
-        if getattr(config, "watermarking_depth", None) is None:
-            config.watermarking_depth = 3
 
     # --- Blip2Model / InstructBlipModel / InstructBlipVideoModel: image_token_index is None ---
     if name_lower in ("blip2model", "instructblipmodel", "instructblipvideomodel"):
         if getattr(config, "image_token_index", None) is None:
             config.image_token_index = 2
-        # InstructBlipVideoModel.forward() references config.image_token_id (not mapped
-        # in attribute_map, which only has video_token_id → video_token_index).
-        # Set it directly so the model can find it.
         if name_lower == "instructblipvideomodel":
-            if not hasattr(config, "image_token_id") or getattr(config, "image_token_id", None) is None:
+            if getattr(config, "image_token_id", None) is None:
                 config.image_token_id = getattr(config, "image_token_index", 2)
-            # Also ensure video_token_index is set (used by ForConditionalGeneration)
             if getattr(config, "video_token_index", None) is None:
                 config.video_token_index = getattr(config, "image_token_index", 2)
 
@@ -364,39 +338,18 @@ def _fix_config(model_name, config):
     if name_lower == "ideficsmodel":
         config.use_resampler = True
 
-    # --- Lfm2MoeModel: layer_types + expert counts are None ---
+    # --- Lfm2MoeModel: layer_types needs "attention" entries ---
     if name_lower == "lfm2moemodel":
-        if getattr(config, "num_local_experts", None) is None:
-            config.num_local_experts = 8
-        if getattr(config, "num_experts_per_tok", None) is None:
-            config.num_experts_per_tok = 2
         num_layers = getattr(config, "num_hidden_layers", 2)
         if getattr(config, "layer_types", None) is None:
             config.layer_types = ["attention"] * num_layers
 
-    # --- DeepseekV2Model: num_experts_per_tok + n_group are None ---
-    if name_lower == "deepseekv2model":
-        if getattr(config, "num_experts_per_tok", None) is None:
-            config.num_experts_per_tok = 6
-        if getattr(config, "n_group", None) is None:
-            config.n_group = 1
-        if getattr(config, "topk_group", None) is None:
-            config.topk_group = 1
-
     # --- DeepseekV2: align moe_intermediate_size for grouped_mm stride constraint ---
     # grouped_mm requires strides to be multiples of 16 bytes (8 elements in bf16).
-    # Default moe_intermediate_size=1407 is not a multiple of 8 → stride error.
     if "deepseekv2" in name_lower:
         moe_is = getattr(config, "moe_intermediate_size", None)
         if moe_is is not None and moe_is % 8 != 0:
             config.moe_intermediate_size = ((moe_is + 7) // 8) * 8
-
-    # --- GPTNeoXModel: rotary_pct is None ---
-    if name_lower == "gptneoxmodel":
-        if getattr(config, "rotary_pct", None) is None:
-            config.rotary_pct = 0.25
-        if getattr(config, "rotary_emb_base", None) is None:
-            config.rotary_emb_base = 10000
 
     # --- Qwen VL family: mrope_section missing from rope_parameters ---
     # Models that use multi-resolution rotary position embeddings
@@ -1372,39 +1325,35 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
     name_lower = base_model_name.lower()
     model_type = getattr(config, "model_type", "")
 
-    # Sub-models that need hidden_states instead of/in addition to pixel_values
-    # These are internal vision encoders (Glm4v, GlmOcr, PaddleOCR, etc.)
-    #
-    # Glm vision models have a special input format: hidden_states/pixel_values are
-    # 2D tensors of FLATTENED PIXEL PATCHES, not transformer hidden states.
-    # Shape: (total_patches, in_channels * temporal_patch_size * patch_size * patch_size)
-    # where total_patches = sum(t*h*w for each row of grid_thw).
-    _glm_vision_models = {
-        "glm4vvisionmodel", "glm4vmoevisionmodel", "glmocrvisionmodel",
+    # ── Grid-THW flattened-patch vision models ──
+    # These vision encoders use pre-patchified 2D tensors + grid_thw, not standard (B,C,H,W).
+    # Shape: (total_patches, patch_dim) where patch_dim = channels * [temporal_ps *] ps * ps
+    # name → (input_key, include_temporal_patch_size)
+    _GRID_THW_PATCH_MODELS = {
+        "glm4vvisionmodel":       ("hidden_states", True),
+        "glm4vmoevisionmodel":    ("hidden_states", True),
+        "glmocrvisionmodel":      ("hidden_states", True),
+        "glmimagevisionmodel":    ("pixel_values", False),
+        "videollama3visionmodel": ("pixel_values", False),
     }
-    if name_lower in _glm_vision_models:
-        in_channels = getattr(config, "in_channels", 3)
-        temporal_patch_size = getattr(config, "temporal_patch_size", 2)
+    _grid_thw_spec = _GRID_THW_PATCH_MODELS.get(name_lower)
+    # Ernie vision transformer: same pattern, matched by substring
+    if _grid_thw_spec is None and "ernie4_5_vl" in name_lower and "visiontransformer" in name_lower:
+        _grid_thw_spec = ("hidden_states", False)
+    if _grid_thw_spec is not None:
+        _input_key, _use_temporal = _grid_thw_spec
+        in_channels = getattr(config, "in_channels", None) or getattr(config, "num_channels", 3)
         patch_size = getattr(config, "patch_size", 14)
-        patch_pixel_dim = in_channels * temporal_patch_size * patch_size * patch_size
+        temporal_ps = getattr(config, "temporal_patch_size", 2) if _use_temporal else 1
+        patch_dim = in_channels * temporal_ps * patch_size * patch_size
         grid_thw = torch.tensor([[1, 4, 8]] * B, dtype=torch.long, device=device)
         total_patches = int((grid_thw[:, 0] * grid_thw[:, 1] * grid_thw[:, 2]).sum().item())
         inputs = {
-            "hidden_states": torch.randn(total_patches, patch_pixel_dim, device=device),
+            _input_key: torch.randn(total_patches, patch_dim, device=device),
             "grid_thw": grid_thw,
         }
-
-    # GlmImageVisionModel: pixel_values are 2D flattened patches (no temporal dim)
-    if name_lower == "glmimagevisionmodel":
-        in_channels = getattr(config, "in_channels", 3)
-        patch_size = getattr(config, "patch_size", 16)
-        patch_pixel_dim = in_channels * patch_size * patch_size
-        grid_thw = torch.tensor([[1, 4, 8]] * B, dtype=torch.long, device=device)
-        total_patches = int((grid_thw[:, 0] * grid_thw[:, 1] * grid_thw[:, 2]).sum().item())
-        inputs = {
-            "pixel_values": torch.randn(total_patches, patch_pixel_dim, device=device),
-            "grid_thw": grid_thw,
-        }
+        if name_lower == "videollama3visionmodel":
+            inputs["merge_sizes"] = torch.tensor([1] * B, dtype=torch.long, device=device)
 
     # Non-Glm models that need hidden_states
     _other_hidden_states_models = {
@@ -1422,21 +1371,6 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
         inputs = {
             "hidden_states": torch.randn(B, seq_len, input_size, device=device),
             "mask": None,
-        }
-
-    # VideoLlama3VisionModel: pre-patchified pixel_values + grid_thw + merge_sizes
-    # pixel_values shape: (total_patches, num_channels * patch_size * patch_size)
-    # merge_sizes shape: (num_images_or_videos,) — scalar per image/video
-    if name_lower == "videollama3visionmodel":
-        num_channels = getattr(config, "num_channels", 3)
-        patch_size = getattr(config, "patch_size", 16)
-        patch_pixel_dim = num_channels * patch_size * patch_size
-        grid_thw = torch.tensor([[1, 4, 8]] * B, dtype=torch.long, device=device)
-        total_patches = int((grid_thw[:, 0] * grid_thw[:, 1] * grid_thw[:, 2]).sum().item())
-        inputs = {
-            "pixel_values": torch.randn(total_patches, patch_pixel_dim, device=device),
-            "grid_thw": grid_thw,
-            "merge_sizes": torch.tensor([1] * B, dtype=torch.long, device=device),
         }
 
     # Siglip2VisionModel needs pre-patchified pixel_values + pixel_attention_mask + spatial_shapes
@@ -1601,20 +1535,6 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
         visual_pos_dim = getattr(config, "visual_pos_dim", 4)
         inputs["visual_feats"] = torch.randn(B, num_visual, visual_feat_dim, device=device)
         inputs["visual_pos"] = torch.randn(B, num_visual, visual_pos_dim, device=device)
-
-    # HiggsAudioV2Model — needs audio_input_ids or input_ids
-    if name_lower == "higgsaudiov2model":
-        inputs = {
-            "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
-            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
-        }
-
-    # Phi4MultimodalModel needs input_ids explicitly
-    if name_lower == "phi4multimodalmodel":
-        inputs = {
-            "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
-            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
-        }
 
     # XmodModel needs set_default_language
     if name_lower == "xmodmodel":
@@ -1924,13 +1844,6 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
         inputs["pixel_values"] = torch.randn(B, 1, 3, img_size, img_size, device=device)
         inputs["pixel_attention_mask"] = torch.ones(B, 1, img_size, img_size, dtype=torch.long, device=device)
 
-    # ModernVBertModel: needs image features not pixel_values
-    if name_lower == "modernvbertmodel":
-        inputs = {
-            "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
-            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
-        }
-
     # Kosmos2Model: image_embeds + image_embeds_position_mask
     if name_lower == "kosmos2model":
         hidden_size = getattr(config, "hidden_size", 2048)
@@ -1959,20 +1872,6 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
             "input_ids": torch.randint(0, vocab_size, (1, 32), device=device),
             "attention_mask": torch.ones(1, 32, dtype=torch.long, device=device),
             "pixel_values": torch.randn(1, num_frames, 3, img_size, img_size, device=device),
-        }
-
-    # Qwen2_5OmniTalkerModel: mrope_section issue — text-only inputs
-    if name_lower == "qwen2_5omnitalkermodel":
-        inputs = {
-            "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
-            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
-        }
-
-    # PaddleOCRTextModel: mrope_section issue — text-only
-    if name_lower == "paddleocrtextmodel":
-        inputs = {
-            "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
-            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
         }
 
     # IdeficsModel: requires exactly one of pixel_values/image_encoder_embeddings/perceiver_embeddings
@@ -2016,13 +1915,6 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
             "image_grid_thw": image_grid_thw,
         }
 
-    # PaddleOCRVLModel: text-only inputs to avoid vision path NoneType
-    if name_lower == "paddleocrvlmodel":
-        inputs = {
-            "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
-            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
-        }
-
     # UVDocModel: needs proper image size for backbone
     if name_lower == "uvdocmodel":
         img_size = getattr(config, "image_size", 224)
@@ -2051,41 +1943,6 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
             img_size = img_size[0]
         num_channels = getattr(config, "num_channels", 3)
         inputs = {"pixel_values": torch.randn(B, num_channels, img_size, img_size, device=device)}
-
-    # LlavaNextVideoModel: text-only to avoid vision NoneType
-    if name_lower == "llavanextvideomodel":
-        inputs = {
-            "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
-            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
-        }
-
-    # LightOnOcrModel: text-only inputs
-    if name_lower == "lightonocrmodel":
-        inputs = {
-            "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
-            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
-        }
-
-    # GlmOcrModel: text-only inputs
-    if name_lower == "glmocrmodel":
-        inputs = {
-            "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
-            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
-        }
-
-    # GlmImageModel: text-only inputs to avoid vision NoneType
-    if name_lower == "glmimagemodel":
-        inputs = {
-            "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
-            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
-        }
-
-    # GlmImageTextModel: text-only (split_with_sizes mismatch is from vision path)
-    if name_lower == "glmimagetextmodel":
-        inputs = {
-            "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
-            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
-        }
 
     # Lfm2Model: architecture issue with conv ordering
     # Lfm2VlModel: shape mismatch in vision projection
@@ -2135,23 +1992,18 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
         inputs["token_type_ids"] = torch.zeros(B, inputs["input_ids"].shape[1],
                                                 dtype=torch.long, device=device)
 
-    # Qwen3_5Model: text-only, avoid NoneType.tolist in train
-    if name_lower == "qwen3_5model":
-        inputs = {
-            "input_ids": torch.randint(0, vocab_size, (B, 32), device=device),
-            "attention_mask": torch.ones(B, 32, dtype=torch.long, device=device),
-        }
-
     # ── VL/multimodal models: text-only to avoid NoneType iteration on image inputs ──
     _vl_text_only_models = {
         # NoneType.tolist from image_grid_thw
-        "qwen3vlmodel", "qwen3vlmoemodel", "qwen3_5moemodel",
+        "qwen3vlmodel", "qwen3vlmoemodel", "qwen3_5moemodel", "qwen3_5model",
         # NoneType not iterable from image_sizes/grid_thw
         "qwen2vlmodel", "qwen2_5_vlmodel", "llavamodel", "llavanextmodel",
+        "llavanextvideomodel",
         # FCG overrides provide proper vision inputs; base models need text-only
         "fastvlmmodel", "lfm2vlmodel", "llama4model",
         "mistral3model", "videollama3model",
         "glm46vmodel", "glm4vmodel", "glm4vmoemodel",
+        "glmimagemodel", "glmimagetextmodel", "glmocrmodel",
         # mat1/mat2 mismatch from vision projection — text-only avoids it
         "ernie4_5_vlmoemodel", "ernie4_5_vl_moemodel",
         # NoneType has no len
@@ -2172,6 +2024,12 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
         "perceptionlmmodel",
         # Qwen Omni "Thinker" = text decoder only (audio/vision handled by separate "Audio" model)
         "qwen2_5omnithinkermodel", "qwen3omnimoethinkermodel",
+        # mrope_section issue or vision path NoneType
+        "qwen2_5omnitalkermodel", "paddleocrtextmodel", "paddleocrvlmodel",
+        # Multimodal models that just need input_ids (no vision path)
+        "higgsaudiov2model", "phi4multimodalmodel", "modernvbertmodel",
+        # OCR/vision text-only to avoid NoneType
+        "lightonocrmodel",
     }
     if name_lower in _vl_text_only_models:
         text_cfg = getattr(config, "text_config", config)
@@ -2261,19 +2119,6 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
             "context_input_ids": torch.randint(0, vocab_size, (B * n_docs, 32), device=device),
             "context_attention_mask": torch.ones(B * n_docs, 32, dtype=torch.long, device=device),
             "doc_scores": torch.randn(B, n_docs, device=device),
-        }
-
-    # Ernie4_5_VLMoeVisionTransformerPretrainedModel: needs hidden_states + grid_thw
-    # Ernie's PatchEmbed is purely spatial (no temporal_patch_size) — unlike Glm4v/Qwen2VL.
-    if "ernie4_5_vl" in name_lower and "visiontransformer" in name_lower:
-        in_channels = getattr(config, "in_channels", 3)
-        patch_size = getattr(config, "patch_size", 14)
-        patch_pixel_dim = in_channels * patch_size * patch_size
-        grid_thw = torch.tensor([[1, 4, 8]] * B, dtype=torch.long, device=device)
-        total_patches = int((grid_thw[:, 0] * grid_thw[:, 1] * grid_thw[:, 2]).sum().item())
-        inputs = {
-            "hidden_states": torch.randn(total_patches, patch_pixel_dim, device=device),
-            "grid_thw": grid_thw,
         }
 
     if name_lower == "glmmoedsamodel":
