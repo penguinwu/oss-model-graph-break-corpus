@@ -170,6 +170,16 @@ After the sweep is validated and results are final:
 
 This is NOT optional — stale docs erode trust in the corpus.
 
+### Step 6: Reflect on error signals
+Before closing a sweep cycle, review the error patterns collectively:
+- [ ] What do the errors tell us as a group? Are there common root causes?
+- [ ] Are there consolidation opportunities in the model-specific handlers? (e.g., 12 similar blocks → 1 table)
+- [ ] Did we add any code that smells like brute force / special-casing? Refactor it.
+- [ ] Are there hygiene cleanups needed? (deduplication, stale entries, dead code)
+- [ ] What would prevent these errors in the next sweep? (better defaults, smarter input generation)
+
+**Anti-pattern:** fixing models one-by-one without stopping to see the bigger picture. Speed without reflection turns into brute force. Long sessions without checkpoints lead to rabbit holes.
+
 ## 9. Interpreting Results (Reference)
 
 ### Status meanings
