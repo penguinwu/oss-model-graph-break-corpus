@@ -90,7 +90,10 @@ def enumerate_hf():
             "Sam3VideoModel",       # Stateful: forward() requires inference_session with frame tracking state
             "Sam3TrackerVideoModel",# Stateful: forward() requires inference_session with frame tracking state
             "EdgeTamVideoModel",    # Stateful: forward() requires inference_session with frame tracking state
+            "EdgeTamModel",         # Requires timm/repvit_m1.dist_in1k download, blocked on devvm (564s timeout)
+            "EdgeTamVisionModel",   # Same timm dependency as EdgeTamModel
             "PI0ForConditionalGeneration",  # image_token_id (257152) == vocab_size; reduced model can't embed image tokens
+            "ClvpModelForConditionalGeneration",  # CUDA assert: decoder embedding index out of range from speech encoder token coupling
         }
         if name in _SKIP_MODELS:
             continue

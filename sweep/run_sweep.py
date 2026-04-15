@@ -744,18 +744,49 @@ def run_sweep(args):
             resume_from = load_checkpoint(identify_ckpt)
             print(f"Loaded {len(resume_from)} completed results from checkpoint")
 
+        # Models that fail under multiworker GPU contention but pass serially.
+        # Run these single-worker from the start to avoid wasted first attempts.
+        _SINGLE_WORKER_MODELS = {
+            "Qwen3_5Model", "Qwen3_5TextModel", "Qwen3_5ForCausalLM",
+            "Qwen3_5ForConditionalGeneration",
+            "Qwen3_5MoeModel", "Qwen3_5MoeTextModel", "Qwen3_5MoeForCausalLM",
+            "Qwen3_5MoeForConditionalGeneration",
+            "Qwen3NextModel", "Qwen3NextForCausalLM",
+            "OlmoHybridModel", "OlmoHybridForCausalLM",
+        }
+
+        multi_specs = [s for s in specs if s["name"] not in _SINGLE_WORKER_MODELS]
+        single_specs = [s for s in specs if s["name"] in _SINGLE_WORKER_MODELS]
+
         print(f"{'=' * 70}")
         print(f"IDENTIFY: Graph breaks (fullgraph=True) — {len(specs)} models × {len(identify_modes)} modes ({identify_modes})")
+        if single_specs:
+            print(f"  {len(multi_specs)} multi-worker, {len(single_specs)} single-worker (flaky under contention)")
         print(f"{'=' * 70}")
 
         identify_start = time.perf_counter()
         identify_results = run_pass(
-            python_bin, specs, pass_num=1, device=args.device, modes=identify_modes,
+            python_bin, multi_specs, pass_num=1, device=args.device, modes=identify_modes,
             workers=args.workers, timeout_s=args.timeout,
             checkpoint_file=identify_ckpt, resume_from=resume_from,
             dynamic=args.dynamic, timeout_overrides=timeout_overrides,
             skip_models=skip_models,
         )
+
+        # Run single-worker models serially to avoid GPU contention flakiness
+        if single_specs:
+            print(f"\n{'─' * 70}")
+            print(f"SINGLE-WORKER: {len(single_specs)} models (flaky under multiworker)")
+            print(f"{'─' * 70}")
+            single_results = run_pass(
+                python_bin, single_specs, pass_num=1, device=args.device, modes=identify_modes,
+                workers=1, timeout_s=args.timeout,
+                checkpoint_file=identify_ckpt, resume_from=resume_from,
+                dynamic=args.dynamic, timeout_overrides=timeout_overrides,
+                skip_models=skip_models,
+            )
+            identify_results.extend(single_results)
+
         identify_time = time.perf_counter() - identify_start
 
         # Save identify results (full JSON for analysis)

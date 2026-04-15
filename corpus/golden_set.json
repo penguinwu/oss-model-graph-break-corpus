@@ -1,8 +1,7 @@
 {
-  "_comment": "Golden set: ~20 manually verified models covering all status types and sources. Used by tools/validate.py for regression testing.",
   "models": [
     {
-      "name": "BertModel",
+      "name": "ASTModel",
       "eval": {
         "status": "full_graph"
       },
@@ -11,7 +10,7 @@
       }
     },
     {
-      "name": "LlamaModel",
+      "name": "AfmoeModel",
       "eval": {
         "status": "full_graph"
       },
@@ -20,7 +19,7 @@
       }
     },
     {
-      "name": "GPT2Model",
+      "name": "Aimv2Model",
       "eval": {
         "status": "full_graph"
       },
@@ -29,7 +28,7 @@
       }
     },
     {
-      "name": "ViTModel",
+      "name": "Aimv2TextModel",
       "eval": {
         "status": "full_graph"
       },
@@ -38,99 +37,7 @@
       }
     },
     {
-      "name": "AutoencoderKL",
-      "eval": {
-        "status": "full_graph"
-      },
-      "train": {
-        "status": "full_graph"
-      }
-    },
-    {
-      "name": "BartModel",
-      "eval": {
-        "status": "graph_break"
-      },
-      "train": {
-        "status": "graph_break"
-      }
-    },
-    {
-      "name": "T5Model",
-      "eval": {
-        "status": "graph_break"
-      },
-      "train": {
-        "status": "graph_break"
-      }
-    },
-    {
-      "name": "WhisperModel",
-      "eval": {
-        "status": "graph_break"
-      },
-      "train": {
-        "status": "graph_break"
-      }
-    },
-    {
-      "name": "AriaModel",
-      "eval": {
-        "status": "graph_break",
-        "expected_break_reason": "Unsupported context manager"
-      },
-      "train": {
-        "status": "graph_break",
-        "expected_break_reason": "Unsupported context manager"
-      }
-    },
-    {
-      "name": "FalconMambaModel",
-      "eval": {
-        "status": "full_graph"
-      },
-      "train": {
-        "status": "full_graph"
-      }
-    },
-    {
-      "name": "BioGptModel",
-      "eval": {
-        "status": "full_graph"
-      },
-      "train": {
-        "status": "graph_break"
-      }
-    },
-    {
-      "name": "BarkModel",
-      "eval": {
-        "status": "eager_error"
-      },
-      "train": {
-        "status": "eager_error"
-      }
-    },
-    {
-      "name": "ClvpModel",
-      "eval": {
-        "status": "create_error"
-      },
-      "train": {
-        "status": "create_error"
-      }
-    },
-    {
-      "name": "EdgeTamModel",
-      "eval": {
-        "status": "create_error"
-      },
-      "train": {
-        "status": "create_error"
-      }
-    },
-    {
-      "name": "BrosModel",
+      "name": "Aimv2VisionModel",
       "eval": {
         "status": "full_graph"
       },
@@ -148,7 +55,7 @@
       }
     },
     {
-      "name": "RobertaModel",
+      "name": "AlignModel",
       "eval": {
         "status": "full_graph"
       },
@@ -157,7 +64,934 @@
       }
     },
     {
-      "name": "XLNetModel",
+      "name": "AlignTextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "AlignVisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "AltCLIPModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "AltCLIPTextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "AltCLIPVisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ApertusModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ArceeModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "AriaModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "AriaTextModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "AutoencoderKL",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "AutoencoderTiny",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "AutoformerModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "AyaVisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "BambaModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "BarkCoarseModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "BarkFineModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "BarkModel",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "BarkSemanticModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "BartModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "BayesianDetectorModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "BeitModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "BertModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "BigBirdModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "BigBirdPegasusModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "BioGptModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "BitModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "BitNetModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "BlenderbotModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "BlenderbotSmallModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Blip2Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Blip2VisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "BlipModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "BlipTextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "BlipVisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "BloomModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "BltModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "BridgeTowerModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "BrosModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "CLIPModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "CLIPSegModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "CLIPSegTextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "CLIPSegVisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "CLIPTextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "CLIPVisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "CTRLModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "CamembertModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "CanineModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ChameleonModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ChineseCLIPModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ChineseCLIPTextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ChineseCLIPVisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ClapAudioModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ClapModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ClapTextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ClvpModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "CodeGenModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Cohere2Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Cohere2VisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "CohereAsrModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "CohereModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ConditionalDetrModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "ConvBertModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ConvNextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ConvNextV2Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "CpmAntModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "CsmDepthDecoderModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "CvtModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "CwmModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "DFineModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "DINOv3ConvNextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "DINOv3ViTModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "DPTModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "DabDetrModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "DacModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Data2VecAudioModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Data2VecTextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Data2VecVisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "DbrxModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "DebertaModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "DebertaV2Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "DecisionTransformerModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "DeepseekV2Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "DeepseekV3Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "DeepseekVLHybridModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "DeepseekVLModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "DeformableDetrModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "DeiTModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "DepthProModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "DetrModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "DiTTransformer2DModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "DiaModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "DiffLlamaModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "DinatModel",
+      "eval": {
+        "status": "create_error"
+      },
+      "train": {
+        "status": "create_error"
+      }
+    },
+    {
+      "name": "Dinov2Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Dinov2WithRegistersModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "DistilBertModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "DogeModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "DonutSwinModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Dots1Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "EdgeTamModel",
+      "eval": {
+        "status": "create_error"
+      },
+      "train": {
+        "status": "create_error"
+      }
+    },
+    {
+      "name": "EdgeTamVideoModel",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "EdgeTamVisionModel",
+      "eval": {
+        "status": "create_error"
+      },
+      "train": {
+        "status": "create_error"
+      }
+    },
+    {
+      "name": "EfficientLoFTRModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "EfficientNetModel",
       "eval": {
         "status": "full_graph"
       },
@@ -175,7 +1009,5578 @@
       }
     },
     {
-      "name": "DebertaV2Model",
+      "name": "Emu3Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Emu3TextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "EncodecModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "EncoderDecoderModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Ernie4_5Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Ernie4_5_MoeModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Ernie4_5_VLMoeModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Ernie4_5_VLMoeTextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Ernie4_5_VL_MoeModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Ernie4_5_VL_MoeTextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ErnieModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "EsmModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "EuroBertModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "EvollaModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Exaone4Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ExaoneMoeModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "FNetModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "FSMTModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "FalconH1Model",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "FalconMambaModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "FalconModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "FastSpeech2ConformerModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "FastVlmModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "FlaubertModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "FlavaImageModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "FlavaModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "FlavaMultimodalModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "FlavaTextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "FlexOlmoModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Florence2Model",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "FocalNetModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "FunnelModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "FuyuModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GLPNModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GPT2Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GPTBigCodeModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GPTJModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GPTNeoModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GPTNeoXJapaneseModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GPTNeoXModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Gemma2Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Gemma3Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Gemma3TextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Gemma3nModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Gemma3nTextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GemmaModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GitModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GitVisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Glm46VModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Glm4Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Glm4MoeLiteModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Glm4MoeModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Glm4vModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Glm4vMoeModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Glm4vMoeTextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Glm4vMoeVisionModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Glm4vTextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Glm4vVisionModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "GlmImageModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GlmImageTextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GlmImageVisionModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "GlmModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GlmMoeDsaModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GlmOcrModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GlmOcrTextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GlmOcrVisionModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "GotOcr2Model",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "GptOssModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GraniteModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GraniteMoeHybridModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "GraniteMoeModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GraniteMoeSharedModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GroundingDinoModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "GroupViTModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GroupViTTextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GroupViTVisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "HeliumModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "HieraModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "HiggsAudioV2Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "HubertModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "HunYuanDenseV1Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "HunYuanMoEV1Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "IBertModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "IJepaModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Idefics2Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Idefics3Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "IdeficsModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ImageGPTModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "InformerModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "InstructBlipModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "InstructBlipVideoModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "InstructBlipVideoVisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "InstructBlipVisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "InternVLModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "InternVLVisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Jais2Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "JambaModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "JanusModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "JanusVisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "JetMoeModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "JinaEmbeddingsV3Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Kosmos2Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Kosmos2_5Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "KyutaiSpeechToTextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "LEDModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "LayoutLMModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "LayoutLMv2Model",
+      "eval": {
+        "status": "create_error"
+      },
+      "train": {
+        "status": "create_error"
+      }
+    },
+    {
+      "name": "LayoutLMv3Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "LevitModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Lfm2Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Lfm2MoeModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Lfm2VlModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "LightOnOcrModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "LiltModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Llama4TextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Llama4VisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "LlamaModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "LlavaModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "LlavaNextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "LlavaNextVideoModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "LlavaOnevisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "LongT5Model",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "LongcatFlashModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "LongformerModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "LukeModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "LwDetrModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "LxmertModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "M2M100Model",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "MBartModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "MLCDVisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MMGroundingDinoModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "MPNetModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MT5Model",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Mamba2Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MambaModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MarianModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "MarkupLMModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MegatronBertModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MetaClip2Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MetaClip2TextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MetaClip2VisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MgpstrModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MimiModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "MiniMaxM2Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MiniMaxModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Ministral3Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MinistralModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Mistral3Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Mistral4Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MistralModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MixtralModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MllamaModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MobileBertModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MobileNetV1Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MobileNetV2Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MobileViTModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MobileViTV2Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ModernBertDecoderModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ModernBertModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ModernVBertModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MoonshineModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "MoonshineStreamingModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "MoshiModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MptModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MraModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "MusicgenMelodyModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "MusicgenModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "MvpModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "NanoChatModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "NemotronHModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "NemotronModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "NllbMoeModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "NystromformerModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "OPTModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Olmo2Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Olmo3Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "OlmoHybridModel",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "OlmoModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "OlmoeModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "OpenAIGPTModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Ovis2Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "OwlViTModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "OwlViTTextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "OwlViTVisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Owlv2Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Owlv2TextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Owlv2VisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "PI0Model",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "PLBartModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "PPDocLayoutV2Model",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "PPDocLayoutV3Model",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "PPOCRV5MobileDetModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "PPOCRV5MobileRecModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "PPOCRV5ServerDetModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "PPOCRV5ServerRecModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "PaddleOCRTextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "PaddleOCRVLModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "PaddleOCRVisionModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "PaliGemmaModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "PatchTSMixerModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "PatchTSTModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "PeAudioModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "PeAudioVideoModel",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "PeVideoModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "PegasusModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "PegasusXModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "PerceiverModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "PerceptionLMModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "PersimmonModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Phi3Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Phi4MultimodalAudioModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Phi4MultimodalModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Phi4MultimodalVisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "PhiModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "PhimoeModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Pix2StructTextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Pix2StructVisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "PixioModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "PixtralVisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ProphetNetModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "PvtModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "PvtV2Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Qwen2Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Qwen2MoeModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Qwen2VLModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Qwen2VLTextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Qwen2_5OmniTalkerModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Qwen2_5OmniToken2WavModel",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "Qwen2_5_VLModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Qwen2_5_VLTextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Qwen3Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Qwen3MoeModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Qwen3NextModel",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Qwen3OmniMoeTalkerModel",
+      "eval": {
+        "status": "create_error"
+      },
+      "train": {
+        "status": "create_error"
+      }
+    },
+    {
+      "name": "Qwen3VLModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Qwen3VLMoeModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Qwen3VLMoeTextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Qwen3VLTextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Qwen3_5Model",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Qwen3_5MoeModel",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Qwen3_5MoeTextModel",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Qwen3_5TextModel",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "RTDetrModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "RTDetrV2Model",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "RagModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "RecurrentGemmaModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "ReformerModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "RegNetModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "RemBertModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ResNetModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "RoCBertModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "RobertaModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "RobertaPreLayerNormModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "RwkvModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "timeout"
+      }
+    },
+    {
+      "name": "SEWDModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "SEWModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Sam2HieraDetModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Sam2Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Sam2VideoModel",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "Sam2VisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Sam3Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "worker_error"
+      }
+    },
+    {
+      "name": "Sam3TrackerModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "worker_error"
+      }
+    },
+    {
+      "name": "Sam3TrackerVideoModel",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "Sam3ViTModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Sam3VideoModel",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "Sam3VisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "SamHQModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "SamHQVisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "SamModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "SamVisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "SeamlessM4TModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "SeamlessM4Tv2Model",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "SeedOssModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "SegGptModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "SegformerModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Siglip2Model",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Siglip2TextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Siglip2VisionModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "SiglipModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "SiglipTextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "SiglipVisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "SmolLM3Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "SmolVLMModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "SolarOpenModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Speech2TextModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "SpeechEncoderDecoderModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "SpeechT5Model",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "SplinterModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "SqueezeBertModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "StableLmModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Starcoder2Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Swin2SRModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "SwinModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Swinv2Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "SwitchTransformersModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "T5Gemma2Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "T5GemmaModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "T5Model",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "TableTransformerModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "TapasModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "TextNetModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "TimeSeriesTransformerModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "TimesFm2_5Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "TimesFmModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "TimesformerModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "TimmWrapperModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "TvpModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "UMT5Model",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "UNet2DConditionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "UNet2DModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "UVDocModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "UdopModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "UniSpeechModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "UniSpeechSatModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "UnivNetModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "VJEPA2Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "VaultGemmaModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ViTMAEModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ViTMSNModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ViTModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "VibeVoiceAcousticTokenizerDecoderModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "VibeVoiceAcousticTokenizerEncoderModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "VibeVoiceAcousticTokenizerModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "VideoLlama3Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "VideoLlama3VisionModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "VideoLlavaModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "VideoMAEModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ViltModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "VipLlavaModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "VisionEncoderDecoderModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "VisionTextDualEncoderModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "VisualBertModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "VitDetModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "VitsModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "VivitModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Wav2Vec2BertModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Wav2Vec2ConformerModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Wav2Vec2Model",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "WavLMModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "WhisperModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "XCLIPModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "XCLIPTextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "XCLIPVisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "XGLMModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "XLMModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "XLMRobertaModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "XLMRobertaXLModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "XLNetModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "XcodecModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "XmodModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "YolosModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "YosoModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "YoutuModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Zamba2Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "ZambaModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "create_error"
+      }
+    },
+    {
+      "name": "xLSTMModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Gemma4AudioModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Gemma4Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Gemma4TextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Gemma4VisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "NomicBertModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "AfmoeForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ApertusForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ArceeForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "AriaForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "AriaTextForCausalLM",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "AudioFlamingo3ForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "AyaVisionForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "BambaForCausalLM",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "BartForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "BartForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "BertLMHeadModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "BigBirdForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "BigBirdPegasusForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "BigBirdPegasusForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "BioGptForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "BitNetForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "BlenderbotForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "BlenderbotForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "BlenderbotSmallForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "BlenderbotSmallForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Blip2ForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "BlipForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "BlipTextLMHeadModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "BloomForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "BltForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "CTRLLMHeadModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "CamembertForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ChameleonForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ClvpForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ClvpModelForConditionalGeneration",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "CodeGenForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Cohere2ForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Cohere2VisionForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "CohereAsrForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "CohereForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "CpmAntForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "CsmBackboneModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "CsmDepthDecoderForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "CsmForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "CwmForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Data2VecTextForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "DbrxForCausalLM",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "DecisionTransformerGPT2Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "DeepseekV2ForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "DeepseekV3ForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "DeepseekVLForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "DeepseekVLHybridForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "DiaForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "DiffLlamaForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "DogeForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Dots1ForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ElectraForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Emu3ForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Emu3ForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Ernie4_5ForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Ernie4_5_MoeForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Ernie4_5_VLMoeForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Ernie4_5_VL_MoeForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "ErnieForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Exaone4ForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ExaoneMoeForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "FSMTForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "FalconForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "FalconH1ForCausalLM",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "FalconMambaForCausalLM",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "FastVlmForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "FlaubertWithLMHeadModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "FlexOlmoForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Florence2ForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "FunnelBaseModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "FuyuForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GPT2DoubleHeadsModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GPT2LMHeadModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GPTBigCodeForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GPTJForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GPTNeoForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GPTNeoXForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GPTNeoXJapaneseForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Gemma2ForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Gemma3ForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Gemma3ForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Gemma3nForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Gemma3nForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "GemmaForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GitForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Glm46VForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Glm4ForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Glm4MoeForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Glm4MoeLiteForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Glm4vForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Glm4vMoeForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "GlmAsrForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GlmForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GlmImageForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GlmMoeDsaForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GlmOcrForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "GotOcr2ForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "GptOssForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GraniteForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GraniteMoeForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GraniteMoeHybridForCausalLM",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "GraniteMoeSharedForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GraniteSpeechForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "HeliumForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "HiggsAudioV2ForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "HunYuanDenseV1ForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "HunYuanMoEV1ForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Idefics2ForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Idefics3ForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "InstructBlipForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "InstructBlipVideoForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "InternVLForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Jais2ForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "JambaForCausalLM",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "JanusForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "JetMoeForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Kosmos2ForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Kosmos2_5ForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "KyutaiSpeechToTextForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "LEDForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Lfm2ForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Lfm2MoeForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Lfm2VlForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "LightOnOcrForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Llama4ForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Llama4ForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "LlamaForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "LlavaForConditionalGeneration",
+      "eval": {
+        "status": "create_error"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "LlavaNextForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "LlavaNextVideoForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "LlavaOnevisionForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "LongT5EncoderModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "LongT5ForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "LongcatFlashForCausalLM",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "M2M100ForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "MBartForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "MBartForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "MT5EncoderModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MT5ForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Mamba2ForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MambaForCausalLM",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MarianForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "MarianMTModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "MegatronBertForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MiniMaxForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MiniMaxM2ForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Ministral3ForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MinistralForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Mistral3ForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Mistral4ForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MistralForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MixtralForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MllamaForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ModernBertDecoderForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MoonshineForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "MoonshineStreamingForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "MoshiForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MoshiForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MptForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "MusicgenForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "MusicgenForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "MusicgenMelodyForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "MusicgenMelodyForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "MvpForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "MvpForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "NanoChatForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "NemotronForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "NemotronHForCausalLM",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "NllbMoeForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "OPTForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Olmo2ForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Olmo3ForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "OlmoForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "OlmoHybridForCausalLM",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "OlmoeForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "OpenAIGPTDoubleHeadsModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "OpenAIGPTLMHeadModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Ovis2ForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "PI0ForConditionalGeneration",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "PLBartForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "PLBartForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "PaddleOCRVLForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "PaliGemmaForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "PeAudioFrameLevelModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "PegasusForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "PegasusForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "PegasusXForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "PerceptionLMForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "PersimmonForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Phi3ForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Phi4MultimodalForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "PhiForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "PhimoeForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Pix2StructForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Pop2PianoForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "ProphetNetForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "ProphetNetForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Qwen2AudioForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Qwen2ForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Qwen2MoeForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Qwen2VLForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Qwen2_5OmniThinkerForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Qwen2_5_VLForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Qwen3ForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Qwen3MoeForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Qwen3NextForCausalLM",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Qwen3OmniMoeThinkerForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Qwen3VLForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Qwen3VLMoeForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Qwen3_5ForCausalLM",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Qwen3_5ForConditionalGeneration",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Qwen3_5MoeForCausalLM",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "Qwen3_5MoeForConditionalGeneration",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "RecurrentGemmaForCausalLM",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "RemBertForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "RoCBertForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "RoFormerForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "RobertaForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "RobertaPreLayerNormForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "RwkvForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "timeout"
+      }
+    },
+    {
+      "name": "SeamlessM4TTextToUnitForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "SeamlessM4TTextToUnitModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "SeedOssForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "SmolLM3ForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "SmolVLMForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "SolarOpenForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Speech2TextForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "StableLmForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Starcoder2ForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "SwitchTransformersEncoderModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "SwitchTransformersForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "T5EncoderModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "T5ForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "T5Gemma2ForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "T5GemmaForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "TrOCRForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "UMT5EncoderModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "UMT5ForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "UdopEncoderModel",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "UdopForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "VaultGemmaForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "VibeVoiceAsrForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "VideoLlama3ForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "VideoLlavaForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "VipLlavaForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "VoxtralForConditionalGeneration",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "VoxtralRealtimeForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "WhisperForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "WhisperForConditionalGeneration",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "XGLMForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "graph_break"
+      }
+    },
+    {
+      "name": "XLMRobertaForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "XLMRobertaXLForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "XLMWithLMHeadModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "XLNetLMHeadModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "XmodForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "YoutuForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Zamba2ForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "ZambaForCausalLM",
+      "eval": {
+        "status": "graph_break"
+      },
+      "train": {
+        "status": "create_error"
+      }
+    },
+    {
+      "name": "xLSTMForCausalLM",
       "eval": {
         "status": "full_graph"
       },
