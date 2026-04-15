@@ -2,11 +2,10 @@
 """Feedback Space Monitor — triage new messages from the GChat feedback space.
 
 Reads new messages from the Graph Break Corpus Feedback space, classifies
-them, creates Meta Tasks for actionable items, and responds in-thread.
+them, and logs to audit. The cron prompt handles responses directly.
 
-This script is designed to be called by a MyClaw cron job. It handles the
-mechanical plumbing (message reading, state tracking, dedup) so the cron
-prompt only needs to handle classification and response generation.
+No Task creation, no Rocky delegation — Otter handles everything end-to-end.
+GitHub issues are the single source of truth for tracking.
 
 Usage:
     # Check for new messages since last run
@@ -15,7 +14,7 @@ Usage:
     # Check messages from the last N hours (override last-check state)
     python3 tools/feedback_monitor.py --since 4h
 
-    # Dry run — classify but don't create Tasks or respond
+    # Dry run — classify but don't update state
     python3 tools/feedback_monitor.py --dry-run
 
     # Show audit log
@@ -32,10 +31,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FEEDBACK_SPACE = "spaces/AAQABmB_3Is"
-ROCKY_SPACE = "spaces/AAQA_65oV7k"  # Rocky's DM space for validation delegation
 STATE_FILE = REPO_ROOT / ".feedback_monitor_state.json"
 AUDIT_LOG = REPO_ROOT / ".feedback_monitor_audit.jsonl"
-TASK_TAG = "graph-break-corpus"
 
 # Message IDs to skip (pinned template, bot messages)
 SKIP_MESSAGE_IDS = set()
@@ -66,10 +63,6 @@ AGENT_PREFIXES = (
 # Catches any agent posting as --as-user regardless of specific prefix list.
 import re
 AGENT_PREFIX_PATTERN = re.compile(r"^\[[\w🦦🐯🪶 ]+\]:")
-
-# Categories that need Rocky's independent validation before corpus changes
-NEEDS_VALIDATION = {"bug", "data_correction"}
-
 
 def _run(cmd, check=True):
     """Run a shell command, return stdout."""
@@ -153,66 +146,6 @@ def read_new_messages(since=None):
     return messages
 
 
-def check_duplicate_tasks(title_keywords):
-    """Check if a similar Task already exists with the graph-break-corpus tag.
-
-    Returns the Task number if a duplicate is found, None otherwise.
-    """
-    cmd = f'meta tasks.task list --tags={TASK_TAG} --is-open --output=json 2>/dev/null'
-    output = _run(cmd, check=False)
-    if not output:
-        return None
-
-    try:
-        tasks = json.loads(output)
-        for task in tasks:
-            task_title = task.get("title", "").lower()
-            if any(kw.lower() in task_title for kw in title_keywords):
-                return task.get("number")
-    except (json.JSONDecodeError, TypeError):
-        pass
-    return None
-
-
-def create_task(title, description, category, gchat_msg_id):
-    """Create a Meta Task for an actionable feedback item.
-
-    Returns the Task number if successful, None otherwise.
-    """
-    tag_map = {
-        "bug": "bug",
-        "feature": "feature",
-        "data_correction": "data",
-    }
-    tag = tag_map.get(category, category)
-    full_tag = f"{TASK_TAG},{tag}"
-
-    # Include link to originating GChat message
-    desc_with_link = f"{description}\n\nSource: GChat feedback space ({gchat_msg_id})"
-
-    cmd = (
-        f'meta tasks.task create '
-        f'--title="{title}" '
-        f'--description="{desc_with_link}" '
-        f'--add-tag={full_tag} '
-        f'--output=json 2>/dev/null'
-    )
-    output = _run(cmd, check=False)
-    if not output:
-        return None
-
-    try:
-        result = json.loads(output)
-        return result.get("number") or result.get("id")
-    except (json.JSONDecodeError, TypeError):
-        # Try to extract task number from non-JSON output
-        if output and "T" in output:
-            for word in output.split():
-                if word.startswith("T") and word[1:].isdigit():
-                    return word
-    return None
-
-
 def respond_in_thread(msg_id, response_text):
     """Reply in the same GChat thread as the original message."""
     # Message ID format: spaces/X/messages/Y.Z
@@ -244,40 +177,6 @@ def respond_in_thread(msg_id, response_text):
         return result.returncode == 0
     finally:
         os.unlink(tmp_path)
-
-
-def delegate_to_rocky(task_num, category, msg_text, msg_id):
-    """Send Rocky a validation request via DM for bugs and data corrections.
-
-    Otter is the single face in the feedback space. Rocky validates
-    behind the scenes and reports findings back via DM.
-    """
-    category_label = {
-        "bug": "Bug report",
-        "data_correction": "Data correction",
-    }.get(category, category)
-
-    delegation_msg = (
-        f"🔍 *Validation request — {category_label} (T{task_num})*\n\n"
-        f"A user reported this in the Graph Break Corpus Feedback space. "
-        f"I've created a Task and acknowledged in-thread. "
-        f"Can you independently validate?\n\n"
-        f"*Report:*\n{msg_text[:500]}\n\n"
-        f"*What I need:*\n"
-        f"• Reproduce the issue (if applicable)\n"
-        f"• Run validate.py to check corpus integrity\n"
-        f"• Check if golden set is affected\n"
-        f"• Report your findings back here\n\n"
-        f"Repo: ~/projects/oss-model-graph-break-corpus/\n"
-        f"Source message: {msg_id}"
-    )
-
-    cmd = f'gchat send {ROCKY_SPACE} --quiet'
-    result = subprocess.run(
-        cmd, shell=True, input=delegation_msg,
-        capture_output=True, text=True, timeout=30
-    )
-    return result.returncode == 0
 
 
 def classify_message(text):
@@ -442,89 +341,17 @@ def main():
             state["processed_messages"].append(msg["id"])
             continue
 
-        if classification == "question":
-            # Questions are answered directly — no Task created
-            # The cron prompt handles generating the answer
-            audit_log({
-                "message_id": msg["id"],
-                "sender": msg["sender"],
-                "classification": "question",
-                "action": "needs_answer",
-                "reasoning": "Question detected — needs LLM-generated answer",
-                "text_preview": msg["text"][:200],
-            })
-            state["processed_messages"].append(msg["id"])
-            continue
-
-        # Bug, feature, or data_correction — check for duplicates and create Task
-        title_keywords = [w for w in msg["text"].split()[:10] if len(w) > 3]
-        dup_task = check_duplicate_tasks(title_keywords)
-
-        if dup_task:
-            # Respond with link to existing task
-            response = (
-                f"Thanks for the report! This looks related to an existing item: "
-                f"T{dup_task}. I'll add your context there."
-            )
-            respond_in_thread(msg["id"], response)
-            audit_log({
-                "message_id": msg["id"],
-                "sender": msg["sender"],
-                "classification": classification,
-                "action": f"duplicate_of_T{dup_task}",
-                "reasoning": "Matched existing open Task by keywords",
-            })
-        else:
-            # Create a new Task
-            title_text = msg["text"][:80].replace('"', "'").replace("\n", " ")
-            task_title = f"[{classification}] {title_text}"
-            task_num = create_task(
-                task_title,
-                msg["text"][:500],
-                classification,
-                msg["id"],
-            )
-
-            if task_num:
-                category_label = {
-                    "bug": "Bug report",
-                    "feature": "Feature request",
-                    "data_correction": "Data correction",
-                }.get(classification, classification)
-
-                response = (
-                    f"Got it — logged as {category_label} (T{task_num}). "
-                    f"I'll investigate and follow up here."
-                )
-                respond_in_thread(msg["id"], response)
-
-                # Delegate to Rocky for independent validation (bugs & data corrections)
-                if classification in NEEDS_VALIDATION:
-                    delegated = delegate_to_rocky(
-                        task_num, classification, msg["text"], msg["id"]
-                    )
-                    delegation_status = "delegated_to_rocky" if delegated else "delegation_failed"
-                else:
-                    delegation_status = "no_delegation_needed"
-
-                audit_log({
-                    "message_id": msg["id"],
-                    "sender": msg["sender"],
-                    "classification": classification,
-                    "action": f"created_T{task_num}",
-                    "delegation": delegation_status,
-                    "reasoning": "New actionable item — Task created",
-                })
-            else:
-                audit_log({
-                    "message_id": msg["id"],
-                    "sender": msg["sender"],
-                    "classification": classification,
-                    "action": "task_creation_failed",
-                    "reasoning": "meta tasks.task create returned no Task number",
-                    "text_preview": msg["text"][:200],
-                })
-
+        # All actionable messages (question, bug, feature, data_correction)
+        # are logged for the cron prompt to handle directly.
+        # No Task creation — GitHub issues are the source of truth.
+        action = "needs_answer" if classification == "question" else "needs_action"
+        audit_log({
+            "message_id": msg["id"],
+            "sender": msg["sender"],
+            "classification": classification,
+            "action": action,
+            "text_preview": msg["text"][:200],
+        })
         state["processed_messages"].append(msg["id"])
 
     state["last_check_epoch"] = time.time()
