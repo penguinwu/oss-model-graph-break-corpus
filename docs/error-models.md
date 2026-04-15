@@ -9,7 +9,7 @@ sweep (v2.12).
 | Category | Count | Models |
 |----------|-------|--------|
 | Skipped pre-sweep (models.py) | 14 | See [Pre-Sweep Skip List](#pre-sweep-skip-list) |
-| Eager errors (unfixable) | 6 | See [Eager Errors](#eager-errors) |
+| Eager errors | 3 | See [Eager Errors](#eager-errors) |
 | Transient failures | 10 | See [Transient Failures](#transient-failures) |
 | Missing dependencies | 3 | See [Missing Dependencies](#missing-dependencies) |
 | Environment issues | 4 | See [Environment Issues](#environment-issues) |
@@ -75,7 +75,8 @@ These represent genuine model issues, not compilation problems.
 
 | Model | Error | Root Cause |
 |-------|-------|------------|
-| ClvpModelForConditionalGeneration | CUDA assert: embedding index out of range | Decoder `vocab_size=8194` after `_reduce_model_size()` causes embedding overflow. The CLVP architecture has unusual vocab coupling between encoder/decoder that breaks under size reduction. |
+| ClvpModelForConditionalGeneration | `You have to specify either input_ids or inputs_embeds` | CLVP FCG needs specialized inputs (text + speech + conditioning). Generic input handler doesn't provide the right combination. Fixable with a custom handler. |
+| PI0Model | `'NoneType' object has no attribute 'get_seq_length'` | PI0 is a VLM (PaliGemma + DiT) that requires `pixel_values` for vision backbone. Without images, `past_key_values` is None. Fixable with custom handler but model is very large (257K vocab). |
 | PeAudioVideoModel | `KeyError: None` in ModernBERT | Internal ModernBERT component generates a `None` key during `forward()`. Bug in the HF implementation — not related to our input generation. |
 
 ## Transient Failures
