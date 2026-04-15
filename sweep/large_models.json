@@ -149,6 +149,20 @@
     "source": "hf",
     "timeout_tier": "very_large"
   },
+  "T5Gemma2ForConditionalGeneration": {
+    "discovered": "2026-04-14",
+    "resolved_status": "full_graph",
+    "source": "hf",
+    "timeout_tier": "large",
+    "wall_time_s": 110.06
+  },
+  "T5Gemma2Model": {
+    "discovered": "2026-04-14",
+    "resolved_status": "full_graph",
+    "source": "hf",
+    "timeout_tier": "large",
+    "wall_time_s": 100.02
+  },
   "ZambaForCausalLM": {
     "discovered": "2026-04-14",
     "resolved_status": "eager_error",

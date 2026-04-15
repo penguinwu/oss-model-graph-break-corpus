@@ -880,6 +880,82 @@ def run_sweep(args):
             for status, count in sorted(by_status.items()):
                 print(f"  {status}: {count}")
 
+        # ── Auto-retry: re-run error models serially to distinguish real from transient ──
+        error_results = [r for r in identify_results
+                         if r.get("status") in ("eager_error", "create_error", "worker_error")]
+        if error_results and not args.no_auto_retry:
+            error_names = {r["name"] for r in error_results}
+            retry_error_specs = [s for s in specs if s["name"] in error_names]
+
+            print(f"\n{'─' * 70}")
+            print(f"AUTO-RETRY ERRORS: {len(retry_error_specs)} error models, "
+                  f"serial (1 worker) to rule out GPU contention")
+            print(f"{'─' * 70}")
+
+            retry_err_start = time.perf_counter()
+            retry_err_results = run_pass(
+                python_bin, retry_error_specs, pass_num=1, device=args.device,
+                modes=identify_modes,
+                workers=1,  # serial — no GPU contention
+                timeout_s=args.timeout,
+                checkpoint_file=None,
+                dynamic=args.dynamic, timeout_overrides=timeout_overrides,
+                skip_models=skip_models,
+            )
+            retry_err_time = time.perf_counter() - retry_err_start
+
+            # Classify retry outcomes
+            flaky = []
+            confirmed = []
+            for r in retry_err_results:
+                orig = next((o for o in error_results
+                             if o["name"] == r["name"] and o.get("mode") == r.get("mode")), None)
+                if orig and r.get("status") not in ("eager_error", "create_error", "worker_error"):
+                    flaky.append(r)
+                    r["retry_note"] = f"flaky: was {orig['status']}, now {r['status']}"
+                else:
+                    confirmed.append(r)
+                    r["retry_note"] = "confirmed_error"
+
+            print(f"\nError retry complete: {retry_err_time:.1f}s")
+            print(f"  Flaky (passed on retry): {len(flaky)}")
+            for r in flaky:
+                print(f"    {r['name']} {r.get('mode','?')}: now {r['status']}")
+            print(f"  Confirmed errors: {len(confirmed)}")
+
+            # Replace error results with retry results in identify_results
+            retry_err_index = {(r["name"], r.get("mode", "eval")): r for r in retry_err_results}
+            for i, r in enumerate(identify_results):
+                key = (r["name"], r.get("mode", "eval"))
+                if key in retry_err_index:
+                    identify_results[i] = retry_err_index[key]
+
+            # Update checkpoint with retry results
+            if os.path.exists(identify_ckpt):
+                all_completed = {}
+                for r in identify_results:
+                    key = (r["name"], r.get("mode", "eval"))
+                    all_completed[key] = r
+                with open(identify_ckpt, "w") as f:
+                    for r in all_completed.values():
+                        f.write(json.dumps(r) + "\n")
+
+            # Re-save identify results
+            identify_output["results"] = identify_results
+            identify_output["metadata"]["error_retry_count"] = len(retry_error_specs)
+            identify_output["metadata"]["error_retry_flaky"] = len(flaky)
+            identify_output["metadata"]["error_retry_confirmed"] = len(confirmed)
+            with open(identify_file, "w") as f:
+                json.dump(identify_output, f, indent=2)
+
+            # Recompute status summary
+            by_status = {}
+            for r in identify_results:
+                by_status[r.get("status", "unknown")] = by_status.get(r.get("status", "unknown"), 0) + 1
+            print(f"\nUpdated identify summary (after error retry):")
+            for status, count in sorted(by_status.items()):
+                print(f"  {status}: {count}")
+
         # Identify broken models for explain pass
         explain_names = set()
         for r in identify_results:
