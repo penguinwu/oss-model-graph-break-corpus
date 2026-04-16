@@ -132,6 +132,12 @@ def run_graph_break_analysis(model, inputs, mode="eval"):
     ctx = torch.no_grad() if mode == "eval" else contextlib.nullcontext()
     start = time.perf_counter()
 
+    # Match fullgraph=True behavior: capture item() and dynamic output shape ops
+    # instead of graph-breaking on them. Without this, the explain pass reports
+    # item() as a graph break, but fullgraph=True captures it (via tx.one_graph).
+    torch._dynamo.config.capture_scalar_outputs = True
+    torch._dynamo.config.capture_dynamic_output_shape_ops = True
+
     try:
         compiled = torch.compile(model, backend=_counting_backend)
         with ctx:

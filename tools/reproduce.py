@@ -173,6 +173,11 @@ def main():
             trace_dir = tempfile.mkdtemp(prefix="graph_break_trace_")
             os.environ["TORCH_TRACE"] = trace_dir
 
+        # Match fullgraph=True behavior: capture item() and dynamic output shape
+        # ops instead of graph-breaking on them (see torch/_dynamo/variables/tensor.py).
+        torch._dynamo.config.capture_scalar_outputs = True
+        torch._dynamo.config.capture_dynamic_output_shape_ops = True
+
         try:
             compiled = torch.compile(model, backend=_counting_backend,
                                      dynamic=compile_dynamic)
