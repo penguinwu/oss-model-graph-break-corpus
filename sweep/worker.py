@@ -1055,7 +1055,6 @@ def _reduce_model_size(config):
 def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
     import transformers
 
-    config_name = spec.get("hf_config") or spec["name"].replace("Model", "Config")
     model_name = spec.get("hf_class") or spec["name"]
 
     # For ForCausalLM / ForConditionalGeneration variants, derive the base model
@@ -1069,6 +1068,8 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
     else:
         base_model_name = model_name
 
+    # Derive config from spec if available, otherwise from base model name
+    config_name = spec.get("hf_config") or base_model_name.replace("Model", "Config")
     config_cls = getattr(transformers, config_name)
     model_cls = getattr(transformers, model_name)
 
@@ -2993,6 +2994,8 @@ def run_identify(spec, device, mode, dynamic=False):
         "dynamic": dynamic,
         "phase": "create",  # tracks current phase for timeout diagnosis
     }
+    if spec.get("variant"):
+        result["variant"] = spec["variant"]
 
     # Phase markers to stderr — orchestrator reads these on timeout
     print("PHASE:create", file=sys.stderr, flush=True)

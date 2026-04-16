@@ -1110,9 +1110,16 @@ def run_explain(args):
             seen.add(r["name"])
             spec = {"name": r["name"], "source": r["source"]}
             for k in ["hf_class", "hf_config", "input_type",
-                       "constructor_args", "inputs"]:
+                       "constructor_args", "inputs", "variant"]:
                 if k in r:
                     spec[k] = r[k]
+            # Derive variant from name if not in identify results (older sweeps)
+            if "variant" not in spec and r["source"] == "hf":
+                name = r["name"]
+                if name.endswith("ForCausalLM"):
+                    spec["variant"] = "causal_lm"
+                elif name.endswith("ForConditionalGeneration"):
+                    spec["variant"] = "conditional_generation"
             specs.append(spec)
     print(f"Loaded {len(specs)} broken models from {args.file}")
 
