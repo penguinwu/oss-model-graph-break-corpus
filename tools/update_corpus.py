@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
 """Merge sweep results into corpus.json with changelog generation.
 
-Two modes:
+Three modes:
     Overlay (default) — partial sweep results merged on top of existing corpus.
         Models not in the sweep keep their existing entries.
         Version and timestamp safety checks prevent accidental cross-version merges.
+        Requires identify_results.json.
 
     Replace (--replace) — full sweep results become the complete corpus.
         Models not in the sweep are dropped.
-        Requires versions.json so the corpus records which versions it was built from.
+        Requires identify_results.json with metadata.versions.
+
+    Explain-only (auto) — when only explain_results.json exists (no identify).
+        Overlays break_reasons, graph counts onto existing corpus entries.
+        No version/timestamp checks (not changing model status).
+        Does not add or remove models.
 
 Usage:
     # Overlay: merge partial sweep into corpus
@@ -17,15 +23,21 @@ Usage:
     # Replace: full sweep becomes the new corpus
     python tools/update_corpus.py sweep_results/pt2.10/ --replace
 
+    # Explain-only: merge just explain data (auto-detected)
+    python tools/update_corpus.py sweep_results/pt2.12_explain/
+
     # Dry run — show what would change without writing
     python tools/update_corpus.py sweep_results/pt2.10/ --dry-run
 
     # Skip validation after update
     python tools/update_corpus.py sweep_results/pt2.10/ --no-validate
 
-The sweep directory should contain:
+For overlay/replace, the sweep directory should contain:
     - identify_results.json (required — must include metadata.versions)
     - explain_results.json (optional — merges break_reasons, graph counts)
+
+For explain-only, the directory needs only:
+    - explain_results.json
 
 Version info is read from identify_results.json metadata.versions (embedded
 by run_sweep.py at sweep time). No separate versions.json needed.
@@ -464,6 +476,61 @@ def format_changelog(changelog, sweep_dir, versions, corpus, pre_merge_names=Non
     return "\n".join(lines)
 
 
+def update_corpus_explain_only(corpus, explain_idx):
+    """Overlay explain data onto existing corpus entries.
+
+    Unlike update_corpus(), this does NOT touch identify fields, add/remove models,
+    or update version metadata. It only fills in break_reasons, graph counts for
+    existing graph_break entries.
+
+    Returns (updated_corpus, changelog, health).
+    """
+    changelog = []
+    models_by_name = {m["name"]: m for m in corpus["models"]}
+
+    updated_count = 0
+    skipped_not_found = []
+
+    for (name, mode), explain_result in explain_idx.items():
+        if name not in models_by_name:
+            skipped_not_found.append((name, mode))
+            continue
+
+        model = models_by_name[name]
+        mode_data = model.get(mode, {})
+
+        if not mode_data:
+            skipped_not_found.append((name, mode))
+            continue
+
+        merge_explain_into_mode(mode_data, explain_result)
+        updated_count += 1
+        changelog.append({
+            "type": "explain_updated",
+            "name": name,
+            "mode": mode,
+        })
+
+    # Recompute summary (graph counts may have changed)
+    corpus["summary"] = compute_summary(corpus["models"])
+
+    # Health: remaining missing explain
+    missing_explain = []
+    for m in corpus["models"]:
+        for mode_key in ("eval", "train"):
+            md = m.get(mode_key, {})
+            if md.get("status") == "graph_break" and not md.get("break_reasons"):
+                missing_explain.append((m["name"], mode_key))
+
+    health = {}
+    if missing_explain:
+        health["missing_explain"] = missing_explain
+    if skipped_not_found:
+        health["explain_skipped_not_in_corpus"] = skipped_not_found
+
+    return corpus, changelog, health
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Merge sweep results into corpus.json",
@@ -489,10 +556,100 @@ def main():
     sweep_dir = Path(args.sweep_dir)
     corpus_path = Path(args.corpus).resolve()
 
-    # Load identify results (required)
     identify_path = sweep_dir / "identify_results.json"
+    explain_path = sweep_dir / "explain_results.json"
+
+    # Detect mode: explain-only when no identify_results.json
+    explain_only = not identify_path.exists() and explain_path.exists()
+
+    if explain_only:
+        if args.replace:
+            print("ERROR: --replace requires identify_results.json", file=sys.stderr)
+            sys.exit(1)
+
+        print(f"Mode: EXPLAIN-ONLY (no identify_results.json found)")
+        print(f"Loading explain results from {explain_path}")
+        explain_results = load_sweep_results(explain_path)
+        explain_idx = index_by_name_mode(explain_results)
+        explain_models = set(name for name, mode in explain_idx)
+        print(f"  {len(explain_results)} results ({len(explain_models)} models)")
+
+        # Load corpus
+        print(f"\nLoading corpus from {corpus_path}")
+        with open(corpus_path) as f:
+            corpus = json.load(f)
+        print(f"  {len(corpus['models'])} models")
+
+        # Merge explain only
+        print("\nOverlaying explain data onto corpus...")
+        corpus, changelog, health = update_corpus_explain_only(corpus, explain_idx)
+
+        # Print summary
+        updated = [c for c in changelog if c["type"] == "explain_updated"]
+        updated_models = set(c["name"] for c in updated)
+        print(f"  Updated: {len(updated)} entries ({len(updated_models)} models)")
+
+        skipped = health.get("explain_skipped_not_in_corpus", [])
+        if skipped:
+            skipped_models = set(name for name, mode in skipped)
+            print(f"  Skipped: {len(skipped_models)} models not in corpus")
+
+        missing = health.get("missing_explain", [])
+        if missing:
+            missing_names = sorted(set(name for name, mode in missing))
+            print(f"\n  ⚠ Still missing explain data: {len(missing_names)} graph_break models")
+
+        if args.dry_run:
+            print("\n--- DRY RUN — no files written ---")
+            return
+
+        # Write
+        print(f"\nWriting corpus to {corpus_path}")
+        with open(corpus_path, "w") as f:
+            json.dump(corpus, f, indent=2)
+            f.write("\n")
+
+        changelog_path = Path(args.changelog) if args.changelog else sweep_dir / "changelog.md"
+        print(f"Writing changelog to {changelog_path}")
+        lines = [
+            "# Explain-Only Merge Changelog\n",
+            f"**Date:** {time.strftime('%Y-%m-%d %H:%M')}",
+            f"**Source:** `{sweep_dir}`",
+            f"**Models updated:** {len(updated_models)}",
+            f"**Entries updated:** {len(updated)}",
+            "",
+        ]
+        if missing:
+            missing_names = sorted(set(name for name, mode in missing))
+            lines.append(f"## Still Missing Explain Data ({len(missing_names)} models)\n")
+            for name in missing_names:
+                modes = [mode for n, mode in missing if n == name]
+                lines.append(f"- **{name}** ({', '.join(modes)})")
+        with open(changelog_path, "w") as f:
+            f.write("\n".join(lines) + "\n")
+
+        # Validate
+        if not args.no_validate:
+            print("\nRunning validate.py...")
+            validate_path = Path(__file__).parent / "validate.py"
+            result = subprocess.run(
+                [sys.executable, str(validate_path), "--skip-tools"],
+                capture_output=True, text=True,
+            )
+            print(result.stdout)
+            if result.returncode != 0:
+                print(result.stderr)
+                print("WARNING: Validation failed! Review the corpus changes.")
+                sys.exit(1)
+
+        print("Done.")
+        return
+
+    # --- Full merge (identify + optional explain) ---
+
     if not identify_path.exists():
         print(f"ERROR: {identify_path} not found", file=sys.stderr)
+        print(f"  Expected identify_results.json or explain_results.json in {sweep_dir}")
         sys.exit(1)
 
     print(f"Loading identify results from {identify_path}")
@@ -504,7 +661,6 @@ def main():
     print(f"  {len(identify_results)} results ({len(set(r['name'] for r in identify_results))} models)")
 
     # Load explain results (optional)
-    explain_path = sweep_dir / "explain_results.json"
     explain_idx = {}
     if explain_path.exists():
         print(f"Loading explain results from {explain_path}")
