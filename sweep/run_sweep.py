@@ -3,42 +3,40 @@
 
 Manages subprocess workers, parallel execution, timeouts, and result merging.
 
-Resilience features:
-  - Checkpoint: each result written to JSONL immediately on completion
-  - Resume: --resume skips already-completed (name, mode) pairs
-  - Batched submission: processes work items in batches to limit memory
-  - SIGTERM handler: flushes checkpoint on graceful shutdown
-  - Two-tier timeout: models that timeout are auto-retried with extended
-    timeout and added to large_models.json for future runs
-
-Optimizations:
-  - Identify pass runs eval-only by default (fast identification)
-  - Explain pass runs both eval+train on broken models only
-  - 16 parallel workers (A100 has headroom)
-  - --source all auto-excludes unconfigured diffusers models
-  - Known large models get extended timeout upfront (no wasted short attempt)
+Subcommands:
+  sweep       Identify + explain sweep (default)
+  explain     Explain-only from prior identify results
+  validate    Two-shape correctness check
 
 Usage:
-  # Full sweep (auto-resumes from checkpoint if exists)
-  python run_sweep.py --device cuda --python /path/to/your/venv/bin/python
+  # Full sweep (activate venv first, or set SWEEP_PYTHON)
+  python run_sweep.py sweep
 
-  # Explicit resume after crash
-  python run_sweep.py --resume --device cuda --python /path/to/your/venv/bin/python
+  # Incremental: skip stable models
+  python run_sweep.py sweep --skip-stable
 
-  # Explain pass only (from prior identify results)
-  python run_sweep.py --explain-from results_identify.json --device cuda
+  # Source-specific sweep
+  python run_sweep.py sweep --source timm hf
 
-  # Custom model list
-  python run_sweep.py --models models.json --device cuda
+  # Resume after crash
+  python run_sweep.py sweep --resume
 
-  # Two-shape validation on clean models from a prior sweep
-  python run_sweep.py --validate-from sweep_results/identify_results.json --device cuda
+  # Explain pass only
+  python run_sweep.py explain sweep_results/identify_results.json
+
+  # Two-shape validation
+  python run_sweep.py validate --from sweep_results/identify_results.json
+
+  # Smoke test
+  python run_sweep.py sweep --selftest
+
+  # Pre-sweep version check
+  python run_sweep.py sweep --check-env
 """
 import argparse
 import json
 import os
 import signal
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -50,6 +48,7 @@ from pathlib import Path
 SWEEP_DIR = Path(__file__).resolve().parent
 WORKER_SCRIPT = SWEEP_DIR / "worker.py"
 CUSTOM_WORKER_SCRIPT = SWEEP_DIR.parent / "corpora" / "custom-models" / "worker.py"
+CORPUS_FILE = SWEEP_DIR.parent / "corpus" / "corpus.json"
 DEFAULT_OUTPUT_DIR = SWEEP_DIR.parent / "sweep_results"
 LARGE_MODELS_FILE = SWEEP_DIR / "large_models.json"
 
@@ -61,6 +60,43 @@ def load_large_models(path=None):
         with open(path) as f:
             return json.load(f)
     return {}
+
+
+def load_corpus_stability(corpus_path=None):
+    """Load corpus and classify models as stable or unstable.
+
+    Stable = full_graph in ALL modes (eval, train) and all dynamic variants.
+    Unstable = everything else (graph_break, error, or missing data).
+
+    Returns (stable_names: set, unstable_names: set).
+    """
+    corpus_path = corpus_path or CORPUS_FILE
+    if not os.path.exists(corpus_path):
+        return set(), set()
+    with open(corpus_path) as f:
+        corpus = json.load(f)
+    stable = set()
+    unstable = set()
+    for m in corpus.get("models", []):
+        name = m["name"]
+        is_stable = True
+        for mode in ("eval", "train"):
+            md = m.get(mode, {})
+            if md.get("status") != "full_graph":
+                is_stable = False
+                break
+            for dyn in ("dynamic_mark", "dynamic_true"):
+                dm = md.get(dyn, {})
+                if dm and dm.get("status") != "full_graph":
+                    is_stable = False
+                    break
+            if not is_stable:
+                break
+        if is_stable:
+            stable.add(name)
+        else:
+            unstable.add(name)
+    return stable, unstable
 
 
 def save_large_models(registry, path=None):
@@ -132,7 +168,7 @@ class WorkerHandle:
 
 
 def spawn_worker(python_bin, spec, pass_num, device, mode, timeout_s,
-                 trace_dir=None, dynamic=False):
+                 dynamic=False):
     """Spawn a worker subprocess in its own process group.
 
     Uses temp files for stdout/stderr to avoid pipe buffer deadlocks.
@@ -140,11 +176,6 @@ def spawn_worker(python_bin, spec, pass_num, device, mode, timeout_s,
     """
     env = os.environ.copy()
     env["CUDA_VISIBLE_DEVICES"] = "0"
-
-    if trace_dir:
-        model_trace_dir = os.path.join(trace_dir, f"{spec['name']}_{mode}")
-        os.makedirs(model_trace_dir, exist_ok=True)
-        env["TORCH_TRACE"] = model_trace_dir
 
     worker_script = CUSTOM_WORKER_SCRIPT if spec.get("source") == "custom" else WORKER_SCRIPT
     cmd = [
@@ -320,7 +351,7 @@ def load_checkpoint(checkpoint_file):
 
 
 def run_pass(python_bin, specs, pass_num, device, modes, workers, timeout_s,
-             trace_dir=None, checkpoint_file=None, resume_from=None, dynamic=False,
+             checkpoint_file=None, resume_from=None, dynamic=False,
              timeout_overrides=None, skip_models=None):
     """Run a full pass using a non-blocking poll loop with process group isolation.
 
@@ -473,7 +504,7 @@ def run_pass(python_bin, specs, pass_num, device, modes, workers, timeout_s,
                 try:
                     handle = spawn_worker(
                         python_bin, spec, pass_num, device, mode,
-                        model_timeout, trace_dir, dynamic
+                        model_timeout, dynamic
                     )
                     active[handle.proc.pid] = handle
                 except Exception as e:
@@ -553,7 +584,10 @@ def _print_progress(completed, total, result):
 
 
 def _log_versions(python_bin, output_dir):
-    """Log PyTorch, transformers, and diffusers versions at sweep start."""
+    """Detect PyTorch, transformers, and diffusers versions.
+
+    Returns a dict with version info, embedded into results metadata by the caller.
+    """
     script = (
         "import json, sys; d = {}; "
         "import torch; d['torch'] = torch.__version__; d['torch_git'] = torch.version.git_version; "
@@ -572,9 +606,6 @@ def _log_versions(python_bin, output_dir):
             print(f"Environment: torch={versions.get('torch')}, "
                   f"transformers={versions.get('transformers')}, "
                   f"diffusers={versions.get('diffusers')}")
-            version_file = output_dir / "versions.json"
-            with open(version_file, "w") as f:
-                json.dump(versions, f, indent=2)
             return versions
         else:
             print(f"WARNING: Could not detect library versions: {result.stderr.strip()}")
@@ -585,7 +616,7 @@ def _log_versions(python_bin, output_dir):
 
 def run_sweep(args):
     """Main sweep logic."""
-    python_bin = args.python or sys.executable
+    python_bin = _resolve_python(args)
     output_dir = Path(args.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -630,96 +661,69 @@ def run_sweep(args):
             print(f"ERROR: File not found: {args.models}")
             sys.exit(1)
         print(f"Loaded {len(specs)} models from {args.models}")
-    elif args.explain_from:
-        # Load identify results and filter to graph_break models
-        try:
-            with open(args.explain_from) as f:
-                identify_data = json.load(f)
-        except json.JSONDecodeError as e:
-            print(f"ERROR: Invalid JSON in {args.explain_from}: {e}")
-            sys.exit(1)
-        except FileNotFoundError:
-            print(f"ERROR: File not found: {args.explain_from}")
-            sys.exit(1)
-        identify_results = identify_data if isinstance(identify_data, list) else identify_data.get("results", [])
-        explain_names = set()
-        for r in identify_results:
-            if r.get("status") == "graph_break":
-                explain_names.add(r["name"])
-        # Rebuild specs from identify results
-        specs = []
-        seen = set()
-        for r in identify_results:
-            if r["name"] in explain_names and r["name"] not in seen:
-                seen.add(r["name"])
-                specs.append({"name": r["name"], "source": r["source"]})
-                # Copy any extra fields from the original spec
-                for k in ["hf_class", "hf_config", "input_type", "constructor_args", "inputs"]:
-                    if k in r:
-                        specs[-1][k] = r[k]
-        print(f"Loaded {len(specs)} broken models from {args.explain_from}")
     else:
-        # Enumerate from source
-        from models import enumerate_timm, enumerate_hf, enumerate_diffusers, enumerate_custom, enumerate_all
-        if args.source == "all":
-            specs = enumerate_all()
-            # Count by source for reporting
-            by_src = {}
-            for s in specs:
-                by_src[s["source"]] = by_src.get(s["source"], 0) + 1
-            src_detail = ", ".join(f"{k}: {v}" for k, v in sorted(by_src.items()))
-            print(f"Enumerated {len(specs)} models from all sources ({src_detail})")
-        elif args.source == "hf+diffusers":
-            specs = enumerate_hf()
-            diffusers_specs = [m for m in enumerate_diffusers() if m.get("has_config", False)]
-            specs.extend(diffusers_specs)
-            print(f"Enumerated {len(specs)} models (hf: {len(specs) - len(diffusers_specs)}, diffusers: {len(diffusers_specs)})")
-        elif args.source == "timm":
-            specs = enumerate_timm()
-            print(f"Enumerated {len(specs)} models from timm")
-        elif args.source == "hf":
-            specs = enumerate_hf()
-            print(f"Enumerated {len(specs)} models from hf")
-        elif args.source == "diffusers":
-            specs = enumerate_diffusers()
-            print(f"Enumerated {len(specs)} models from diffusers")
-        elif args.source == "custom":
-            specs = enumerate_custom()
-            print(f"Enumerated {len(specs)} models from custom repos")
+        # Enumerate from source(s)
+        from models import enumerate_timm, enumerate_hf, enumerate_diffusers, enumerate_custom
+        sources = _resolve_source(args.source)
+        source_enumerators = {
+            "timm": enumerate_timm,
+            "hf": enumerate_hf,
+            "diffusers": lambda: [m for m in enumerate_diffusers()
+                                  if m.get("has_config", True)],
+            "custom": enumerate_custom,
+        }
+        specs = []
+        by_src = {}
+        for src in sources:
+            src_specs = source_enumerators[src]()
+            by_src[src] = len(src_specs)
+            specs.extend(src_specs)
+        src_detail = ", ".join(f"{k}: {v}" for k, v in sorted(by_src.items()))
+        print(f"Enumerated {len(specs)} models ({src_detail})")
 
-    # Apply limit
+    # Stability filtering — applied before limit
+    if args.stability:
+        stable_names, unstable_names = load_corpus_stability()
+        before = len(specs)
+        if args.stability == "stable":
+            specs = [s for s in specs if s["name"] in stable_names]
+            print(f"Stability filter [stable]: {len(specs)} models "
+                  f"(from {before}, skipping {before - len(specs)} unstable/new)")
+        elif args.stability == "unstable":
+            specs = [s for s in specs if s["name"] not in stable_names]
+            new_count = sum(1 for s in specs
+                           if s["name"] not in unstable_names)
+            known_unstable = len([s for s in specs
+                                  if s["name"] in unstable_names])
+            print(f"Stability filter [unstable]: {len(specs)} models "
+                  f"(from {before}, {known_unstable} known unstable "
+                  f"+ {new_count} new)")
+
+    # Apply limit (after stability filtering)
     if args.limit:
         specs = specs[:args.limit]
         print(f"Limited to {len(specs)} models")
 
-    # Filter by has_config for diffusers
-    if args.has_config_only:
-        before = len(specs)
-        specs = [s for s in specs if s.get("has_config", True)]
-        print(f"Filtered to {len(specs)} models with configs (from {before})")
-
-    identify_modes = args.identify_modes
-    explain_modes = args.explain_modes
+    modes = args.modes
+    dynamic = _resolve_dynamic(args)
     print(f"Device: {args.device}, Workers: {args.workers}, "
-          f"Identify modes: {identify_modes}, Explain modes: {explain_modes}, Timeout: {args.timeout}s")
+          f"Modes: {modes}, Timeout: {args.timeout}s"
+          f"{f', Dynamic: {args.dynamic_dim}' if args.dynamic_dim else ''}")
 
     # ── Load large model registry for tiered timeouts ──
-    large_models_path = Path(args.large_models) if args.large_models else LARGE_MODELS_FILE
-    large_registry = load_large_models(large_models_path)
-    timeout_overrides = {name: args.timeout_large for name in large_registry}
+    large_registry = load_large_models()
+    timeout_large = args.timeout * 3  # 3x base timeout for large models
+    timeout_overrides = {name: timeout_large for name in large_registry}
     if large_registry:
-        print(f"Large model registry: {len(large_registry)} models will use {args.timeout_large}s timeout")
+        print(f"Large model registry: {len(large_registry)} models will use {timeout_large}s timeout")
 
-    # ── Load skip list (toxic models) ──
-    skip_models = set()
-    if args.skip_models and os.path.exists(args.skip_models):
-        with open(args.skip_models) as f:
-            skip_models = set(json.load(f))
-        print(f"Skip list: {len(skip_models)} models will be skipped")
+    # ── Load skip list (toxic models) — auto-loaded from config ──
+    skip_models = _load_skip_models()
+
     print()
 
     # ── Update watchdog state file with full details ──
-    total_work_items = len(specs) * len(identify_modes)
+    total_work_items = len(specs) * len(modes)
     state_file = output_dir / "sweep_state.json"
     with open(state_file) as f:
         state = json.load(f)
@@ -727,7 +731,7 @@ def run_sweep(args):
         "status": "running",
         "total_models": len(specs),
         "total_work_items": total_work_items,
-        "modes": identify_modes,
+        "modes": modes,
     })
     with open(state_file, "w") as f:
         json.dump(state, f, indent=2)
@@ -735,272 +739,269 @@ def run_sweep(args):
     # ══════════════════════════════════════════════════════════════════════
     # IDENTIFY: Fast identification (eval-only by default)
     # ══════════════════════════════════════════════════════════════════════
-    if not args.explain_from:
-        identify_ckpt = str(output_dir / "identify_checkpoint.jsonl")
+    identify_ckpt = str(output_dir / "identify_checkpoint.jsonl")
 
-        # Load checkpoint for resume
-        resume_from = {}
-        if args.resume and os.path.exists(identify_ckpt):
-            resume_from = load_checkpoint(identify_ckpt)
-            print(f"Loaded {len(resume_from)} completed results from checkpoint")
+    # Load checkpoint for resume
+    resume_from = {}
+    if args.resume and os.path.exists(identify_ckpt):
+        resume_from = load_checkpoint(identify_ckpt)
+        print(f"Loaded {len(resume_from)} completed results from checkpoint")
 
-        # Models that fail under multiworker GPU contention but pass serially.
-        # Run these single-worker from the start to avoid wasted first attempts.
-        _SINGLE_WORKER_MODELS = {
-            "Qwen3_5Model", "Qwen3_5TextModel", "Qwen3_5ForCausalLM",
-            "Qwen3_5ForConditionalGeneration",
-            "Qwen3_5MoeModel", "Qwen3_5MoeTextModel", "Qwen3_5MoeForCausalLM",
-            "Qwen3_5MoeForConditionalGeneration",
-            "Qwen3NextModel", "Qwen3NextForCausalLM",
-            "OlmoHybridModel", "OlmoHybridForCausalLM",
-        }
+    # Models that fail under multiworker GPU contention but pass serially.
+    # Run these single-worker from the start to avoid wasted first attempts.
+    _SINGLE_WORKER_MODELS = {
+        "Qwen3_5Model", "Qwen3_5TextModel", "Qwen3_5ForCausalLM",
+        "Qwen3_5ForConditionalGeneration",
+        "Qwen3_5MoeModel", "Qwen3_5MoeTextModel", "Qwen3_5MoeForCausalLM",
+        "Qwen3_5MoeForConditionalGeneration",
+        "Qwen3NextModel", "Qwen3NextForCausalLM",
+        "OlmoHybridModel", "OlmoHybridForCausalLM",
+    }
 
-        multi_specs = [s for s in specs if s["name"] not in _SINGLE_WORKER_MODELS]
-        single_specs = [s for s in specs if s["name"] in _SINGLE_WORKER_MODELS]
+    multi_specs = [s for s in specs if s["name"] not in _SINGLE_WORKER_MODELS]
+    single_specs = [s for s in specs if s["name"] in _SINGLE_WORKER_MODELS]
 
-        print(f"{'=' * 70}")
-        print(f"IDENTIFY: Graph breaks (fullgraph=True) — {len(specs)} models × {len(identify_modes)} modes ({identify_modes})")
-        if single_specs:
-            print(f"  {len(multi_specs)} multi-worker, {len(single_specs)} single-worker (flaky under contention)")
-        print(f"{'=' * 70}")
+    print(f"{'=' * 70}")
+    print(f"IDENTIFY: Graph breaks (fullgraph=True) — {len(specs)} models × {len(modes)} modes ({modes})")
+    if single_specs:
+        print(f"  {len(multi_specs)} multi-worker, {len(single_specs)} single-worker (flaky under contention)")
+    print(f"{'=' * 70}")
 
-        identify_start = time.perf_counter()
-        identify_results = run_pass(
-            python_bin, multi_specs, pass_num=1, device=args.device, modes=identify_modes,
-            workers=args.workers, timeout_s=args.timeout,
+    identify_start = time.perf_counter()
+    identify_results = run_pass(
+        python_bin, multi_specs, pass_num=1, device=args.device, modes=modes,
+        workers=args.workers, timeout_s=args.timeout,
+        checkpoint_file=identify_ckpt, resume_from=resume_from,
+        dynamic=dynamic, timeout_overrides=timeout_overrides,
+        skip_models=skip_models,
+    )
+
+    # Run single-worker models serially to avoid GPU contention flakiness
+    if single_specs:
+        print(f"\n{'─' * 70}")
+        print(f"SINGLE-WORKER: {len(single_specs)} models (flaky under multiworker)")
+        print(f"{'─' * 70}")
+        single_results = run_pass(
+            python_bin, single_specs, pass_num=1, device=args.device, modes=modes,
+            workers=1, timeout_s=args.timeout,
             checkpoint_file=identify_ckpt, resume_from=resume_from,
-            dynamic=args.dynamic, timeout_overrides=timeout_overrides,
+            dynamic=dynamic, timeout_overrides=timeout_overrides,
             skip_models=skip_models,
         )
+        identify_results.extend(single_results)
 
-        # Run single-worker models serially to avoid GPU contention flakiness
-        if single_specs:
-            print(f"\n{'─' * 70}")
-            print(f"SINGLE-WORKER: {len(single_specs)} models (flaky under multiworker)")
-            print(f"{'─' * 70}")
-            single_results = run_pass(
-                python_bin, single_specs, pass_num=1, device=args.device, modes=identify_modes,
-                workers=1, timeout_s=args.timeout,
-                checkpoint_file=identify_ckpt, resume_from=resume_from,
-                dynamic=args.dynamic, timeout_overrides=timeout_overrides,
-                skip_models=skip_models,
-            )
-            identify_results.extend(single_results)
+    identify_time = time.perf_counter() - identify_start
 
-        identify_time = time.perf_counter() - identify_start
+    # Save identify results (full JSON for analysis)
+    identify_metadata = {
+        "pass": "identify",
+        "device": args.device,
+        "modes": modes,
+        "workers": args.workers,
+        "timeout_s": args.timeout,
+        "total_time_s": round(identify_time, 1),
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "python": python_bin,
+        "dynamic": dynamic,
+    }
+    if version_info:
+        identify_metadata["versions"] = version_info
+    identify_output = {
+        "metadata": identify_metadata,
+        "results": identify_results,
+    }
+    identify_file = output_dir / "identify_results.json"
+    with open(identify_file, "w") as f:
+        json.dump(identify_output, f, indent=2)
 
-        # Save identify results (full JSON for analysis)
-        identify_output = {
-            "metadata": {
-                "pass": "identify",
-                "device": args.device,
-                "modes": identify_modes,
-                "workers": args.workers,
-                "timeout_s": args.timeout,
-                "total_time_s": round(identify_time, 1),
-                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                "python": python_bin,
-                "dynamic": args.dynamic,
-            },
-            "results": identify_results,
-        }
-        identify_file = output_dir / "identify_results.json"
+    # Summarize identify pass
+    by_status = {}
+    for r in identify_results:
+        by_status[r.get("status", "unknown")] = by_status.get(r.get("status", "unknown"), 0) + 1
+
+    print(f"\nIdentify pass complete: {identify_time:.1f}s")
+    for status, count in sorted(by_status.items()):
+        print(f"  {status}: {count}")
+    print(f"Saved to {identify_file}")
+
+    # ── Auto-retry: re-run timed-out models with extended timeout ──
+    timeout_results = [r for r in identify_results if r.get("status") == "timeout"]
+    # Only retry models that aren't already using the large timeout
+    new_timeouts = [r for r in timeout_results if r["name"] not in large_registry]
+    if new_timeouts and not args.no_auto_retry:
+        timeout_names = {r["name"] for r in new_timeouts}
+        retry_specs = [s for s in specs if s["name"] in timeout_names]
+
+        print(f"\n{'─' * 70}")
+        print(f"AUTO-RETRY: {len(retry_specs)} timed-out models with extended timeout ({timeout_large}s)")
+        print(f"{'─' * 70}")
+
+        # Build retry overrides — all get the large timeout
+        retry_overrides = {s["name"]: timeout_large for s in retry_specs}
+
+        retry_start = time.perf_counter()
+        retry_results = run_pass(
+            python_bin, retry_specs, pass_num=1, device=args.device, modes=modes,
+            workers=max(1, args.workers // 2),  # fewer workers for large models
+            timeout_s=timeout_large,
+            checkpoint_file=None,  # don't mix with main checkpoint
+            dynamic=dynamic, timeout_overrides=retry_overrides,
+        )
+        retry_time = time.perf_counter() - retry_start
+
+        # Summarize retry results
+        retry_by_status = {}
+        for r in retry_results:
+            retry_by_status[r.get("status", "unknown")] = retry_by_status.get(r.get("status", "unknown"), 0) + 1
+        print(f"\nRetry complete: {retry_time:.1f}s")
+        for status, count in sorted(retry_by_status.items()):
+            print(f"  {status}: {count}")
+
+        # Replace timeout results in identify_results with retry results
+        retry_index = {(r["name"], r.get("mode", "eval")): r for r in retry_results}
+        updated_count = 0
+        for i, r in enumerate(identify_results):
+            key = (r["name"], r.get("mode", "eval"))
+            if key in retry_index:
+                identify_results[i] = retry_index[key]
+                updated_count += 1
+
+        # Update checkpoint with retry results
+        if os.path.exists(identify_ckpt):
+            # Rewrite checkpoint with updated results
+            all_completed = {}
+            for r in identify_results:
+                key = (r["name"], r.get("mode", "eval"))
+                all_completed[key] = r
+            with open(identify_ckpt, "w") as f:
+                for r in all_completed.values():
+                    f.write(json.dumps(r) + "\n")
+
+        # Update large model registry — add models that resolved (not still timeout)
+        newly_large = []
+        for r in retry_results:
+            if r.get("status") != "timeout":
+                large_registry[r["name"]] = {
+                    "source": r.get("source", "unknown"),
+                    "timeout_tier": "large",
+                    "resolved_status": r.get("status"),
+                    "wall_time_s": r.get("wall_time_s"),
+                    "discovered": time.strftime("%Y-%m-%d"),
+                }
+                newly_large.append(r["name"])
+            else:
+                large_registry[r["name"]] = {
+                    "source": r.get("source", "unknown"),
+                    "timeout_tier": "very_large",
+                    "phase_at_timeout": r.get("phase_at_timeout", "unknown"),
+                    "discovered": time.strftime("%Y-%m-%d"),
+                }
+        save_large_models(large_registry)
+        print(f"\n  Updated large model registry: {len(newly_large)} newly resolved, "
+              f"{len(large_registry)} total entries")
+
+        # Re-save identify results with retry data merged
+        identify_output["results"] = identify_results
+        identify_output["metadata"]["retry_count"] = len(retry_specs)
+        identify_output["metadata"]["timeout_large_s"] = timeout_large
         with open(identify_file, "w") as f:
             json.dump(identify_output, f, indent=2)
 
-        # Summarize identify pass
+        # Recompute status summary
         by_status = {}
         for r in identify_results:
             by_status[r.get("status", "unknown")] = by_status.get(r.get("status", "unknown"), 0) + 1
-
-        print(f"\nIdentify pass complete: {identify_time:.1f}s")
+        print(f"\nUpdated identify summary:")
         for status, count in sorted(by_status.items()):
             print(f"  {status}: {count}")
-        print(f"Saved to {identify_file}")
 
-        # ── Auto-retry: re-run timed-out models with extended timeout ──
-        timeout_results = [r for r in identify_results if r.get("status") == "timeout"]
-        # Only retry models that aren't already using the large timeout
-        new_timeouts = [r for r in timeout_results if r["name"] not in large_registry]
-        if new_timeouts and not args.no_auto_retry:
-            timeout_names = {r["name"] for r in new_timeouts}
-            retry_specs = [s for s in specs if s["name"] in timeout_names]
+    # ── Auto-retry: re-run error models serially to distinguish real from transient ──
+    error_results = [r for r in identify_results
+                     if r.get("status") in ("eager_error", "create_error", "worker_error")]
+    if error_results and not args.no_auto_retry:
+        error_names = {r["name"] for r in error_results}
+        retry_error_specs = [s for s in specs if s["name"] in error_names]
 
-            print(f"\n{'─' * 70}")
-            print(f"AUTO-RETRY: {len(retry_specs)} timed-out models with extended timeout ({args.timeout_large}s)")
-            print(f"{'─' * 70}")
+        print(f"\n{'─' * 70}")
+        print(f"AUTO-RETRY ERRORS: {len(retry_error_specs)} error models, "
+              f"serial (1 worker) to rule out GPU contention")
+        print(f"{'─' * 70}")
 
-            # Build retry overrides — all get the large timeout
-            retry_overrides = {s["name"]: args.timeout_large for s in retry_specs}
+        retry_err_start = time.perf_counter()
+        retry_err_results = run_pass(
+            python_bin, retry_error_specs, pass_num=1, device=args.device,
+            modes=modes,
+            workers=1,  # serial — no GPU contention
+            timeout_s=args.timeout,
+            checkpoint_file=None,
+            dynamic=dynamic, timeout_overrides=timeout_overrides,
+            skip_models=skip_models,
+        )
+        retry_err_time = time.perf_counter() - retry_err_start
 
-            retry_start = time.perf_counter()
-            retry_results = run_pass(
-                python_bin, retry_specs, pass_num=1, device=args.device, modes=identify_modes,
-                workers=max(1, args.workers // 2),  # fewer workers for large models
-                timeout_s=args.timeout_large,
-                checkpoint_file=None,  # don't mix with main checkpoint
-                dynamic=args.dynamic, timeout_overrides=retry_overrides,
-            )
-            retry_time = time.perf_counter() - retry_start
+        # Classify retry outcomes
+        flaky = []
+        confirmed = []
+        for r in retry_err_results:
+            orig = next((o for o in error_results
+                         if o["name"] == r["name"] and o.get("mode") == r.get("mode")), None)
+            if orig and r.get("status") not in ("eager_error", "create_error", "worker_error"):
+                flaky.append(r)
+                r["retry_note"] = f"flaky: was {orig['status']}, now {r['status']}"
+            else:
+                confirmed.append(r)
+                r["retry_note"] = "confirmed_error"
 
-            # Summarize retry results
-            retry_by_status = {}
-            for r in retry_results:
-                retry_by_status[r.get("status", "unknown")] = retry_by_status.get(r.get("status", "unknown"), 0) + 1
-            print(f"\nRetry complete: {retry_time:.1f}s")
-            for status, count in sorted(retry_by_status.items()):
-                print(f"  {status}: {count}")
+        print(f"\nError retry complete: {retry_err_time:.1f}s")
+        print(f"  Flaky (passed on retry): {len(flaky)}")
+        for r in flaky:
+            print(f"    {r['name']} {r.get('mode','?')}: now {r['status']}")
+        print(f"  Confirmed errors: {len(confirmed)}")
 
-            # Replace timeout results in identify_results with retry results
-            retry_index = {(r["name"], r.get("mode", "eval")): r for r in retry_results}
-            updated_count = 0
-            for i, r in enumerate(identify_results):
-                key = (r["name"], r.get("mode", "eval"))
-                if key in retry_index:
-                    identify_results[i] = retry_index[key]
-                    updated_count += 1
+        # Replace error results with retry results in identify_results
+        retry_err_index = {(r["name"], r.get("mode", "eval")): r for r in retry_err_results}
+        for i, r in enumerate(identify_results):
+            key = (r["name"], r.get("mode", "eval"))
+            if key in retry_err_index:
+                identify_results[i] = retry_err_index[key]
 
-            # Update checkpoint with retry results
-            if os.path.exists(identify_ckpt):
-                # Rewrite checkpoint with updated results
-                all_completed = {}
-                for r in identify_results:
-                    key = (r["name"], r.get("mode", "eval"))
-                    all_completed[key] = r
-                with open(identify_ckpt, "w") as f:
-                    for r in all_completed.values():
-                        f.write(json.dumps(r) + "\n")
-
-            # Update large model registry — add models that resolved (not still timeout)
-            newly_large = []
-            for r in retry_results:
-                if r.get("status") != "timeout":
-                    # Model completed with extended timeout → it's a "large" model
-                    large_registry[r["name"]] = {
-                        "source": r.get("source", "unknown"),
-                        "timeout_tier": "large",
-                        "resolved_status": r.get("status"),
-                        "wall_time_s": r.get("wall_time_s"),
-                        "discovered": time.strftime("%Y-%m-%d"),
-                    }
-                    newly_large.append(r["name"])
-                else:
-                    # Still timed out even with extended timeout — record as very_large
-                    large_registry[r["name"]] = {
-                        "source": r.get("source", "unknown"),
-                        "timeout_tier": "very_large",
-                        "phase_at_timeout": r.get("phase_at_timeout", "unknown"),
-                        "discovered": time.strftime("%Y-%m-%d"),
-                    }
-            save_large_models(large_registry, large_models_path)
-            print(f"\n  Updated large model registry: {len(newly_large)} newly resolved, "
-                  f"{len(large_registry)} total entries")
-
-            # Re-save identify results with retry data merged
-            identify_output["results"] = identify_results
-            identify_output["metadata"]["retry_count"] = len(retry_specs)
-            identify_output["metadata"]["timeout_large_s"] = args.timeout_large
-            with open(identify_file, "w") as f:
-                json.dump(identify_output, f, indent=2)
-
-            # Recompute status summary
-            by_status = {}
+        # Update checkpoint with retry results
+        if os.path.exists(identify_ckpt):
+            all_completed = {}
             for r in identify_results:
-                by_status[r.get("status", "unknown")] = by_status.get(r.get("status", "unknown"), 0) + 1
-            print(f"\nUpdated identify summary:")
-            for status, count in sorted(by_status.items()):
-                print(f"  {status}: {count}")
-
-        # ── Auto-retry: re-run error models serially to distinguish real from transient ──
-        error_results = [r for r in identify_results
-                         if r.get("status") in ("eager_error", "create_error", "worker_error")]
-        if error_results and not args.no_auto_retry:
-            error_names = {r["name"] for r in error_results}
-            retry_error_specs = [s for s in specs if s["name"] in error_names]
-
-            print(f"\n{'─' * 70}")
-            print(f"AUTO-RETRY ERRORS: {len(retry_error_specs)} error models, "
-                  f"serial (1 worker) to rule out GPU contention")
-            print(f"{'─' * 70}")
-
-            retry_err_start = time.perf_counter()
-            retry_err_results = run_pass(
-                python_bin, retry_error_specs, pass_num=1, device=args.device,
-                modes=identify_modes,
-                workers=1,  # serial — no GPU contention
-                timeout_s=args.timeout,
-                checkpoint_file=None,
-                dynamic=args.dynamic, timeout_overrides=timeout_overrides,
-                skip_models=skip_models,
-            )
-            retry_err_time = time.perf_counter() - retry_err_start
-
-            # Classify retry outcomes
-            flaky = []
-            confirmed = []
-            for r in retry_err_results:
-                orig = next((o for o in error_results
-                             if o["name"] == r["name"] and o.get("mode") == r.get("mode")), None)
-                if orig and r.get("status") not in ("eager_error", "create_error", "worker_error"):
-                    flaky.append(r)
-                    r["retry_note"] = f"flaky: was {orig['status']}, now {r['status']}"
-                else:
-                    confirmed.append(r)
-                    r["retry_note"] = "confirmed_error"
-
-            print(f"\nError retry complete: {retry_err_time:.1f}s")
-            print(f"  Flaky (passed on retry): {len(flaky)}")
-            for r in flaky:
-                print(f"    {r['name']} {r.get('mode','?')}: now {r['status']}")
-            print(f"  Confirmed errors: {len(confirmed)}")
-
-            # Replace error results with retry results in identify_results
-            retry_err_index = {(r["name"], r.get("mode", "eval")): r for r in retry_err_results}
-            for i, r in enumerate(identify_results):
                 key = (r["name"], r.get("mode", "eval"))
-                if key in retry_err_index:
-                    identify_results[i] = retry_err_index[key]
+                all_completed[key] = r
+            with open(identify_ckpt, "w") as f:
+                for r in all_completed.values():
+                    f.write(json.dumps(r) + "\n")
 
-            # Update checkpoint with retry results
-            if os.path.exists(identify_ckpt):
-                all_completed = {}
-                for r in identify_results:
-                    key = (r["name"], r.get("mode", "eval"))
-                    all_completed[key] = r
-                with open(identify_ckpt, "w") as f:
-                    for r in all_completed.values():
-                        f.write(json.dumps(r) + "\n")
+        # Re-save identify results
+        identify_output["results"] = identify_results
+        identify_output["metadata"]["error_retry_count"] = len(retry_error_specs)
+        identify_output["metadata"]["error_retry_flaky"] = len(flaky)
+        identify_output["metadata"]["error_retry_confirmed"] = len(confirmed)
+        with open(identify_file, "w") as f:
+            json.dump(identify_output, f, indent=2)
 
-            # Re-save identify results
-            identify_output["results"] = identify_results
-            identify_output["metadata"]["error_retry_count"] = len(retry_error_specs)
-            identify_output["metadata"]["error_retry_flaky"] = len(flaky)
-            identify_output["metadata"]["error_retry_confirmed"] = len(confirmed)
-            with open(identify_file, "w") as f:
-                json.dump(identify_output, f, indent=2)
-
-            # Recompute status summary
-            by_status = {}
-            for r in identify_results:
-                by_status[r.get("status", "unknown")] = by_status.get(r.get("status", "unknown"), 0) + 1
-            print(f"\nUpdated identify summary (after error retry):")
-            for status, count in sorted(by_status.items()):
-                print(f"  {status}: {count}")
-
-        # Identify broken models for explain pass
-        explain_names = set()
+        # Recompute status summary
+        by_status = {}
         for r in identify_results:
-            if r.get("status") == "graph_break":
-                explain_names.add(r["name"])
+            by_status[r.get("status", "unknown")] = by_status.get(r.get("status", "unknown"), 0) + 1
+        print(f"\nUpdated identify summary (after error retry):")
+        for status, count in sorted(by_status.items()):
+            print(f"  {status}: {count}")
 
-        explain_specs = [s for s in specs if s["name"] in explain_names]
-        print(f"\n→ {len(explain_specs)} models need explain pass (will test {explain_modes})")
-    else:
-        explain_specs = specs
-        identify_results = None
+    # Identify broken models for explain pass
+    explain_names = set()
+    for r in identify_results:
+        if r.get("status") == "graph_break":
+            explain_names.add(r["name"])
+
+    explain_specs = [s for s in specs if s["name"] in explain_names]
+    print(f"\n→ {len(explain_specs)} models need explain pass (will test {modes})")
 
     # ══════════════════════════════════════════════════════════════════════
-    # EXPLAIN: Detailed analysis (broken models only, eval+train)
+    # EXPLAIN: Detailed analysis (broken models only)
     # ══════════════════════════════════════════════════════════════════════
     if explain_specs and not args.identify_only:
         explain_ckpt = str(output_dir / "explain_checkpoint.jsonl")
@@ -1012,34 +1013,30 @@ def run_sweep(args):
             print(f"Loaded {len(resume_from)} completed explain results from checkpoint")
 
         print(f"\n{'=' * 70}")
-        print(f"EXPLAIN: Detailed analysis — {len(explain_specs)} models × {len(explain_modes)} modes ({explain_modes})")
+        print(f"EXPLAIN: Detailed analysis — {len(explain_specs)} models × {len(modes)} modes ({modes})")
         print(f"{'=' * 70}")
-
-        trace_dir = str(output_dir / "traces") if not args.skip_traces else None
-        # Don't nuke existing traces on resume
-        if trace_dir and os.path.exists(trace_dir) and not args.resume:
-            shutil.rmtree(trace_dir)
 
         explain_start = time.perf_counter()
         explain_results = run_pass(
-            python_bin, explain_specs, pass_num=2, device=args.device, modes=explain_modes,
+            python_bin, explain_specs, pass_num=2, device=args.device, modes=modes,
             workers=args.workers, timeout_s=args.timeout * 2,  # more time for explain()
-            trace_dir=trace_dir,
             checkpoint_file=explain_ckpt, resume_from=resume_from,
         )
         explain_time = time.perf_counter() - explain_start
 
         # Save explain results
+        explain_meta = {
+            "pass": "explain",
+            "device": args.device,
+            "modes": modes,
+            "workers": args.workers,
+            "total_time_s": round(explain_time, 1),
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        }
+        if version_info:
+            explain_meta["versions"] = version_info
         explain_output = {
-            "metadata": {
-                "pass": "explain",
-                "device": args.device,
-                "modes": explain_modes,
-                "workers": args.workers,
-                "total_time_s": round(explain_time, 1),
-                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                "traces": trace_dir or "disabled",
-            },
+            "metadata": explain_meta,
             "results": explain_results,
         }
         explain_file = output_dir / "explain_results.json"
@@ -1048,15 +1045,6 @@ def run_sweep(args):
 
         print(f"\nExplain pass complete: {explain_time:.1f}s")
         print(f"Saved to {explain_file}")
-
-        # Run tlparse if traces were collected
-        if trace_dir and os.path.exists(trace_dir):
-            print(f"\n{'─' * 50}")
-            print("Running tlparse on traces...")
-            tlparse_dir = str(output_dir / "tlparse_output")
-            if os.path.exists(tlparse_dir):
-                shutil.rmtree(tlparse_dir)
-            _run_tlparse(trace_dir, tlparse_dir)
     else:
         explain_results = []
         if args.identify_only:
@@ -1085,6 +1073,91 @@ def run_sweep(args):
                 json.dump(state, f, indent=2)
         except Exception:
             pass
+
+
+def run_explain(args):
+    """Run explain pass only, from prior identify results."""
+    python_bin = _resolve_python(args)
+    output_dir = Path(args.output_dir).resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Detect versions
+    version_info = _log_versions(python_bin, output_dir)
+
+    # Load identify results and filter to graph_break models
+    try:
+        with open(args.file) as f:
+            identify_data = json.load(f)
+    except json.JSONDecodeError as e:
+        print(f"ERROR: Invalid JSON in {args.file}: {e}")
+        sys.exit(1)
+    except FileNotFoundError:
+        print(f"ERROR: File not found: {args.file}")
+        sys.exit(1)
+
+    identify_results = (identify_data if isinstance(identify_data, list)
+                        else identify_data.get("results", []))
+    explain_names = set()
+    for r in identify_results:
+        if r.get("status") == "graph_break":
+            explain_names.add(r["name"])
+
+    # Rebuild specs from identify results
+    specs = []
+    seen = set()
+    for r in identify_results:
+        if r["name"] in explain_names and r["name"] not in seen:
+            seen.add(r["name"])
+            spec = {"name": r["name"], "source": r["source"]}
+            for k in ["hf_class", "hf_config", "input_type",
+                       "constructor_args", "inputs"]:
+                if k in r:
+                    spec[k] = r[k]
+            specs.append(spec)
+    print(f"Loaded {len(specs)} broken models from {args.file}")
+
+    modes = ["eval", "train"]
+    print(f"Device: {args.device}, Workers: {args.workers}, "
+          f"Modes: {modes}, Timeout: {args.timeout * 2}s (2x for explain)")
+
+    explain_ckpt = str(output_dir / "explain_checkpoint.jsonl")
+    resume_from = {}
+    if args.resume and os.path.exists(explain_ckpt):
+        resume_from = load_checkpoint(explain_ckpt)
+        print(f"Loaded {len(resume_from)} completed explain results from checkpoint")
+
+    print(f"\n{'=' * 70}")
+    print(f"EXPLAIN: Detailed analysis — {len(specs)} models × {len(modes)} modes ({modes})")
+    print(f"{'=' * 70}")
+
+    explain_start = time.perf_counter()
+    explain_results = run_pass(
+        python_bin, specs, pass_num=2, device=args.device, modes=modes,
+        workers=args.workers, timeout_s=args.timeout * 2,
+        checkpoint_file=explain_ckpt, resume_from=resume_from,
+    )
+    explain_time = time.perf_counter() - explain_start
+
+    explain_meta = {
+        "pass": "explain",
+        "device": args.device,
+        "modes": modes,
+        "workers": args.workers,
+        "total_time_s": round(explain_time, 1),
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+    if version_info:
+        explain_meta["versions"] = version_info
+    explain_output = {
+        "metadata": explain_meta,
+        "results": explain_results,
+    }
+    explain_file = output_dir / "explain_results.json"
+    with open(explain_file, "w") as f:
+        json.dump(explain_output, f, indent=2)
+
+    print(f"\nExplain pass complete: {explain_time:.1f}s")
+    print(f"Saved to {explain_file}")
 
 
 def _build_corpus(identify_results, explain_results, args):
@@ -1144,33 +1217,16 @@ def _print_summary(corpus):
             print(f"    → {top_reason}")
 
 
-def _run_tlparse(trace_dir, output_dir):
-    """Run tlparse on all trace subdirectories."""
-    for model_dir in sorted(Path(trace_dir).iterdir()):
-        if not model_dir.is_dir():
-            continue
-        parsed_dir = os.path.join(output_dir, model_dir.name)
-        try:
-            result = subprocess.run(
-                ["tlparse", str(model_dir), "-o", parsed_dir],
-                capture_output=True, text=True, timeout=60,
-            )
-            if os.path.exists(parsed_dir):
-                break_files = list(Path(parsed_dir).rglob("dynamo_graph_break_reason_*.txt"))
-                print(f"  {model_dir.name}: {len(break_files)} break reason files")
-        except Exception as e:
-            print(f"  {model_dir.name}: tlparse error — {e}")
-
 
 def run_validation(args):
     """Run two-shape validation sweep (pass 3) on clean models."""
-    python_bin = args.python or sys.executable
+    python_bin = _resolve_python(args)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Load models to validate
-    if args.validate_from:
-        with open(args.validate_from) as f:
+    if args.from_file:
+        with open(args.from_file) as f:
             data = json.load(f)
         results = data if isinstance(data, list) else data.get("results", [])
         # Only validate clean models
@@ -1184,7 +1240,7 @@ def run_validation(args):
                     if k in r:
                         spec[k] = r[k]
                 specs.append(spec)
-        print(f"Loaded {len(specs)} clean models from {args.validate_from}")
+        print(f"Loaded {len(specs)} clean models from {args.from_file}")
     elif args.models:
         with open(args.models) as f:
             specs = json.load(f)
@@ -1198,8 +1254,8 @@ def run_validation(args):
         specs = specs[:args.limit]
         print(f"Limited to {len(specs)} models")
 
-    validate_modes = args.identify_modes  # reuse identify-modes for validation
-    dynamic = args.dynamic or "true"  # default to dynamic=True for validation
+    validate_modes = ["eval", "train"]
+    dynamic = _resolve_dynamic(args) or "true"  # default to all-dim dynamic
     print(f"Device: {args.device}, Workers: {args.workers}, "
           f"Modes: {validate_modes}, Timeout: {args.timeout}s, Dynamic: {dynamic}")
     print()
@@ -1265,7 +1321,7 @@ def run_validation(args):
 
 def check_env(args):
     """Pre-sweep environment validation: check installed versions against corpus."""
-    python_bin = args.python or sys.executable
+    python_bin = _resolve_python(args)
     version_check_script = SWEEP_DIR.parent / "tools" / "version_check.py"
 
     if not version_check_script.exists():
@@ -1306,9 +1362,9 @@ def run_test_mode(args):
     running the full sweep. Catches import errors, JSON serialization bugs, and
     output format regressions.
 
-    Usage: python run_sweep.py --test [--device cpu] [--python /path/to/python]
+    Usage: python run_sweep.py sweep --selftest [--device cpu]
     """
-    python_bin = args.python or sys.executable
+    python_bin = _resolve_python(args)
     device = args.device
 
     # Test models — chosen to exercise both clean and breaking paths
@@ -1440,75 +1496,177 @@ def run_test_mode(args):
     sys.exit(1 if failed > 0 else 0)
 
 
+def _resolve_python(args):
+    """Resolve the Python binary: SWEEP_PYTHON env var → sys.executable."""
+    return os.environ.get("SWEEP_PYTHON", sys.executable)
+
+
+def _resolve_dynamic(args):
+    """Map --dynamic-dim {batch,all} to internal values {mark,true}."""
+    dim = getattr(args, "dynamic_dim", None)
+    if dim == "batch":
+        return "mark"
+    elif dim == "all":
+        return "true"
+    return None
+
+
+def _resolve_source(source_list):
+    """Expand --source list: 'all' → all four sources."""
+    if "all" in source_list:
+        return ["timm", "hf", "diffusers", "custom"]
+    return list(source_list)
+
+
+def _validate_sweep_args(args):
+    """Validate mutual exclusion rules that argparse can't express."""
+    has_models = getattr(args, "models", None)
+    stability = getattr(args, "stability", None)
+    is_filtered = stability is not None
+
+    if has_models and is_filtered:
+        print("ERROR: --stability filter cannot be used with --models.")
+        print("  This filter only applies to enumerated models (--source).")
+        sys.exit(1)
+
+    source = getattr(args, "source", None)
+    if source and "all" in source and len(source) > 1:
+        print("ERROR: --source 'all' cannot be combined with individual sources.")
+        sys.exit(1)
+
+
+SKIP_MODELS_FILE = SWEEP_DIR / "skip_models.json"
+
+
+def _load_skip_models():
+    """Auto-load toxic model skip list from config file."""
+    if SKIP_MODELS_FILE.exists():
+        with open(SKIP_MODELS_FILE) as f:
+            models = set(json.load(f))
+        if models:
+            print(f"Skip list: {len(models)} models will be skipped "
+                  f"(from {SKIP_MODELS_FILE})")
+        return models
+    return set()
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Two-pass graph break sweep orchestrator",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
-    # Source / input
-    parser.add_argument("--source", default="all",
-                        choices=["timm", "hf", "diffusers", "hf+diffusers", "custom", "all"],
-                        help="Model sources (hf+diffusers = HF + Diffusers without TIMM)")
-    parser.add_argument("--models", help="JSON file with model specs (overrides --source)")
-    parser.add_argument("--explain-from", help="JSON file with identify results (skip to explain pass)")
-    parser.add_argument("--limit", type=int, help="Max models to test")
-    parser.add_argument("--has-config-only", action="store_true",
-                        help="Only test models with known input configs")
+    # ── Shared parent parsers ──
+
+    # Global options (all subcommands)
+    global_parent = argparse.ArgumentParser(add_help=False)
+    global_parent.add_argument("--device", default="cuda", choices=["cpu", "cuda"],
+                               help="Hardware target (default: cuda)")
+
+    # Run options (sweep, explain, validate)
+    run_parent = argparse.ArgumentParser(add_help=False)
+    run_parent.add_argument("--workers", type=int, default=4,
+                            help="Parallel worker processes (default: 4)")
+    run_parent.add_argument("--timeout", type=int, default=180,
+                            help="Per-model timeout in seconds (default: 180)")
+    run_parent.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR),
+                            help="Output directory (default: sweep_results/)")
+    run_parent.add_argument("--resume", action="store_true",
+                            help="Resume from JSONL checkpoint")
+
+    # ── sweep subcommand ──
+    sweep_parser = subparsers.add_parser(
+        "sweep", parents=[global_parent, run_parent],
+        help="Identify + explain sweep (the main workflow)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="Run the two-pass graph break sweep: identify (fullgraph=True) "
+                    "then explain (detailed break analysis).",
+    )
+
+    # Model selection
+    sweep_input = sweep_parser.add_mutually_exclusive_group()
+    sweep_input.add_argument("--source", nargs="+",
+                             default=["hf", "diffusers", "custom"],
+                             choices=["timm", "hf", "diffusers", "custom", "all"],
+                             help="Model libraries to enumerate (default: hf diffusers custom). "
+                                  "Accepts multiple values. 'all' = all four sources.")
+    sweep_input.add_argument("--models",
+                             help="JSON file with explicit model list")
+
+    # Stability filter (only with --source)
+    sweep_parser.add_argument("--stability",
+                              choices=["stable", "unstable"],
+                              help="Filter by corpus stability. Omit to run all. "
+                                   "'stable' = full_graph in all modes, "
+                                   "'unstable' = graph_break/error/new.")
+
+    sweep_parser.add_argument("--limit", type=int,
+                              help="Max models to test (applied last)")
 
     # Execution
-    parser.add_argument("--device", default="cuda", choices=["cpu", "cuda"])
-    parser.add_argument("--identify-modes", nargs="+", default=["eval", "train"],
-                        choices=["eval", "train"],
-                        help="Modes for identify pass (default: eval+train)")
-    parser.add_argument("--explain-modes", nargs="+", default=["eval", "train"],
-                        choices=["eval", "train"],
-                        help="Modes for explain pass (default: eval+train on broken models)")
-    parser.add_argument("--workers", type=int, default=16)
-    parser.add_argument("--timeout", type=int, default=180,
-                        help="Per-model timeout in seconds (explain pass gets 2x)")
-    parser.add_argument("--timeout-large", type=int, default=600,
-                        help="Extended timeout for large models and auto-retry (default: 600s)")
-    parser.add_argument("--large-models",
-                        help="Path to large model registry JSON (default: sweep/large_models.json)")
-    parser.add_argument("--no-auto-retry", action="store_true",
-                        help="Skip auto-retry of timed-out models with extended timeout")
-    parser.add_argument("--python", help="Python binary path (default: current interpreter)")
+    sweep_parser.add_argument("--modes", nargs="+", default=["eval", "train"],
+                              choices=["eval", "train"],
+                              help="Modes to run (default: eval train)")
+    sweep_parser.add_argument("--dynamic-dim", choices=["batch", "all"],
+                              help="Dynamic shapes: batch = batch dim only, "
+                                   "all = all dims. Omit for static.")
+    sweep_parser.add_argument("--no-auto-retry", action="store_true",
+                              help="Skip auto-retry of timed-out/errored models")
+    sweep_parser.add_argument("--identify-only", action="store_true",
+                              help="Stop after identify pass (skip explain)")
 
-    # Output
-    parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
-    parser.add_argument("--skip-traces", action="store_true",
-                        help="Skip TORCH_TRACE in explain pass")
-    parser.add_argument("--identify-only", action="store_true",
-                        help="Only run identify pass (identification)")
-    parser.add_argument("--dynamic", nargs="?", const="true", default=None,
-                        choices=["true", "mark"],
-                        help="Dynamic shapes: 'true' = all dims, 'mark' = realistic dims only")
-    parser.add_argument("--validate", action="store_true",
-                        help="Run two-shape validation (pass 3) instead of identify/explain")
-    parser.add_argument("--validate-from",
-                        help="JSON file with identify results — validate only 'full_graph' models")
+    # Utilities
+    sweep_parser.add_argument("--selftest", action="store_true",
+                              help="Smoke test: 3 models, both passes, validate output, exit")
+    sweep_parser.add_argument("--check-env", action="store_true",
+                              help="Validate versions against corpus, exit")
 
-    # Resilience
-    parser.add_argument("--resume", action="store_true",
-                        help="Resume from checkpoint (skip completed models)")
-    parser.add_argument("--skip-models",
-                        help="JSON file with list of model names to skip (toxic models)")
-    parser.add_argument("--check-env", action="store_true",
-                        help="Check installed versions against corpus and exit (pre-sweep validation)")
-    parser.add_argument("--test", action="store_true",
-                        help="Quick integration test: 1 model per source, both passes, validate output")
+    # ── explain subcommand ──
+    explain_parser = subparsers.add_parser(
+        "explain", parents=[global_parent, run_parent],
+        help="Explain-only from prior identify results",
+        description="Run the explain pass on broken models from a prior identify sweep.",
+    )
+    explain_parser.add_argument("file", metavar="FILE",
+                                help="Path to identify results JSON")
+
+    # ── validate subcommand ──
+    validate_parser = subparsers.add_parser(
+        "validate", parents=[global_parent, run_parent],
+        help="Two-shape correctness check",
+        description="Run two-shape validation: compile models with two different "
+                    "input shapes, compare outputs against eager mode.",
+    )
+    validate_input = validate_parser.add_mutually_exclusive_group()
+    validate_input.add_argument("--from", dest="from_file",
+                                help="Identify results JSON — validates full_graph models")
+    validate_input.add_argument("--models",
+                                help="JSON file with explicit model list to validate")
+    validate_parser.add_argument("--dynamic-dim", choices=["batch", "all"],
+                                 default="all",
+                                 help="Dynamic shapes (default: all)")
+    validate_parser.add_argument("--limit", type=int,
+                                 help="Max models to validate")
 
     args = parser.parse_args()
 
-    if args.test:
-        run_test_mode(args)
-    elif args.check_env:
-        check_env(args)
-    elif args.validate or args.validate_from:
+    # Default to 'sweep' if no subcommand given
+    if args.command is None:
+        args = parser.parse_args(["sweep"])
+
+    if args.command == "sweep":
+        _validate_sweep_args(args)
+        if args.selftest:
+            run_test_mode(args)
+        elif args.check_env:
+            check_env(args)
+        else:
+            run_sweep(args)
+    elif args.command == "explain":
+        run_explain(args)
+    elif args.command == "validate":
         run_validation(args)
-    else:
-        run_sweep(args)
 
 
 if __name__ == "__main__":
