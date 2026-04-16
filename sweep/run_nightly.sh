@@ -85,18 +85,8 @@ fi
 echo "Generating nightly summary..."
 python3 $PROJ_DIR/tools/generate_nightly_summary.py --date $DATE 2>&1 || true
 
-# Record versions
-$PYTHON -c "
-import json, torch
-d = {'torch': torch.__version__}
-try:
-    import transformers; d['transformers'] = transformers.__version__
-except: pass
-try:
-    import diffusers; d['diffusers'] = diffusers.__version__
-except: pass
-print(json.dumps(d, indent=2))
-" > $NIGHTLY_DIR/versions.json
+# Versions are now embedded in results metadata by run_sweep.py
+# No separate versions.json needed
 
 echo ""
 echo "=== Nightly sweep complete ==="

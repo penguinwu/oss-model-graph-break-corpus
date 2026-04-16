@@ -40,11 +40,15 @@ def load_results(path):
 
 
 def load_versions(base_dir):
-    """Load versions.json from a sweep directory."""
-    path = os.path.join(base_dir, "versions.json")
-    if os.path.exists(path):
-        with open(path) as f:
-            return json.load(f)
+    """Load versions from results metadata (embedded in identify_results.json)."""
+    identify_path = os.path.join(base_dir, "identify_results.json")
+    if os.path.exists(identify_path):
+        with open(identify_path) as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            versions = data.get("metadata", {}).get("versions", {})
+            if versions:
+                return versions
     return {}
 
 

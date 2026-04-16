@@ -9,7 +9,14 @@
     "workers": 4,
     "total_time_s": 1533.9,
     "timestamp": "2026-04-05T20:08:58",
-    "traces": "disabled"
+    "traces": "disabled",
+    "versions": {
+      "torch": "2.10.0+cu128",
+      "torch_git": "449b1768410104d3ed79d3bcfe4ba1d65c7f22c0",
+      "transformers": "5.4.0",
+      "diffusers": "0.37.1",
+      "python": "3.12.13+meta (3.12:3bb231a, Mar 03 2026, 12:38:32) [Clang 19.1.2 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro"
+    }
   },
   "results": [
     {
