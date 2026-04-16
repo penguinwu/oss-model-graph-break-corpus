@@ -53,6 +53,71 @@ DEFAULT_OUTPUT_DIR = SWEEP_DIR.parent / "sweep_results"
 LARGE_MODELS_FILE = SWEEP_DIR / "large_models.json"
 
 
+def _execute_explain_pass(python_bin, specs, device, workers, timeout_s,
+                          output_dir, version_info, resume=False):
+    """Run the explain pass and save results. Shared by sweep and standalone explain.
+
+    Returns (explain_results, explain_time).
+    """
+    modes = ["eval", "train"]
+    explain_ckpt = str(output_dir / "explain_checkpoint.jsonl")
+
+    resume_from = {}
+    if resume and os.path.exists(explain_ckpt):
+        resume_from = load_checkpoint(explain_ckpt)
+        print(f"Loaded {len(resume_from)} completed explain results from checkpoint")
+
+    print(f"\n{'=' * 70}")
+    print(f"EXPLAIN: Detailed analysis — {len(specs)} models × {len(modes)} modes ({modes})")
+    print(f"{'=' * 70}")
+
+    explain_start = time.perf_counter()
+    explain_results = run_pass(
+        python_bin, specs, pass_num=2, device=device, modes=modes,
+        workers=workers, timeout_s=timeout_s * 2,  # 2x for explain
+        checkpoint_file=explain_ckpt, resume_from=resume_from,
+    )
+    explain_time = time.perf_counter() - explain_start
+
+    # Save results
+    explain_meta = {
+        "pass": "explain",
+        "device": device,
+        "modes": modes,
+        "workers": workers,
+        "total_time_s": round(explain_time, 1),
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+    if version_info:
+        explain_meta["versions"] = version_info
+    explain_output = {
+        "metadata": explain_meta,
+        "results": explain_results,
+    }
+    explain_file = output_dir / "explain_results.json"
+    with open(explain_file, "w") as f:
+        json.dump(explain_output, f, indent=2)
+
+    print(f"\nExplain pass complete: {explain_time:.1f}s")
+    print(f"Saved to {explain_file}")
+
+    return explain_results, explain_time
+
+
+def _specs_for_graph_break_models(identify_results, all_specs):
+    """Filter specs to only models with graph_break status in identify results.
+
+    Uses the original enumerated specs (with full metadata like variant,
+    hf_config, etc.) rather than reconstructing from identify results,
+    which would be lossy.
+    """
+    graph_break_names = set()
+    for r in identify_results:
+        if r.get("status") == "graph_break":
+            graph_break_names.add(r["name"])
+    return [s for s in all_specs if s["name"] in graph_break_names]
+
+
 def load_large_models(path=None):
     """Load the large model registry — models that need extended timeouts."""
     path = path or LARGE_MODELS_FILE
@@ -992,59 +1057,19 @@ def run_sweep(args):
             print(f"  {status}: {count}")
 
     # Identify broken models for explain pass
-    explain_names = set()
-    for r in identify_results:
-        if r.get("status") == "graph_break":
-            explain_names.add(r["name"])
-
-    explain_specs = [s for s in specs if s["name"] in explain_names]
+    explain_specs = _specs_for_graph_break_models(identify_results, specs)
     print(f"\n→ {len(explain_specs)} models need explain pass (will test {modes})")
 
     # ══════════════════════════════════════════════════════════════════════
     # EXPLAIN: Detailed analysis (broken models only)
     # ══════════════════════════════════════════════════════════════════════
     if explain_specs and not args.identify_only:
-        explain_ckpt = str(output_dir / "explain_checkpoint.jsonl")
-
-        # Load checkpoint for resume
-        resume_from = {}
-        if args.resume and os.path.exists(explain_ckpt):
-            resume_from = load_checkpoint(explain_ckpt)
-            print(f"Loaded {len(resume_from)} completed explain results from checkpoint")
-
-        print(f"\n{'=' * 70}")
-        print(f"EXPLAIN: Detailed analysis — {len(explain_specs)} models × {len(modes)} modes ({modes})")
-        print(f"{'=' * 70}")
-
-        explain_start = time.perf_counter()
-        explain_results = run_pass(
-            python_bin, explain_specs, pass_num=2, device=args.device, modes=modes,
-            workers=args.workers, timeout_s=args.timeout * 2,  # more time for explain()
-            checkpoint_file=explain_ckpt, resume_from=resume_from,
+        explain_results, _ = _execute_explain_pass(
+            python_bin, explain_specs, device=args.device,
+            workers=args.workers, timeout_s=args.timeout,
+            output_dir=output_dir, version_info=version_info,
+            resume=args.resume,
         )
-        explain_time = time.perf_counter() - explain_start
-
-        # Save explain results
-        explain_meta = {
-            "pass": "explain",
-            "device": args.device,
-            "modes": modes,
-            "workers": args.workers,
-            "total_time_s": round(explain_time, 1),
-            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        }
-        if version_info:
-            explain_meta["versions"] = version_info
-        explain_output = {
-            "metadata": explain_meta,
-            "results": explain_results,
-        }
-        explain_file = output_dir / "explain_results.json"
-        with open(explain_file, "w") as f:
-            json.dump(explain_output, f, indent=2)
-
-        print(f"\nExplain pass complete: {explain_time:.1f}s")
-        print(f"Saved to {explain_file}")
     else:
         explain_results = []
         if args.identify_only:
@@ -1076,7 +1101,12 @@ def run_sweep(args):
 
 
 def run_explain(args):
-    """Run explain pass only, from prior identify results."""
+    """Run explain pass only, from prior identify results.
+
+    Re-enumerates models from their sources to get full specs (with variant,
+    hf_config, etc.), then filters to graph_break models from the identify
+    results. This avoids lossy spec reconstruction from identify JSON.
+    """
     python_bin = _resolve_python(args)
     output_dir = Path(args.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1084,7 +1114,7 @@ def run_explain(args):
     # Detect versions
     version_info = _log_versions(python_bin, output_dir)
 
-    # Load identify results and filter to graph_break models
+    # Load identify results
     try:
         with open(args.file) as f:
             identify_data = json.load(f)
@@ -1097,74 +1127,43 @@ def run_explain(args):
 
     identify_results = (identify_data if isinstance(identify_data, list)
                         else identify_data.get("results", []))
-    explain_names = set()
-    for r in identify_results:
-        if r.get("status") == "graph_break":
-            explain_names.add(r["name"])
 
-    # Rebuild specs from identify results
-    specs = []
-    seen = set()
-    for r in identify_results:
-        if r["name"] in explain_names and r["name"] not in seen:
-            seen.add(r["name"])
-            spec = {"name": r["name"], "source": r["source"]}
-            for k in ["hf_class", "hf_config", "input_type",
-                       "constructor_args", "inputs", "variant"]:
-                if k in r:
-                    spec[k] = r[k]
-            # Derive variant from name if not in identify results (older sweeps)
-            if "variant" not in spec and r["source"] == "hf":
-                name = r["name"]
-                if name.endswith("ForCausalLM"):
-                    spec["variant"] = "causal_lm"
-                elif name.endswith("ForConditionalGeneration"):
-                    spec["variant"] = "conditional_generation"
-            specs.append(spec)
-    print(f"Loaded {len(specs)} broken models from {args.file}")
+    # Determine which sources were in the identify sweep
+    sources_in_sweep = set(r.get("source", "hf") for r in identify_results)
+    print(f"Sources in identify results: {', '.join(sorted(sources_in_sweep))}")
 
-    modes = ["eval", "train"]
+    # Re-enumerate models from the same sources to get full specs
+    from models import enumerate_timm, enumerate_hf, enumerate_diffusers, enumerate_custom
+    source_enumerators = {
+        "timm": enumerate_timm,
+        "hf": enumerate_hf,
+        "diffusers": lambda: [m for m in enumerate_diffusers()
+                              if m.get("has_config", True)],
+        "custom": enumerate_custom,
+    }
+    all_specs = []
+    for src in sources_in_sweep:
+        if src in source_enumerators:
+            all_specs.extend(source_enumerators[src]())
+    print(f"Re-enumerated {len(all_specs)} models from {', '.join(sorted(sources_in_sweep))}")
+
+    # Filter to graph_break models
+    explain_specs = _specs_for_graph_break_models(identify_results, all_specs)
+    print(f"Loaded {len(explain_specs)} broken models from {args.file}")
+
+    if not explain_specs:
+        print("No graph_break models found — nothing to explain.")
+        return
+
     print(f"Device: {args.device}, Workers: {args.workers}, "
-          f"Modes: {modes}, Timeout: {args.timeout * 2}s (2x for explain)")
+          f"Timeout: {args.timeout * 2}s (2x for explain)")
 
-    explain_ckpt = str(output_dir / "explain_checkpoint.jsonl")
-    resume_from = {}
-    if args.resume and os.path.exists(explain_ckpt):
-        resume_from = load_checkpoint(explain_ckpt)
-        print(f"Loaded {len(resume_from)} completed explain results from checkpoint")
-
-    print(f"\n{'=' * 70}")
-    print(f"EXPLAIN: Detailed analysis — {len(specs)} models × {len(modes)} modes ({modes})")
-    print(f"{'=' * 70}")
-
-    explain_start = time.perf_counter()
-    explain_results = run_pass(
-        python_bin, specs, pass_num=2, device=args.device, modes=modes,
-        workers=args.workers, timeout_s=args.timeout * 2,
-        checkpoint_file=explain_ckpt, resume_from=resume_from,
+    _execute_explain_pass(
+        python_bin, explain_specs, device=args.device,
+        workers=args.workers, timeout_s=args.timeout,
+        output_dir=output_dir, version_info=version_info,
+        resume=args.resume,
     )
-    explain_time = time.perf_counter() - explain_start
-
-    explain_meta = {
-        "pass": "explain",
-        "device": args.device,
-        "modes": modes,
-        "workers": args.workers,
-        "total_time_s": round(explain_time, 1),
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
-    }
-    if version_info:
-        explain_meta["versions"] = version_info
-    explain_output = {
-        "metadata": explain_meta,
-        "results": explain_results,
-    }
-    explain_file = output_dir / "explain_results.json"
-    with open(explain_file, "w") as f:
-        json.dump(explain_output, f, indent=2)
-
-    print(f"\nExplain pass complete: {explain_time:.1f}s")
-    print(f"Saved to {explain_file}")
 
 
 def _build_corpus(identify_results, explain_results, args):
