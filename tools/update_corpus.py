@@ -1,20 +1,34 @@
 #!/usr/bin/env python3
 """Merge sweep results into corpus.json with changelog generation.
 
+Two modes:
+    Overlay (default) — partial sweep results merged on top of existing corpus.
+        Models not in the sweep keep their existing entries.
+        Version and timestamp safety checks prevent accidental cross-version merges.
+
+    Replace (--replace) — full sweep results become the complete corpus.
+        Models not in the sweep are dropped.
+        Requires versions.json so the corpus records which versions it was built from.
+
 Usage:
-    # Update corpus from a sweep results directory
-    python tools/update_corpus.py sweep_results/v2.10/
+    # Overlay: merge partial sweep into corpus
+    python tools/update_corpus.py sweep_results/pt2.10/
+
+    # Replace: full sweep becomes the new corpus
+    python tools/update_corpus.py sweep_results/pt2.10/ --replace
 
     # Dry run — show what would change without writing
-    python tools/update_corpus.py sweep_results/v2.10/ --dry-run
+    python tools/update_corpus.py sweep_results/pt2.10/ --dry-run
 
     # Skip validation after update
-    python tools/update_corpus.py sweep_results/v2.10/ --no-validate
+    python tools/update_corpus.py sweep_results/pt2.10/ --no-validate
 
 The sweep directory should contain:
-    - identify_results.json (required)
+    - identify_results.json (required — must include metadata.versions)
     - explain_results.json (optional — merges break_reasons, graph counts)
-    - versions.json (optional — updates corpus metadata)
+
+Version info is read from identify_results.json metadata.versions (embedded
+by run_sweep.py at sweep time). No separate versions.json needed.
 
 Generates a changelog at {sweep_dir}/changelog.md showing all status
 transitions, new/removed models, and break count changes.
@@ -136,20 +150,27 @@ def merge_explain_into_mode(mode_data, explain_result):
             mode_data[field] = explain_result[field]
 
 
-def update_corpus(corpus, identify_idx, explain_idx, versions):
-    """Update corpus with sweep results. Returns (updated_corpus, changelog_entries).
+def update_corpus(corpus, identify_idx, explain_idx, versions, replace=False):
+    """Update corpus with sweep results. Returns (updated_corpus, changelog, pre_merge_names, health).
 
-    Changelog entries for new models include a '_pre_merge_names' key on the
-    first entry, listing the model names that existed before the merge.
-    This is used by format_changelog to classify new families vs new configs.
+    In overlay mode (default): sweep results are merged on top of existing corpus.
+    Models not in the sweep keep their existing entries.
+
+    In replace mode: sweep results become the complete corpus.
+    Models not in the sweep are dropped.
     """
     changelog = []
     models_by_name = {}
     for m in corpus["models"]:
         models_by_name[m["name"]] = m
 
-    # Snapshot existing names before merge (for family vs config classification)
+    # Snapshot pre-merge state for diagnostics
     pre_merge_names = set(models_by_name.keys())
+    pre_merge_errors = set()
+    for m in corpus["models"]:
+        for mode_key in ("eval", "train"):
+            if m.get(mode_key, {}).get("status") == "create_error":
+                pre_merge_errors.add(m["name"])
 
     # Track which models appear in sweep
     sweep_model_names = set()
@@ -203,6 +224,16 @@ def update_corpus(corpus, identify_idx, explain_idx, versions):
         if name in models_by_name:
             models_by_name[name]["has_graph_break"] = compute_has_graph_break(models_by_name[name])
 
+    # Replace mode: drop models not in the sweep
+    if replace:
+        removed = pre_merge_names - sweep_model_names
+        for name in removed:
+            del models_by_name[name]
+            changelog.append({
+                "type": "removed_model",
+                "name": name,
+            })
+
     # Update metadata
     if versions:
         meta = corpus.setdefault("metadata", {})
@@ -229,7 +260,30 @@ def update_corpus(corpus, identify_idx, explain_idx, versions):
     corpus["models"] = ordered
     corpus["summary"] = compute_summary(ordered)
 
-    return corpus, changelog, pre_merge_names
+    # Post-merge health diagnostics
+    health = {}
+
+    # Risk 3: Ghost entries — models with create_error both before and after merge
+    post_merge_errors = set()
+    for m in ordered:
+        for mode_key in ("eval", "train"):
+            if m.get(mode_key, {}).get("status") == "create_error":
+                post_merge_errors.add(m["name"])
+    persistent_errors = pre_merge_errors & post_merge_errors
+    if persistent_errors:
+        health["persistent_create_errors"] = sorted(persistent_errors)
+
+    # Risk 4: Missing explain data — graph_break models without break_reasons
+    missing_explain = []
+    for m in ordered:
+        for mode_key in ("eval", "train"):
+            md = m.get(mode_key, {})
+            if md.get("status") == "graph_break" and not md.get("break_reasons"):
+                missing_explain.append((m["name"], mode_key))
+    if missing_explain:
+        health["missing_explain"] = missing_explain
+
+    return corpus, changelog, pre_merge_names, health
 
 
 # HF model class suffixes, longest first for greedy stripping
@@ -281,7 +335,8 @@ def _classify_new_models(new_model_entries, existing_model_names):
     return new_families, new_configs
 
 
-def format_changelog(changelog, sweep_dir, versions, corpus, pre_merge_names=None):
+def format_changelog(changelog, sweep_dir, versions, corpus, pre_merge_names=None,
+                     health=None):
     """Format changelog entries into markdown."""
     lines = ["# Corpus Update Changelog\n"]
 
@@ -307,6 +362,7 @@ def format_changelog(changelog, sweep_dir, versions, corpus, pre_merge_names=Non
 
     # Categorize changes
     new_models = [c for c in changelog if c["type"] == "new_model"]
+    removed_models = [c for c in changelog if c["type"] == "removed_model"]
     status_changes = [c for c in changelog if c["type"] == "status_change"]
 
     # Status transitions
@@ -372,6 +428,39 @@ def format_changelog(changelog, sweep_dir, versions, corpus, pre_merge_names=Non
             lines.append("_(none)_")
         lines.append("")
 
+    if removed_models:
+        removed_names = sorted(set(c["name"] for c in removed_models))
+        lines.append(f"### Removed Models ({len(removed_names)})")
+        lines.append("Models in the previous corpus but not in this sweep (--replace mode).\n")
+        for name in removed_names:
+            lines.append(f"- **{name}**")
+        lines.append("")
+
+    # Health warnings
+    if health:
+        lines.append("## Health Warnings\n")
+
+        persistent = health.get("persistent_create_errors", [])
+        if persistent:
+            lines.append(f"### Persistent Failures ({len(persistent)})")
+            lines.append("Models with `create_error` in both the previous and current corpus.")
+            lines.append("These may have been removed upstream — consider removing from corpus.\n")
+            for name in persistent:
+                lines.append(f"- **{name}**")
+            lines.append("")
+
+        missing = health.get("missing_explain", [])
+        if missing:
+            # Deduplicate by model name for readability
+            missing_names = sorted(set(name for name, mode in missing))
+            lines.append(f"### Missing Explain Data ({len(missing_names)} models)")
+            lines.append("Models with `graph_break` status but no `break_reasons`.")
+            lines.append("Run an explain pass to fill in break details.\n")
+            for name in missing_names:
+                modes = [mode for n, mode in missing if n == name]
+                lines.append(f"- **{name}** ({', '.join(modes)})")
+            lines.append("")
+
     return "\n".join(lines)
 
 
@@ -390,6 +479,11 @@ def main():
                         help="Skip running validate.py after update")
     parser.add_argument("--changelog", default=None,
                         help="Path to write changelog (default: {sweep_dir}/changelog.md)")
+    parser.add_argument("--replace", action="store_true",
+                        help="Full replacement: sweep results become the entire corpus. "
+                             "Models not in the sweep are dropped.")
+    parser.add_argument("--force", action="store_true",
+                        help="Allow merging across different PyTorch versions")
     args = parser.parse_args()
 
     sweep_dir = Path(args.sweep_dir)
@@ -402,7 +496,10 @@ def main():
         sys.exit(1)
 
     print(f"Loading identify results from {identify_path}")
-    identify_results = load_sweep_results(identify_path)
+    with open(identify_path) as f:
+        identify_data = json.load(f)
+    identify_meta = identify_data.get("metadata", {}) if isinstance(identify_data, dict) else {}
+    identify_results = identify_data.get("results", identify_data) if isinstance(identify_data, dict) else identify_data
     identify_idx = index_by_name_mode(identify_results)
     print(f"  {len(identify_results)} results ({len(set(r['name'] for r in identify_results))} models)")
 
@@ -417,14 +514,18 @@ def main():
     else:
         print("No explain results found (skipping break detail merge)")
 
-    # Load versions (optional)
-    versions_path = sweep_dir / "versions.json"
-    versions = {}
-    if versions_path.exists():
-        with open(versions_path) as f:
-            versions = json.load(f)
-        print(f"Loaded versions: torch={versions.get('torch', '?')}, "
+    # Load versions from results metadata
+    versions = identify_meta.get("versions", {})
+    if versions:
+        print(f"Versions: torch={versions.get('torch', '?')}, "
               f"transformers={versions.get('transformers', '?')}")
+    else:
+        if args.replace:
+            print(f"\nERROR: --replace requires version info in results metadata.",
+                  file=sys.stderr)
+            print(f"  A full corpus replacement must record which versions it was built from.")
+            sys.exit(1)
+        print("\nWARNING: No version info in results metadata — cannot verify version match.")
 
     # Load current corpus
     print(f"\nLoading corpus from {corpus_path}")
@@ -432,12 +533,55 @@ def main():
         corpus = json.load(f)
     print(f"  {len(corpus['models'])} models")
 
+    if args.replace:
+        print(f"\n  Mode: REPLACE (full sweep → complete corpus replacement)")
+    else:
+        # Version safety check (overlay mode only — replace doesn't mix versions)
+        meta = corpus.get("metadata", {})
+        version_checks = [
+            ("PyTorch", meta.get("pytorch_version", ""),
+             versions.get("torch", "").split("+")[0]),
+            ("transformers", meta.get("transformers_version", ""),
+             versions.get("transformers", "")),
+            ("diffusers", meta.get("diffusers_version", ""),
+             versions.get("diffusers", "")),
+        ]
+        mismatches = [(name, corp, sweep)
+                      for name, corp, sweep in version_checks
+                      if corp and sweep and corp != sweep]
+        if mismatches:
+            print(f"\nERROR: Version mismatch detected!")
+            for name, corp, sweep in mismatches:
+                print(f"  {name}:  corpus={corp}  sweep={sweep}")
+            print(f"\nMerging results from different versions produces a mixed corpus")
+            print(f"where skipped models reflect old versions but metadata claims new.")
+            print(f"\nTo update versions, run a full sweep first (with --replace).")
+            print(f"To force overlay anyway: --force")
+            if not args.force:
+                sys.exit(1)
+            print(f"\n--force specified, proceeding despite version mismatch...")
+
+        # Timestamp staleness check (overlay mode only)
+        corpus_updated = meta.get("last_updated", "")
+        sweep_timestamp = identify_meta.get("timestamp", "")
+        if corpus_updated and sweep_timestamp:
+            sweep_date = sweep_timestamp[:10]  # "2026-04-15T..." → "2026-04-15"
+            if sweep_date < corpus_updated:
+                print(f"\nWARNING: Sweep results ({sweep_date}) are older than "
+                      f"corpus ({corpus_updated}).")
+                print("  You may be overwriting newer data with older results.")
+                if not args.force:
+                    print("  Use --force to proceed anyway.")
+                    sys.exit(1)
+
     # Merge
     print("\nMerging sweep results into corpus...")
-    corpus, changelog, pre_merge_names = update_corpus(corpus, identify_idx, explain_idx, versions)
+    corpus, changelog, pre_merge_names, health = update_corpus(
+        corpus, identify_idx, explain_idx, versions, replace=args.replace)
 
     # Format changelog
-    changelog_text = format_changelog(changelog, str(sweep_dir), versions, corpus, pre_merge_names)
+    changelog_text = format_changelog(
+        changelog, str(sweep_dir), versions, corpus, pre_merge_names, health)
 
     # Print summary
     status_changes = [c for c in changelog if c["type"] == "status_change"]
@@ -449,10 +593,27 @@ def main():
     print(f"    Regressions (full_graph→break): {len(regressions)}")
     print(f"    Fixes (break→full_graph): {len(fixes)}")
     print(f"    Other: {len(status_changes) - len(regressions) - len(fixes)}")
+    removed_models = [c for c in changelog if c["type"] == "removed_model"]
     new_fam, new_cfg = _classify_new_models(new_models, pre_merge_names)
     print(f"  New entries: {len(new_models)}")
     print(f"    New model families: {len(new_fam)}")
     print(f"    New configurations: {len(new_cfg)}")
+    if removed_models:
+        print(f"  Removed: {len(removed_models)} models (not in sweep, --replace mode)")
+
+    # Print health warnings
+    if health:
+        persistent = health.get("persistent_create_errors", [])
+        if persistent:
+            print(f"\n  ⚠ Persistent create_error: {len(persistent)} models")
+            print(f"    May be removed upstream. Review: {', '.join(persistent[:5])}")
+            if len(persistent) > 5:
+                print(f"    ... and {len(persistent) - 5} more (see changelog)")
+        missing = health.get("missing_explain", [])
+        if missing:
+            missing_names = sorted(set(name for name, mode in missing))
+            print(f"\n  ⚠ Missing explain data: {len(missing_names)} graph_break models")
+            print(f"    Run explain pass to fill in break details.")
 
     if args.dry_run:
         print("\n--- DRY RUN — no files written ---")
