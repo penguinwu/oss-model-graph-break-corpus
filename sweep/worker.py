@@ -3419,9 +3419,21 @@ def main():
     parser.add_argument("--dynamic", nargs="?", const="true", default=None,
                         choices=["true", "mark"],
                         help="Dynamic shapes: 'true' = all dims symbolic, 'mark' = realistic dims only")
+    parser.add_argument("--dynamo-flags", default=None,
+                        help="JSON dict of torch._dynamo.config flags to set before compilation")
     args = parser.parse_args()
 
     spec = json.loads(args.model_json)
+
+    # Apply dynamo config flags if provided
+    if args.dynamo_flags:
+        dynamo_flags = json.loads(args.dynamo_flags)
+        for flag_name, flag_value in dynamo_flags.items():
+            if hasattr(torch._dynamo.config, flag_name):
+                setattr(torch._dynamo.config, flag_name, flag_value)
+                print(f"DYNAMO_FLAG: {flag_name} = {flag_value}", file=sys.stderr, flush=True)
+            else:
+                print(f"WARNING: Unknown dynamo config flag: {flag_name}", file=sys.stderr, flush=True)
 
     # Convert dynamic arg: None→False, "true"→True, "mark"→"mark"
     dynamic_val = {"true": True, "mark": "mark"}.get(args.dynamic, False)

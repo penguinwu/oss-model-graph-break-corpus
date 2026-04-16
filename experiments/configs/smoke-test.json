@@ -1,0 +1,19 @@
+{
+  "name": "smoke-test",
+  "description": "Quick smoke test of experiment runner — 3 models, 2 configs",
+  "models": {
+    "source": "list",
+    "names": ["GPT2Model", "ReformerModel", "T5Model"]
+  },
+  "configs": [
+    {"name": "baseline", "dynamo_flags": {}},
+    {"name": "cso", "dynamo_flags": {"capture_scalar_outputs": true}}
+  ],
+  "settings": {
+    "device": "cuda",
+    "modes": ["eval"],
+    "workers": 2,
+    "timeout_s": 120,
+    "pass_num": 1
+  }
+}
