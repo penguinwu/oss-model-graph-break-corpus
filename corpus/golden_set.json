@@ -372,10 +372,10 @@
     {
       "name": "BltModel",
       "eval": {
-        "status": "full_graph"
+        "status": "timeout"
       },
       "train": {
-        "status": "full_graph"
+        "status": "timeout"
       }
     },
     {
@@ -1146,7 +1146,7 @@
     {
       "name": "FalconMambaModel",
       "eval": {
-        "status": "graph_break"
+        "status": "full_graph"
       },
       "train": {
         "status": "full_graph"
@@ -2181,7 +2181,7 @@
     {
       "name": "MambaModel",
       "eval": {
-        "status": "graph_break"
+        "status": "full_graph"
       },
       "train": {
         "status": "full_graph"
@@ -2559,7 +2559,7 @@
     {
       "name": "OlmoHybridModel",
       "eval": {
-        "status": "eager_error"
+        "status": "graph_break"
       },
       "train": {
         "status": "graph_break"
@@ -3054,7 +3054,7 @@
     {
       "name": "Qwen3NextModel",
       "eval": {
-        "status": "eager_error"
+        "status": "graph_break"
       },
       "train": {
         "status": "graph_break"
@@ -3099,7 +3099,7 @@
     {
       "name": "Qwen3_5Model",
       "eval": {
-        "status": "eager_error"
+        "status": "graph_break"
       },
       "train": {
         "status": "graph_break"
@@ -3108,7 +3108,7 @@
     {
       "name": "Qwen3_5MoeModel",
       "eval": {
-        "status": "eager_error"
+        "status": "graph_break"
       },
       "train": {
         "status": "graph_break"
@@ -3117,7 +3117,7 @@
     {
       "name": "Qwen3_5MoeTextModel",
       "eval": {
-        "status": "eager_error"
+        "status": "graph_break"
       },
       "train": {
         "status": "graph_break"
@@ -3126,7 +3126,7 @@
     {
       "name": "Qwen3_5TextModel",
       "eval": {
-        "status": "eager_error"
+        "status": "graph_break"
       },
       "train": {
         "status": "graph_break"
@@ -3234,7 +3234,7 @@
     {
       "name": "RwkvModel",
       "eval": {
-        "status": "graph_break"
+        "status": "timeout"
       },
       "train": {
         "status": "timeout"
@@ -3291,7 +3291,7 @@
         "status": "full_graph"
       },
       "train": {
-        "status": "worker_error"
+        "status": "full_graph"
       }
     },
     {
@@ -3300,7 +3300,7 @@
         "status": "full_graph"
       },
       "train": {
-        "status": "worker_error"
+        "status": "full_graph"
       }
     },
     {
@@ -3700,24 +3700,6 @@
       }
     },
     {
-      "name": "UNet2DConditionModel",
-      "eval": {
-        "status": "full_graph"
-      },
-      "train": {
-        "status": "full_graph"
-      }
-    },
-    {
-      "name": "UNet2DModel",
-      "eval": {
-        "status": "full_graph"
-      },
-      "train": {
-        "status": "full_graph"
-      }
-    },
-    {
       "name": "UVDocModel",
       "eval": {
         "status": "full_graph"
@@ -4107,7 +4089,7 @@
     {
       "name": "Zamba2Model",
       "eval": {
-        "status": "full_graph"
+        "status": "eager_error"
       },
       "train": {
         "status": "eager_error"
@@ -4116,7 +4098,7 @@
     {
       "name": "ZambaModel",
       "eval": {
-        "status": "graph_break"
+        "status": "create_error"
       },
       "train": {
         "status": "create_error"
@@ -4350,10 +4332,10 @@
     {
       "name": "BltForCausalLM",
       "eval": {
-        "status": "full_graph"
+        "status": "timeout"
       },
       "train": {
-        "status": "full_graph"
+        "status": "timeout"
       }
     },
     {
@@ -4701,7 +4683,7 @@
     {
       "name": "FalconMambaForCausalLM",
       "eval": {
-        "status": "graph_break"
+        "status": "full_graph"
       },
       "train": {
         "status": "full_graph"
@@ -5268,7 +5250,7 @@
     {
       "name": "LlavaForConditionalGeneration",
       "eval": {
-        "status": "create_error"
+        "status": "graph_break"
       },
       "train": {
         "status": "graph_break"
@@ -5385,7 +5367,7 @@
     {
       "name": "MambaForCausalLM",
       "eval": {
-        "status": "graph_break"
+        "status": "full_graph"
       },
       "train": {
         "status": "full_graph"
@@ -5682,7 +5664,7 @@
     {
       "name": "OlmoHybridForCausalLM",
       "eval": {
-        "status": "eager_error"
+        "status": "graph_break"
       },
       "train": {
         "status": "graph_break"
@@ -5961,7 +5943,7 @@
     {
       "name": "Qwen3NextForCausalLM",
       "eval": {
-        "status": "eager_error"
+        "status": "graph_break"
       },
       "train": {
         "status": "graph_break"
@@ -5997,7 +5979,7 @@
     {
       "name": "Qwen3_5ForCausalLM",
       "eval": {
-        "status": "eager_error"
+        "status": "graph_break"
       },
       "train": {
         "status": "graph_break"
@@ -6006,7 +5988,7 @@
     {
       "name": "Qwen3_5ForConditionalGeneration",
       "eval": {
-        "status": "eager_error"
+        "status": "graph_break"
       },
       "train": {
         "status": "graph_break"
@@ -6015,7 +5997,7 @@
     {
       "name": "Qwen3_5MoeForCausalLM",
       "eval": {
-        "status": "eager_error"
+        "status": "graph_break"
       },
       "train": {
         "status": "graph_break"
@@ -6024,7 +6006,7 @@
     {
       "name": "Qwen3_5MoeForConditionalGeneration",
       "eval": {
-        "status": "eager_error"
+        "status": "graph_break"
       },
       "train": {
         "status": "graph_break"
@@ -6087,7 +6069,7 @@
     {
       "name": "RwkvForCausalLM",
       "eval": {
-        "status": "full_graph"
+        "status": "timeout"
       },
       "train": {
         "status": "timeout"
@@ -6420,7 +6402,7 @@
     {
       "name": "Zamba2ForCausalLM",
       "eval": {
-        "status": "full_graph"
+        "status": "eager_error"
       },
       "train": {
         "status": "eager_error"
@@ -6429,7 +6411,7 @@
     {
       "name": "ZambaForCausalLM",
       "eval": {
-        "status": "graph_break"
+        "status": "create_error"
       },
       "train": {
         "status": "create_error"
@@ -6442,6 +6424,690 @@
       },
       "train": {
         "status": "full_graph"
+      }
+    },
+    {
+      "name": "AllegroTransformer3DModel",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "AsymmetricAutoencoderKL",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "AudioLDM2ProjectionModel",
+      "eval": {
+        "status": "create_error"
+      },
+      "train": {
+        "status": "create_error"
+      }
+    },
+    {
+      "name": "AudioLDM2UNet2DConditionModel",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "AuraFlowTransformer2DModel",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "AutoencoderDC",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "AutoencoderKLAllegro",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "AutoencoderKLCogVideoX",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "AutoencoderKLCosmos",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "AutoencoderKLFlux2",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "AutoencoderKLHunyuanImage",
+      "eval": {
+        "status": "create_error"
+      },
+      "train": {
+        "status": "create_error"
+      }
+    },
+    {
+      "name": "AutoencoderKLHunyuanImageRefiner",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "AutoencoderKLHunyuanVideo",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "AutoencoderKLHunyuanVideo15",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "AutoencoderKLLTX2Audio",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "AutoencoderKLLTX2Video",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "AutoencoderKLLTXVideo",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "AutoencoderKLMagvit",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "AutoencoderKLMochi",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "AutoencoderKLQwenImage",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "AutoencoderKLTemporalDecoder",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "AutoencoderKLWan",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "AutoencoderOobleck",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "AutoencoderRAE",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "BriaFiboTransformer2DModel",
+      "eval": {
+        "status": "timeout"
+      },
+      "train": {
+        "status": "timeout"
+      }
+    },
+    {
+      "name": "BriaTransformer2DModel",
+      "eval": {
+        "status": "timeout"
+      },
+      "train": {
+        "status": "timeout"
+      }
+    },
+    {
+      "name": "CLIPImageProjection",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "ChromaTransformer2DModel",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "ChronoEditTransformer3DModel",
+      "eval": {
+        "status": "create_error"
+      },
+      "train": {
+        "status": "create_error"
+      }
+    },
+    {
+      "name": "CogVideoXTransformer3DModel",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "CogView3PlusTransformer2DModel",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "CogView4Transformer2DModel",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "ConsisIDTransformer3DModel",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "ConsistencyDecoderVAE",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "ControlNetModel",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "ControlNetUnionModel",
+      "eval": {
+        "status": "create_error"
+      },
+      "train": {
+        "status": "create_error"
+      }
+    },
+    {
+      "name": "ControlNetXSAdapter",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "CosmosControlNetModel",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "CosmosTransformer3DModel",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "EasyAnimateTransformer3DModel",
+      "eval": {
+        "status": "create_error"
+      },
+      "train": {
+        "status": "create_error"
+      }
+    },
+    {
+      "name": "Flux2Transformer2DModel",
+      "eval": {
+        "status": "timeout"
+      },
+      "train": {
+        "status": "timeout"
+      }
+    },
+    {
+      "name": "FluxControlNetModel",
+      "eval": {
+        "status": "timeout"
+      },
+      "train": {
+        "status": "timeout"
+      }
+    },
+    {
+      "name": "FluxTransformer2DModel",
+      "eval": {
+        "status": "timeout"
+      },
+      "train": {
+        "status": "timeout"
+      }
+    },
+    {
+      "name": "Gemma4AudioModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Gemma4ForCausalLM",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Gemma4ForConditionalGeneration",
+      "eval": {
+        "status": "compile_error"
+      },
+      "train": {
+        "status": "compile_error"
+      }
+    },
+    {
+      "name": "Gemma4Model",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Gemma4TextModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "Gemma4VisionModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "GlmImageTransformer2DModel",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "HeliosTransformer3DModel",
+      "eval": {
+        "status": "timeout"
+      },
+      "train": {
+        "status": "timeout"
+      }
+    },
+    {
+      "name": "HiDreamImageTransformer2DModel",
+      "eval": {
+        "status": "create_error"
+      },
+      "train": {
+        "status": "create_error"
+      }
+    },
+    {
+      "name": "HunyuanDiT2DControlNetModel",
+      "eval": {
+        "status": "create_error"
+      },
+      "train": {
+        "status": "create_error"
+      }
+    },
+    {
+      "name": "HunyuanDiT2DModel",
+      "eval": {
+        "status": "create_error"
+      },
+      "train": {
+        "status": "create_error"
+      }
+    },
+    {
+      "name": "HunyuanImageTransformer2DModel",
+      "eval": {
+        "status": "timeout"
+      },
+      "train": {
+        "status": "zombie"
+      }
+    },
+    {
+      "name": "HunyuanVideo15Transformer3DModel",
+      "eval": {
+        "status": "timeout"
+      },
+      "train": {
+        "status": "timeout"
+      }
+    },
+    {
+      "name": "HunyuanVideoFramepackTransformer3DModel",
+      "eval": {
+        "status": "timeout"
+      },
+      "train": {
+        "status": "timeout"
+      }
+    },
+    {
+      "name": "HunyuanVideoTransformer3DModel",
+      "eval": {
+        "status": "timeout"
+      },
+      "train": {
+        "status": "timeout"
+      }
+    },
+    {
+      "name": "I2VGenXLUNet",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "Kandinsky3UNet",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "Kandinsky5Transformer3DModel",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "LTX2VideoTransformer3DModel",
+      "eval": {
+        "status": "timeout"
+      },
+      "train": {
+        "status": "timeout"
+      }
+    },
+    {
+      "name": "LTXVideoTransformer3DModel",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "LatteTransformer3DModel",
+      "eval": {
+        "status": "create_error"
+      },
+      "train": {
+        "status": "create_error"
+      }
+    },
+    {
+      "name": "LongCatImageTransformer2DModel",
+      "eval": {
+        "status": "timeout"
+      },
+      "train": {
+        "status": "timeout"
+      }
+    },
+    {
+      "name": "Lumina2Transformer2DModel",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "LuminaNextDiT2DModel",
+      "eval": {
+        "status": "create_error"
+      },
+      "train": {
+        "status": "create_error"
+      }
+    },
+    {
+      "name": "MochiTransformer3DModel",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "MotionAdapter",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "MusicFlamingoForConditionalGeneration",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "NomicBertModel",
+      "eval": {
+        "status": "full_graph"
+      },
+      "train": {
+        "status": "full_graph"
+      }
+    },
+    {
+      "name": "OmniGenTransformer2DModel",
+      "eval": {
+        "status": "create_error"
+      },
+      "train": {
+        "status": "create_error"
+      }
+    },
+    {
+      "name": "OvisImageTransformer2DModel",
+      "eval": {
+        "status": "create_error"
+      },
+      "train": {
+        "status": "create_error"
+      }
+    },
+    {
+      "name": "PRXTransformer2DModel",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "PixArtTransformer2DModel",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
+      }
+    },
+    {
+      "name": "PriorTransformer",
+      "eval": {
+        "status": "eager_error"
+      },
+      "train": {
+        "status": "eager_error"
       }
     }
   ]
