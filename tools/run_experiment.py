@@ -36,6 +36,7 @@ Usage:
 import argparse
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -468,12 +469,11 @@ def run_experiment(config, args):
 
     # Results file (JSONL — one line per model/config/mode)
     results_file = output_dir / "results.jsonl"
-    checkpoint_file = output_dir / "checkpoint.jsonl"
 
-    # Load checkpoint for resume
+    # Load existing results for resume
     resume_from = {}
-    if resume_dir and checkpoint_file.exists():
-        with open(checkpoint_file) as f:
+    if resume_dir and results_file.exists():
+        with open(results_file) as f:
             for line in f:
                 try:
                     r = json.loads(line)
@@ -481,11 +481,30 @@ def run_experiment(config, args):
                     resume_from[key] = r
                 except (json.JSONDecodeError, KeyError):
                     pass
-        print(f"Resuming: {len(resume_from)} results from checkpoint")
+        print(f"Resuming: {len(resume_from)} results from prior run")
 
     # Open results file for appending
     results_fh = open(results_file, "a")
-    ckpt_fh = open(checkpoint_file, "a")
+
+    # Signal handler: flush and mark interrupted on SIGTERM/SIGINT
+    interrupted = False
+
+    def _handle_signal(signum, frame):
+        nonlocal interrupted
+        interrupted = True
+        results_fh.flush()
+        results_fh.close()
+        marker = output_dir / "INTERRUPTED"
+        marker.write_text(
+            f"Interrupted by signal {signum} at {time.strftime('%Y-%m-%dT%H:%M:%S')}\n"
+            f"Results written: {len(all_results)}\n"
+        )
+        print(f"\n  Interrupted (signal {signum}). "
+              f"{len(all_results)} results saved to {results_file}")
+        sys.exit(1)
+
+    signal.signal(signal.SIGTERM, _handle_signal)
+    signal.signal(signal.SIGINT, _handle_signal)
 
     experiment_start = time.perf_counter()
     all_results = list(resume_from.values())
@@ -510,12 +529,10 @@ def run_experiment(config, args):
         return experiment_result
 
     def _write_result(experiment_result):
-        """Write a single result to both results and checkpoint files."""
+        """Write a single result to results file (streamed on each worker finish)."""
         line = json.dumps(experiment_result)
         results_fh.write(line + "\n")
         results_fh.flush()
-        ckpt_fh.write(line + "\n")
-        ckpt_fh.flush()
 
     try:
         for cfg in configs:
@@ -593,8 +610,8 @@ def run_experiment(config, args):
                 )
 
     finally:
-        results_fh.close()
-        ckpt_fh.close()
+        if not interrupted:
+            results_fh.close()
 
     experiment_time = time.perf_counter() - experiment_start
 
