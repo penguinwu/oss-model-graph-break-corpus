@@ -347,7 +347,7 @@ def resolve_models(models_config, python_bin=None):
                 for line in f:
                     try:
                         r = json.loads(line)
-                        existing_names.add(r["model"])
+                        existing_names.add(r.get("name", r.get("model")))
                     except (json.JSONDecodeError, KeyError):
                         pass
         # Also check JSON results
@@ -477,7 +477,8 @@ def run_experiment(config, args):
             for line in f:
                 try:
                     r = json.loads(line)
-                    key = (r["model"], r["config"], r.get("mode", "eval"))
+                    model_name = r.get("name", r.get("model"))
+                    key = (model_name, r["config"], r.get("mode", "eval"))
                     resume_from[key] = r
                 except (json.JSONDecodeError, KeyError):
                     pass
@@ -512,14 +513,17 @@ def run_experiment(config, args):
     def _make_experiment_result(r, cfg_name, dynamo_flags, retry=False):
         """Transform raw orchestrator result into experiment result."""
         experiment_result = {
-            "model": r["name"],
+            "name": r["name"],
+            "source": r.get("source", "unknown"),
             "config": cfg_name,
             "mode": r.get("mode", "eval"),
             "status": r["status"],
             "wall_time_s": r.get("wall_time_s", 0),
         }
         for key in ("graph_count", "graph_break_count", "error",
-                     "break_reasons", "ops_per_graph", "compile_times"):
+                     "break_reasons", "ops_per_graph", "compile_times",
+                     "create_time_s", "eager_time_s", "compile_time_s",
+                     "gpu_mem_mb", "fullgraph_ok"):
             if key in r:
                 experiment_result[key] = r[key]
         if dynamo_flags:
@@ -595,7 +599,8 @@ def run_experiment(config, args):
                     exp_result = _make_experiment_result(r, _cfg, _flags, retry=True)
                     _write_result(exp_result)
                     for i, prev in enumerate(all_results):
-                        if (prev["model"] == exp_result["model"]
+                        prev_name = prev.get("name", prev.get("model"))
+                        if (prev_name == exp_result["name"]
                                 and prev["config"] == _cfg
                                 and prev.get("mode") == exp_result.get("mode")):
                             all_results[i] = exp_result
@@ -615,7 +620,7 @@ def run_experiment(config, args):
             # Deduplicate results file (retries append duplicates; keep last entry per key)
             seen = {}
             for r in all_results:
-                key = (r["model"], r["config"], r.get("mode", "eval"))
+                key = (r.get("name", r.get("model")), r["config"], r.get("mode", "eval"))
                 seen[key] = r
             with open(results_file, "w") as f:
                 for r in seen.values():
@@ -689,7 +694,7 @@ def _generate_summary(results, config, output_dir, duration):
         lines.append("")
 
         baseline_name = configs[0]["name"]
-        baseline_results = {(r["model"], r.get("mode", "eval")): r
+        baseline_results = {(r.get("name", r.get("model")), r.get("mode", "eval")): r
                            for r in by_config.get(baseline_name, [])}
 
         for cfg in configs[1:]:
@@ -701,7 +706,7 @@ def _generate_summary(results, config, output_dir, duration):
             crashes = []
 
             for r in cfg_results:
-                key = (r["model"], r.get("mode", "eval"))
+                key = (r.get("name", r.get("model")), r.get("mode", "eval"))
                 baseline = baseline_results.get(key)
                 if not baseline:
                     continue
@@ -785,7 +790,7 @@ def merge_results(source_dir, target_dir):
                 continue
             try:
                 r = json.loads(line)
-                key = (r["model"], r.get("config", "default"), r.get("mode", "eval"))
+                key = (r.get("name", r.get("model")), r.get("config", "default"), r.get("mode", "eval"))
                 target_index[key] = r
             except (json.JSONDecodeError, KeyError):
                 continue
@@ -803,7 +808,7 @@ def merge_results(source_dir, target_dir):
                 continue
             try:
                 r = json.loads(line)
-                key = (r["model"], r.get("config", "default"), r.get("mode", "eval"))
+                key = (r.get("name", r.get("model")), r.get("config", "default"), r.get("mode", "eval"))
                 if key in target_index:
                     overrides += 1
                 else:

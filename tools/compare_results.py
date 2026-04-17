@@ -31,7 +31,8 @@ def load_experiment(path):
     with open(path) as f:
         for line in f:
             r = json.loads(line)
-            key = (r["model"], r.get("mode", "eval"))
+            name = r.get("name", r.get("model"))
+            key = (name, r.get("mode", "eval"))
             results[key] = r["status"]
     return results
 
