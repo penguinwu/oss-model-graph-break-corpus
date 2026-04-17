@@ -308,6 +308,26 @@ def run_sweep(args):
     with open(state_file, "w") as f:
         json.dump(state, f, indent=2)
 
+    # ── Signal handler: flush results on kill ──
+    interrupted = False
+    streaming_fh = None
+
+    def _handle_signal(signum, frame):
+        nonlocal interrupted
+        interrupted = True
+        if streaming_fh and not streaming_fh.closed:
+            streaming_fh.flush()
+            streaming_fh.close()
+        marker = output_dir / "INTERRUPTED"
+        marker.write_text(
+            f"Interrupted by signal {signum} at {time.strftime('%Y-%m-%dT%H:%M:%S')}\n"
+        )
+        print(f"\n  Interrupted (signal {signum}). Results saved to checkpoint.")
+        sys.exit(1)
+
+    signal.signal(signal.SIGTERM, _handle_signal)
+    signal.signal(signal.SIGINT, _handle_signal)
+
     # ══════════════════════════════════════════════════════════════════════
     # IDENTIFY: Fast identification (eval-only by default)
     # ══════════════════════════════════════════════════════════════════════
@@ -339,6 +359,14 @@ def run_sweep(args):
         print(f"  {len(multi_specs)} multi-worker, {len(single_specs)} single-worker (flaky under contention)")
     print(f"{'=' * 70}")
 
+    # Streaming callback: write each result to checkpoint as it completes
+    streaming_file = output_dir / "identify_streaming.jsonl"
+    streaming_fh = open(streaming_file, "a")
+
+    def _on_result(result):
+        streaming_fh.write(json.dumps(result) + "\n")
+        streaming_fh.flush()
+
     identify_start = time.perf_counter()
     identify_results = run_pass(
         python_bin, multi_specs, pass_num=1, device=args.device, modes=modes,
@@ -346,6 +374,7 @@ def run_sweep(args):
         checkpoint_file=identify_ckpt, resume_from=resume_from,
         dynamic=dynamic, timeout_overrides=timeout_overrides,
         skip_models=skip_models,
+        result_callback=_on_result,
     )
 
     # Run single-worker models serially to avoid GPU contention flakiness
@@ -359,10 +388,12 @@ def run_sweep(args):
             checkpoint_file=identify_ckpt, resume_from=resume_from,
             dynamic=dynamic, timeout_overrides=timeout_overrides,
             skip_models=skip_models,
+            result_callback=_on_result,
         )
         identify_results.extend(single_results)
 
     identify_time = time.perf_counter() - identify_start
+    streaming_fh.close()
 
     # Save identify results (full JSON for analysis)
     identify_metadata = {
