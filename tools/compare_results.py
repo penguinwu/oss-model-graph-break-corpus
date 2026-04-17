@@ -135,12 +135,34 @@ def main():
         print()
 
     if group_disagree:
-        print(f"GROUP-LEVEL mismatches (these are concerning):")
-        print(f"  {'Model':<40} {'Mode':<6} {'Experiment':<16} {'Sweep':<16}")
-        print(f"  {'-'*40} {'-'*6} {'-'*16} {'-'*16}")
-        for (name, mode), e_s, s_s in group_disagree[:30]:
-            print(f"  {name:<40} {mode:<6} {e_s:<16} {s_s:<16}")
-        print()
+        # Classify mismatches: environment changes vs compilation regressions
+        env_changes = []  # create_error involved — likely library version change
+        compilation_regressions = []  # real signal — compilation behavior changed
+
+        for item in group_disagree:
+            (name, mode), e_s, s_s = item
+            if "create_error" in (e_s, s_s) or "eager_error" in (e_s, s_s):
+                env_changes.append(item)
+            else:
+                compilation_regressions.append(item)
+
+        if compilation_regressions:
+            print(f"COMPILATION REGRESSIONS ({len(compilation_regressions)}):")
+            print(f"  Real signal — compilation behavior changed between runs")
+            print(f"  {'Model':<40} {'Mode':<6} {'Experiment':<16} {'Sweep':<16}")
+            print(f"  {'-'*40} {'-'*6} {'-'*16} {'-'*16}")
+            for (name, mode), e_s, s_s in compilation_regressions:
+                print(f"  {name:<40} {mode:<6} {e_s:<16} {s_s:<16}")
+            print()
+
+        if env_changes:
+            print(f"ENVIRONMENT CHANGES ({len(env_changes)}):")
+            print(f"  Likely library version differences (create/eager errors)")
+            print(f"  {'Model':<40} {'Mode':<6} {'Experiment':<16} {'Sweep':<16}")
+            print(f"  {'-'*40} {'-'*6} {'-'*16} {'-'*16}")
+            for (name, mode), e_s, s_s in env_changes:
+                print(f"  {name:<40} {mode:<6} {e_s:<16} {s_s:<16}")
+            print()
 
 
 if __name__ == "__main__":
