@@ -612,6 +612,14 @@ def run_experiment(config, args):
     finally:
         if not interrupted:
             results_fh.close()
+            # Deduplicate results file (retries append duplicates; keep last entry per key)
+            seen = {}
+            for r in all_results:
+                key = (r["model"], r["config"], r.get("mode", "eval"))
+                seen[key] = r
+            with open(results_file, "w") as f:
+                for r in seen.values():
+                    f.write(json.dumps(r) + "\n")
 
     experiment_time = time.perf_counter() - experiment_start
 
