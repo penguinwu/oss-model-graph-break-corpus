@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 sweep_results/
+experiments/results/
 # But track nightly results explicitly (git add -f)
 !sweep_results/nightly/
 *.log
