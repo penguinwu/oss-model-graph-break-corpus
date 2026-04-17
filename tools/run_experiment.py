@@ -123,19 +123,29 @@ def validate_config(config, strict=True):
         errors.append("models.source is required")
     else:
         source = models["source"]
-        valid_sources = {"list", "all", "corpus_filter", "sample", "new_since"}
-        if source not in valid_sources:
-            errors.append(f"Unknown models.source '{source}' — "
-                         f"valid options: {', '.join(sorted(valid_sources))}")
-        if source == "list" and "names" not in models:
-            errors.append("models.names is required when source='list'")
-        if source == "corpus_filter" and "status" not in models:
-            errors.append("models.status is required when source='corpus_filter'")
-        if source == "sample":
-            if "size" not in models:
-                errors.append("models.size is required when source='sample'")
-        if source == "new_since" and "baseline" not in models:
-            errors.append("models.baseline is required when source='new_since'")
+        if isinstance(source, list):
+            # List of suite names
+            valid_suites = {"hf", "diffusers", "custom", "timm"}
+            for s in source:
+                if s not in valid_suites:
+                    errors.append(f"Unknown suite '{s}' in models.source — "
+                                 f"valid suites: {', '.join(sorted(valid_suites))}")
+        elif isinstance(source, str):
+            valid_sources = {"list", "all", "corpus_filter", "sample", "new_since"}
+            if source not in valid_sources:
+                errors.append(f"Unknown models.source '{source}' — "
+                             f"valid options: {', '.join(sorted(valid_sources))}")
+            if source == "list" and "names" not in models:
+                errors.append("models.names is required when source='list'")
+            if source == "corpus_filter" and "status" not in models:
+                errors.append("models.status is required when source='corpus_filter'")
+            if source == "sample":
+                if "size" not in models:
+                    errors.append("models.size is required when source='sample'")
+            if source == "new_since" and "baseline" not in models:
+                errors.append("models.baseline is required when source='new_since'")
+        else:
+            errors.append("models.source must be a string or list of suite names")
 
     # Validate configs
     configs = config["configs"]
@@ -187,6 +197,21 @@ def validate_config(config, strict=True):
     if pass_num not in (1, 2):
         errors.append(f"settings.pass_num must be 1 or 2, got {pass_num}")
 
+    dynamic = settings.get("dynamic", "static")
+    if dynamic not in ("static", "mark", "true"):
+        errors.append(f"settings.dynamic must be 'static', 'mark', or 'true', "
+                     f"got '{dynamic}'")
+
+    timeout_retry = settings.get("timeout_retry_s")
+    if timeout_retry is not None:
+        if not isinstance(timeout_retry, (int, float)) or timeout_retry < 1:
+            errors.append(f"settings.timeout_retry_s must be a positive number, "
+                         f"got {timeout_retry}")
+
+    python_bin = settings.get("python_bin")
+    if python_bin is not None and not isinstance(python_bin, str):
+        errors.append(f"settings.python_bin must be a string path")
+
     return errors
 
 
@@ -196,6 +221,35 @@ def resolve_models(models_config, python_bin=None):
     Returns list of dicts with at minimum {"name": ..., "source": ...}.
     """
     source = models_config["source"]
+
+    # Suite list: ["hf", "diffusers", "custom"]
+    if isinstance(source, list):
+        sys.path.insert(0, str(SWEEP_DIR))
+        from models import enumerate_hf, enumerate_diffusers
+        try:
+            from models import enumerate_custom
+        except ImportError:
+            enumerate_custom = lambda: []
+        try:
+            from models import enumerate_timm
+        except ImportError:
+            enumerate_timm = lambda: []
+
+        suite_map = {
+            "hf": enumerate_hf,
+            "diffusers": enumerate_diffusers,
+            "custom": enumerate_custom,
+            "timm": enumerate_timm,
+        }
+        specs = []
+        for suite_name in source:
+            fn = suite_map.get(suite_name)
+            if fn:
+                try:
+                    specs.extend(fn())
+                except Exception as e:
+                    print(f"WARNING: Failed to enumerate {suite_name}: {e}")
+        return specs
 
     if source == "list":
         # Explicit model list — enumerate all and filter
@@ -319,7 +373,9 @@ def run_experiment(config, args):
     modes = settings.get("modes", ["eval"])
     workers = settings.get("workers", 4)
     timeout_s = settings.get("timeout_s", 180)
+    timeout_retry_s = settings.get("timeout_retry_s")
     pass_num = settings.get("pass_num", 1)
+    dynamic = settings.get("dynamic", "static")
 
     # CLI overrides take precedence over config
     if hasattr(args, "workers") and args.workers is not None:
@@ -327,8 +383,9 @@ def run_experiment(config, args):
     if hasattr(args, "timeout") and args.timeout is not None:
         timeout_s = args.timeout
 
-    # Resolve python binary
-    python_bin = os.environ.get("SWEEP_PYTHON", sys.executable)
+    # Resolve python binary: CLI env var > config > system python
+    python_bin = os.environ.get("SWEEP_PYTHON",
+                                settings.get("python_bin", sys.executable))
 
     # Set up output directory
     resume_dir = getattr(args, "resume", None)
@@ -360,7 +417,8 @@ def run_experiment(config, args):
     print(f"  Modes: {', '.join(modes)}")
     print(f"  Total work items: {total_work}")
     print(f"  Device: {device}, Workers: {workers}, Timeout: {timeout_s}s, "
-          f"Pass: {pass_num}")
+          f"Pass: {pass_num}, Dynamic: {dynamic}"
+          + (f", Retry timeout: {timeout_retry_s}s" if timeout_retry_s else ""))
 
     # Dry-run: show what would run, then exit
     if getattr(args, "dry_run", False):
@@ -453,13 +511,16 @@ def run_experiment(config, args):
                 continue
 
             # Run via orchestrator
+            dynamic_arg = dynamic if dynamic != "static" else False
             results = run_pass(
                 python_bin, pending_specs, pass_num=pass_num,
                 device=device, modes=modes, workers=workers,
-                timeout_s=timeout_s, extra_worker_args=extra_args,
+                timeout_s=timeout_s, dynamic=dynamic_arg,
+                extra_worker_args=extra_args,
             )
 
             # Process and save results
+            timed_out_specs = []
             for r in results:
                 experiment_result = {
                     "model": r["name"],
@@ -483,6 +544,52 @@ def run_experiment(config, args):
                 ckpt_fh.write(line + "\n")
                 ckpt_fh.flush()
                 all_results.append(experiment_result)
+
+                # Track timed-out models for retry
+                if r["status"] == "timeout":
+                    spec = next((s for s in specs if s["name"] == r["name"]), None)
+                    if spec and spec not in timed_out_specs:
+                        timed_out_specs.append(spec)
+
+            # Auto-retry timed-out models with longer timeout
+            if timed_out_specs and timeout_retry_s:
+                print(f"\n  Retrying {len(timed_out_specs)} timed-out models "
+                      f"with {timeout_retry_s}s timeout...")
+                retry_results = run_pass(
+                    python_bin, timed_out_specs, pass_num=pass_num,
+                    device=device, modes=modes, workers=workers,
+                    timeout_s=timeout_retry_s, dynamic=dynamic_arg,
+                    extra_worker_args=extra_args,
+                )
+                for r in retry_results:
+                    experiment_result = {
+                        "model": r["name"],
+                        "config": cfg_name,
+                        "mode": r.get("mode", "eval"),
+                        "status": r["status"],
+                        "wall_time_s": r.get("wall_time_s", 0),
+                        "retry": True,
+                    }
+                    for key in ("graph_count", "graph_break_count", "error",
+                               "break_reasons", "ops_per_graph", "compile_times"):
+                        if key in r:
+                            experiment_result[key] = r[key]
+                    if dynamo_flags:
+                        experiment_result["dynamo_flags"] = dynamo_flags
+
+                    # Overwrite the timeout entry in all_results
+                    for i, prev in enumerate(all_results):
+                        if (prev["model"] == experiment_result["model"]
+                                and prev["config"] == cfg_name
+                                and prev.get("mode") == experiment_result.get("mode")):
+                            all_results[i] = experiment_result
+                            break
+
+                    line = json.dumps(experiment_result)
+                    results_fh.write(line + "\n")
+                    results_fh.flush()
+                    ckpt_fh.write(line + "\n")
+                    ckpt_fh.flush()
 
     finally:
         results_fh.close()
