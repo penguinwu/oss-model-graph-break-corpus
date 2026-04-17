@@ -1070,6 +1070,10 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
 
     # Derive config from spec if available, otherwise from base model name
     config_name = spec.get("hf_config") or base_model_name.replace("Model", "Config")
+    # Gemma4VisionModel.config_class incorrectly points to Gemma4Config (composite)
+    # instead of Gemma4VisionConfig — use the correct vision-specific config.
+    if config_name == "Gemma4Config" and "Vision" in model_name:
+        config_name = "Gemma4VisionConfig"
     config_cls = getattr(transformers, config_name)
     model_cls = getattr(transformers, model_name)
 
