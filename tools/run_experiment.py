@@ -6,20 +6,32 @@ using the same orchestrator infrastructure as the production sweep.
 
 Usage:
   # Generate a starter config
-  python run_experiment.py --template > experiments/configs/my-test.json
+  python run_experiment.py template > experiments/configs/my-test.json
 
   # Validate a config before running
-  python run_experiment.py --validate experiments/configs/my-test.json
+  python run_experiment.py validate experiments/configs/my-test.json
+
+  # Dry-run — resolve models, show work items, exit
+  python run_experiment.py run experiments/configs/my-test.json --dry-run
 
   # Run an experiment
-  python run_experiment.py --config experiments/configs/my-test.json
+  python run_experiment.py run experiments/configs/my-test.json
 
   # Run with explicit output directory
-  python run_experiment.py --config experiments/configs/my-test.json \
-      --output experiments/results/2026-04-16-flag-quality/
+  python run_experiment.py run experiments/configs/my-test.json \
+      --output experiments/results/my-run/
+
+  # Override workers/timeout from CLI (without editing config)
+  python run_experiment.py run experiments/configs/my-test.json --workers 1
 
   # Resume an interrupted experiment
-  python run_experiment.py --config experiments/configs/my-test.json --resume
+  python run_experiment.py run experiments/configs/my-test.json \
+      --resume experiments/results/my-test-20260416-193000/
+
+  # Merge incremental results into an existing result set
+  python run_experiment.py merge \
+      --from experiments/results/new-models/ \
+      --into experiments/results/full-sweep/
 """
 import argparse
 import json
@@ -309,37 +321,63 @@ def run_experiment(config, args):
     timeout_s = settings.get("timeout_s", 180)
     pass_num = settings.get("pass_num", 1)
 
+    # CLI overrides take precedence over config
+    if hasattr(args, "workers") and args.workers is not None:
+        workers = args.workers
+    if hasattr(args, "timeout") and args.timeout is not None:
+        timeout_s = args.timeout
+
     # Resolve python binary
     python_bin = os.environ.get("SWEEP_PYTHON", sys.executable)
 
     # Set up output directory
-    if args.output:
-        output_dir = Path(args.output).resolve()
+    resume_dir = getattr(args, "resume", None)
+    output_override = getattr(args, "output", None)
+
+    if resume_dir:
+        # Resume writes to the same directory as the prior run
+        output_dir = Path(resume_dir).resolve()
+    elif output_override:
+        output_dir = Path(output_override).resolve()
     else:
-        timestamp = time.strftime("%Y-%m-%d")
-        output_dir = REPO_ROOT / "experiments" / "results" / f"{timestamp}-{name}"
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        output_dir = REPO_ROOT / "experiments" / "results" / f"{name}-{timestamp}"
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Resolve models
+    print(f"\nResolving models...")
+    specs = resolve_models(config["models"], python_bin)
+
+    configs = config["configs"]
+    total_work = len(specs) * len(configs) * len(modes)
 
     print(f"{'=' * 70}")
     print(f"EXPERIMENT: {name}")
     print(f"  {config.get('description', '')}")
     print(f"{'=' * 70}")
+    print(f"  Models: {len(specs)}")
+    print(f"  Configs: {len(configs)}")
+    print(f"  Modes: {', '.join(modes)}")
+    print(f"  Total work items: {total_work}")
+    print(f"  Device: {device}, Workers: {workers}, Timeout: {timeout_s}s, "
+          f"Pass: {pass_num}")
+
+    # Dry-run: show what would run, then exit
+    if getattr(args, "dry_run", False):
+        print(f"\n--- DRY RUN --- (no work will be executed)")
+        print(f"\nModels ({len(specs)}):")
+        for s in specs:
+            print(f"  - {s['name']} ({s.get('source', '?')})")
+        print(f"\nConfigs ({len(configs)}):")
+        for cfg in configs:
+            flags = cfg.get("dynamo_flags", {})
+            flag_str = json.dumps(flags) if flags else "(none)"
+            print(f"  - {cfg['name']}: {flag_str}")
+        print(f"\nOutput would go to: {output_dir}")
+        return
 
     # Capture environment
     version_info = log_versions(python_bin)
-
-    # Resolve models
-    print(f"\nResolving models...")
-    specs = resolve_models(config["models"], python_bin)
-    print(f"  {len(specs)} models resolved")
-
-    configs = config["configs"]
-    print(f"  {len(configs)} configs to test")
-    print(f"  Device: {device}, Workers: {workers}, Modes: {modes}, "
-          f"Timeout: {timeout_s}s, Pass: {pass_num}")
-
-    total_work = len(specs) * len(configs) * len(modes)
-    print(f"  Total work items: {total_work}")
 
     # Save resolved config (input + environment)
     resolved_config = {
@@ -366,7 +404,7 @@ def run_experiment(config, args):
 
     # Load checkpoint for resume
     resume_from = {}
-    if args.resume and checkpoint_file.exists():
+    if resume_dir and checkpoint_file.exists():
         with open(checkpoint_file) as f:
             for line in f:
                 try:
@@ -680,36 +718,65 @@ def main():
         description="Config-driven experiment runner for model graph break testing",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--template", action="store_true",
-                       help="Print a starter experiment config and exit")
-    parser.add_argument("--validate", metavar="CONFIG",
-                       help="Validate a config file and exit")
-    parser.add_argument("--config", metavar="CONFIG",
-                       help="Run an experiment from a config file")
-    parser.add_argument("--output", metavar="DIR",
-                       help="Output directory (default: experiments/results/<date>-<name>/)")
-    parser.add_argument("--resume", action="store_true",
-                       help="Resume an interrupted experiment from checkpoint")
-    parser.add_argument("--merge", nargs=2, metavar=("SOURCE", "TARGET"),
-                       help="Merge SOURCE results into TARGET results directory")
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+
+    # ── template ──────────────────────────────────────────────────────────
+    sub_template = subparsers.add_parser(
+        "template",
+        help="Print a starter experiment config to stdout",
+    )
+
+    # ── validate ──────────────────────────────────────────────────────────
+    sub_validate = subparsers.add_parser(
+        "validate",
+        help="Validate a config file and exit",
+    )
+    sub_validate.add_argument("config", metavar="CONFIG",
+                              help="Path to JSON config file")
+
+    # ── run ────────────────────────────────────────────────────────────────
+    sub_run = subparsers.add_parser(
+        "run",
+        help="Run an experiment from a config file",
+    )
+    sub_run.add_argument("config", metavar="CONFIG",
+                         help="Path to JSON config file")
+    sub_run.add_argument("--output", metavar="DIR",
+                         help="Output directory (default: experiments/results/<name>-<timestamp>/)")
+    sub_run.add_argument("--resume", metavar="DIR",
+                         help="Resume from a prior run's output directory "
+                              "(reads checkpoint, writes to same dir)")
+    sub_run.add_argument("--dry-run", action="store_true",
+                         help="Resolve models and show work items without running")
+    sub_run.add_argument("--workers", type=int, metavar="N",
+                         help="Override worker count from config")
+    sub_run.add_argument("--timeout", type=int, metavar="N",
+                         help="Override timeout (seconds) from config")
+
+    # ── merge ──────────────────────────────────────────────────────────────
+    sub_merge = subparsers.add_parser(
+        "merge",
+        help="Merge incremental results into an existing result set",
+    )
+    # Note: argparse doesn't allow --from since "from" is a Python keyword,
+    # so we use dest= to map it cleanly
+    sub_merge.add_argument("--from", dest="merge_from", metavar="DIR", required=True,
+                           help="Source results directory")
+    sub_merge.add_argument("--into", dest="merge_into", metavar="DIR", required=True,
+                           help="Target results directory (updated in-place)")
 
     args = parser.parse_args()
 
-    if args.template:
+    if args.command is None:
+        parser.print_help()
+        sys.exit(1)
+
+    if args.command == "template":
         generate_template()
         return
 
-    if args.validate:
-        try:
-            with open(args.validate) as f:
-                config = json.load(f)
-        except json.JSONDecodeError as e:
-            print(f"ERROR: Invalid JSON: {e}")
-            sys.exit(1)
-        except FileNotFoundError:
-            print(f"ERROR: File not found: {args.validate}")
-            sys.exit(1)
-
+    if args.command == "validate":
+        config = _load_config(args.config)
         errors = validate_config(config)
         if errors:
             print("Validation FAILED:")
@@ -720,21 +787,17 @@ def main():
             print("Validation PASSED")
             sys.exit(0)
 
-    if args.merge:
-        merge_results(args.merge[0], args.merge[1])
+    if args.command == "merge":
+        merge_results(args.merge_from, args.merge_into)
         return
 
-    if args.config:
-        try:
-            with open(args.config) as f:
-                config = json.load(f)
-        except json.JSONDecodeError as e:
-            print(f"ERROR: Invalid JSON: {e}")
-            sys.exit(1)
-        except FileNotFoundError:
-            print(f"ERROR: File not found: {args.config}")
+    if args.command == "run":
+        if args.output and args.resume:
+            print("ERROR: --output and --resume are mutually exclusive. "
+                  "--resume writes to the prior run's directory.")
             sys.exit(1)
 
+        config = _load_config(args.config)
         errors = validate_config(config)
         if errors:
             print("Config validation FAILED:")
@@ -745,7 +808,18 @@ def main():
         run_experiment(config, args)
         return
 
-    parser.print_help()
+
+def _load_config(path):
+    """Load and return a JSON config file, exiting on errors."""
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except json.JSONDecodeError as e:
+        print(f"ERROR: Invalid JSON: {e}")
+        sys.exit(1)
+    except FileNotFoundError:
+        print(f"ERROR: File not found: {path}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
