@@ -412,6 +412,9 @@ def run_experiment(config, args):
     print(f"EXPERIMENT: {name}")
     print(f"  {config.get('description', '')}")
     print(f"{'=' * 70}")
+    print(f"\nConfig:")
+    print(json.dumps(config, indent=2))
+    print()
     print(f"  Models: {len(specs)}")
     print(f"  Configs: {len(configs)}")
     print(f"  Modes: {', '.join(modes)}")
@@ -419,6 +422,13 @@ def run_experiment(config, args):
     print(f"  Device: {device}, Workers: {workers}, Timeout: {timeout_s}s, "
           f"Pass: {pass_num}, Dynamic: {dynamic}"
           + (f", Retry timeout: {timeout_retry_s}s" if timeout_retry_s else ""))
+    # Rough ETA: ~15s per work item on average, divided by workers
+    eta_s = (total_work * 15) / max(workers, 1)
+    eta_min = eta_s / 60
+    if eta_min > 60:
+        print(f"  Estimated time: ~{eta_min / 60:.1f} hours")
+    else:
+        print(f"  Estimated time: ~{eta_min:.0f} minutes")
 
     # Dry-run: show what would run, then exit
     if getattr(args, "dry_run", False):
