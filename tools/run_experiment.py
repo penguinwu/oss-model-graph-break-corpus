@@ -664,7 +664,7 @@ def _generate_summary(results, config, output_dir, duration):
         f"{description}",
         "",
         f"**Duration:** {duration:.1f}s",
-        f"**Models:** {len(set(r['model'] for r in results))}",
+        f"**Models:** {len(set(r.get('name', r.get('model')) for r in results))}",
         f"**Configs:** {len(configs)}",
         "",
     ]
@@ -719,13 +719,13 @@ def _generate_summary(results, config, output_dir, duration):
                 if b_status in ("graph_break",) and r_status in ("graph_break",):
                     if r_graphs < b_graphs:
                         improvements.append(
-                            f"{r['model']}: {b_graphs} → {r_graphs} graphs")
+                            f"{r.get('name', r.get('model'))}: {b_graphs} → {r_graphs} graphs")
                     elif r_graphs > b_graphs:
                         regressions.append(
-                            f"{r['model']}: {b_graphs} → {r_graphs} graphs")
+                            f"{r.get('name', r.get('model'))}: {b_graphs} → {r_graphs} graphs")
                 elif b_status in ("full_graph", "graph_break") and r_status not in ("full_graph", "graph_break"):
                     crashes.append(
-                        f"{r['model']}: {r_status} — {r.get('error', '')[:100]}")
+                        f"{r.get('name', r.get('model'))}: {r_status} — {r.get('error', '')[:100]}")
 
             lines.append(f"### {cfg_name} vs {baseline_name}")
             lines.append("")
