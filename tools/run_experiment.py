@@ -216,6 +216,24 @@ def validate_config(config, strict=True):
     return errors
 
 
+def _enumerate_all_sources():
+    """Enumerate models from all sources (hf + diffusers + custom)."""
+    sys.path.insert(0, str(SWEEP_DIR))
+    from models import enumerate_hf, enumerate_diffusers
+    try:
+        from models import enumerate_custom
+    except ImportError:
+        enumerate_custom = lambda: []
+
+    specs = enumerate_hf()
+    specs += [m for m in enumerate_diffusers() if m.get("has_config", True)]
+    try:
+        specs += enumerate_custom()
+    except Exception:
+        pass
+    return specs
+
+
 def resolve_models(models_config, python_bin=None):
     """Resolve model selection config into a list of model specs.
 
@@ -238,7 +256,8 @@ def resolve_models(models_config, python_bin=None):
 
         suite_map = {
             "hf": enumerate_hf,
-            "diffusers": enumerate_diffusers,
+            "diffusers": lambda: [m for m in enumerate_diffusers()
+                                  if m.get("has_config", True)],
             "custom": enumerate_custom,
             "timm": enumerate_timm,
         }
@@ -255,19 +274,7 @@ def resolve_models(models_config, python_bin=None):
     if source == "list":
         # Explicit model list — enumerate all and filter
         names = set(models_config["names"])
-        sys.path.insert(0, str(SWEEP_DIR))
-        from models import enumerate_hf, enumerate_diffusers
-        try:
-            from models import enumerate_custom
-        except ImportError:
-            enumerate_custom = lambda: []
-
-        all_specs = enumerate_hf() + enumerate_diffusers()
-        try:
-            all_specs += enumerate_custom()
-        except Exception:
-            pass
-
+        all_specs = _enumerate_all_sources()
         specs = [s for s in all_specs if s["name"] in names]
         found = {s["name"] for s in specs}
         missing = names - found
@@ -278,18 +285,7 @@ def resolve_models(models_config, python_bin=None):
         return specs
 
     elif source == "all":
-        sys.path.insert(0, str(SWEEP_DIR))
-        from models import enumerate_hf, enumerate_diffusers
-        try:
-            from models import enumerate_custom
-        except ImportError:
-            enumerate_custom = lambda: []
-        specs = enumerate_hf() + enumerate_diffusers()
-        try:
-            specs += enumerate_custom()
-        except Exception:
-            pass
-        return specs
+        return _enumerate_all_sources()
 
     elif source == "corpus_filter":
         status_filter = models_config["status"]
@@ -307,10 +303,7 @@ def resolve_models(models_config, python_bin=None):
                 if md.get("status") == status_filter:
                     matching_names.add(m["name"])
 
-        # Enumerate to get full specs
-        sys.path.insert(0, str(SWEEP_DIR))
-        from models import enumerate_hf, enumerate_diffusers
-        all_specs = enumerate_hf() + enumerate_diffusers()
+        all_specs = _enumerate_all_sources()
         return [s for s in all_specs if s["name"] in matching_names]
 
     elif source == "sample":
@@ -334,10 +327,7 @@ def resolve_models(models_config, python_bin=None):
 
     elif source == "new_since":
         baseline_dir = Path(models_config["baseline"])
-        # Find models in current enumeration that don't appear in baseline results
-        sys.path.insert(0, str(SWEEP_DIR))
-        from models import enumerate_hf, enumerate_diffusers
-        all_specs = enumerate_hf() + enumerate_diffusers()
+        all_specs = _enumerate_all_sources()
         all_names = {s["name"] for s in all_specs}
 
         # Load baseline results to find existing models
