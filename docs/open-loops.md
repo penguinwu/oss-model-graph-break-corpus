@@ -20,12 +20,6 @@ Things we noticed that deserve attention — issues, design improvements, open q
 - **Risk:** Medium — orchestrator still owns loop state; callback is a bolt-on
 - **Description:** `run_pass()` accumulates results in memory and owns both coordination and data collection. Ideally workers write their own results, orchestrator just coordinates.
 
-### 5. Config mixes portable and machine-specific concerns
-- **Identified:** 2026-04-17
-- **Why deferred:** Blocks others but no external users running configs yet
-- **Risk:** Medium — `python_bin` is a hardcoded path; blocks "run your own experiments" story
-- **Description:** Separate "what to test" from "how to execute" — env var overrides or execution profiles.
-
 ### 7. Experiment and sweep produce different output formats
 - **Identified:** 2026-04-17
 - **Why deferred:** Comparison script works as interim bridge
@@ -57,6 +51,10 @@ Things we noticed that deserve attention — issues, design improvements, open q
 ### 4. Retry appends instead of replacing
 - **Closed:** 2026-04-17 (commit 8d19f05)
 - **Description:** Retries appended duplicate entries. Now deduplicates results.jsonl on clean completion, keeping last entry per model/config/mode.
+
+### 5. Config mixes portable and machine-specific concerns
+- **Closed:** 2026-04-17
+- **Description:** Already handled: `SWEEP_PYTHON` env var overrides config, documented in README. Portable configs omit `python_bin`; machine-specific configs include it.
 
 ### 6. No auto-resume on failure
 - **Closed:** 2026-04-17 (commit d10d0c9)
