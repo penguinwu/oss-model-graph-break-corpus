@@ -20,12 +20,6 @@ Things we noticed that deserve attention — issues, design improvements, open q
 - **Risk:** Medium — orchestrator still owns loop state; callback is a bolt-on
 - **Description:** `run_pass()` accumulates results in memory and owns both coordination and data collection. Ideally workers write their own results, orchestrator just coordinates.
 
-### 7. Experiment and sweep produce different output formats
-- **Identified:** 2026-04-17
-- **Why deferred:** Comparison script works as interim bridge
-- **Risk:** Medium — comparing results requires custom tooling; undermines "one system" goal
-- **Description:** Experiment runner uses `{model, config, mode, status}`, sweep uses `{name, source, mode, status}` with different structure.
-
 ### 8. Hardcoded backend and fullgraph in worker
 - **Identified:** 2026-04-16
 - **Why deferred:** Current use case is graph breaks only; no other backend needed yet
@@ -59,3 +53,7 @@ Things we noticed that deserve attention — issues, design improvements, open q
 ### 6. No auto-resume on failure
 - **Closed:** 2026-04-17 (commit d10d0c9)
 - **Description:** Added `scripts/run_with_retry.sh` — auto-resume wrapper with MAX_RETRIES=3.
+
+### 7. Experiment and sweep produce different output formats
+- **Closed:** 2026-04-17 (commit 2dd24b7)
+- **Description:** Converged experiment runner output to match sweep format: `model`→`name`, added `source` field, added timing fields. Backward-compatible resume via `r.get("name", r.get("model"))`.
