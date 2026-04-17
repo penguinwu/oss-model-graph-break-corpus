@@ -277,7 +277,8 @@ def load_checkpoint(checkpoint_file):
 
 def run_pass(python_bin, specs, pass_num, device, modes, workers, timeout_s,
              checkpoint_file=None, resume_from=None, dynamic=False,
-             timeout_overrides=None, skip_models=None, extra_worker_args=None):
+             timeout_overrides=None, skip_models=None, extra_worker_args=None,
+             result_callback=None):
     """Run a full pass using a non-blocking poll loop with process group isolation.
 
     The orchestrator never blocks on any single worker. Timed-out workers are
@@ -290,6 +291,8 @@ def run_pass(python_bin, specs, pass_num, device, modes, workers, timeout_s,
         timeout_overrides: Dict of model_name -> timeout_s for large models
         skip_models: Set of model names to skip entirely
         extra_worker_args: Optional list of additional CLI args for workers
+        result_callback: Optional callable(result_dict) invoked as each worker
+            finishes. Use for streaming results to disk.
     """
     # Escalation timings (seconds after timeout)
     TERM_GRACE = 5     # wait this long after timeout before SIGTERM
@@ -344,6 +347,8 @@ def run_pass(python_bin, specs, pass_num, device, modes, workers, timeout_s,
                         result = harvest_worker(handle)
                     results.append(result)
                     completed += 1
+                    if result_callback:
+                        result_callback(result)
                     if ckpt_fh:
                         ckpt_fh.write(json.dumps(result) + "\n")
                         ckpt_fh.flush()
@@ -370,6 +375,8 @@ def run_pass(python_bin, specs, pass_num, device, modes, workers, timeout_s,
                         result = timeout_result(handle)
                         results.append(result)
                         completed += 1
+                        if result_callback:
+                            result_callback(result)
                         if ckpt_fh:
                             ckpt_fh.write(json.dumps(result) + "\n")
                             ckpt_fh.flush()
@@ -381,6 +388,8 @@ def run_pass(python_bin, specs, pass_num, device, modes, workers, timeout_s,
                         result = timeout_result(handle)
                         results.append(result)
                         completed += 1
+                        if result_callback:
+                            result_callback(result)
                         if ckpt_fh:
                             ckpt_fh.write(json.dumps(result) + "\n")
                             ckpt_fh.flush()
@@ -443,6 +452,8 @@ def run_pass(python_bin, specs, pass_num, device, modes, workers, timeout_s,
                     }
                     results.append(result)
                     completed += 1
+                    if result_callback:
+                        result_callback(result)
                     if ckpt_fh:
                         ckpt_fh.write(json.dumps(result) + "\n")
                         ckpt_fh.flush()

@@ -490,6 +490,33 @@ def run_experiment(config, args):
     experiment_start = time.perf_counter()
     all_results = list(resume_from.values())
 
+    def _make_experiment_result(r, cfg_name, dynamo_flags, retry=False):
+        """Transform raw orchestrator result into experiment result."""
+        experiment_result = {
+            "model": r["name"],
+            "config": cfg_name,
+            "mode": r.get("mode", "eval"),
+            "status": r["status"],
+            "wall_time_s": r.get("wall_time_s", 0),
+        }
+        for key in ("graph_count", "graph_break_count", "error",
+                     "break_reasons", "ops_per_graph", "compile_times"):
+            if key in r:
+                experiment_result[key] = r[key]
+        if dynamo_flags:
+            experiment_result["dynamo_flags"] = dynamo_flags
+        if retry:
+            experiment_result["retry"] = True
+        return experiment_result
+
+    def _write_result(experiment_result):
+        """Write a single result to both results and checkpoint files."""
+        line = json.dumps(experiment_result)
+        results_fh.write(line + "\n")
+        results_fh.flush()
+        ckpt_fh.write(line + "\n")
+        ckpt_fh.flush()
+
     try:
         for cfg in configs:
             cfg_name = cfg["name"]
@@ -520,86 +547,50 @@ def run_experiment(config, args):
                 print(f"  All models already completed for this config")
                 continue
 
-            # Run via orchestrator
-            dynamic_arg = dynamic if dynamic != "static" else False
-            results = run_pass(
-                python_bin, pending_specs, pass_num=pass_num,
-                device=device, modes=modes, workers=workers,
-                timeout_s=timeout_s, dynamic=dynamic_arg,
-                extra_worker_args=extra_args,
-            )
-
-            # Process and save results
+            # Streaming callback: write each result as it arrives
             timed_out_specs = []
-            for r in results:
-                experiment_result = {
-                    "model": r["name"],
-                    "config": cfg_name,
-                    "mode": r.get("mode", "eval"),
-                    "status": r["status"],
-                    "wall_time_s": r.get("wall_time_s", 0),
-                }
-                # Copy relevant fields
-                for key in ("graph_count", "graph_break_count", "error",
-                           "break_reasons", "ops_per_graph", "compile_times"):
-                    if key in r:
-                        experiment_result[key] = r[key]
 
-                if dynamo_flags:
-                    experiment_result["dynamo_flags"] = dynamo_flags
-
-                line = json.dumps(experiment_result)
-                results_fh.write(line + "\n")
-                results_fh.flush()
-                ckpt_fh.write(line + "\n")
-                ckpt_fh.flush()
-                all_results.append(experiment_result)
-
-                # Track timed-out models for retry
+            def _on_result(r, _cfg=cfg_name, _flags=dynamo_flags):
+                exp_result = _make_experiment_result(r, _cfg, _flags)
+                _write_result(exp_result)
+                all_results.append(exp_result)
                 if r["status"] == "timeout":
                     spec = next((s for s in specs if s["name"] == r["name"]), None)
                     if spec and spec not in timed_out_specs:
                         timed_out_specs.append(spec)
 
+            # Run via orchestrator with streaming callback
+            dynamic_arg = dynamic if dynamic != "static" else False
+            run_pass(
+                python_bin, pending_specs, pass_num=pass_num,
+                device=device, modes=modes, workers=workers,
+                timeout_s=timeout_s, dynamic=dynamic_arg,
+                extra_worker_args=extra_args,
+                result_callback=_on_result,
+            )
+
             # Auto-retry timed-out models with longer timeout
             if timed_out_specs and timeout_retry_s:
                 print(f"\n  Retrying {len(timed_out_specs)} timed-out models "
                       f"with {timeout_retry_s}s timeout...")
-                retry_results = run_pass(
+
+                def _on_retry_result(r, _cfg=cfg_name, _flags=dynamo_flags):
+                    exp_result = _make_experiment_result(r, _cfg, _flags, retry=True)
+                    _write_result(exp_result)
+                    for i, prev in enumerate(all_results):
+                        if (prev["model"] == exp_result["model"]
+                                and prev["config"] == _cfg
+                                and prev.get("mode") == exp_result.get("mode")):
+                            all_results[i] = exp_result
+                            break
+
+                run_pass(
                     python_bin, timed_out_specs, pass_num=pass_num,
                     device=device, modes=modes, workers=workers,
                     timeout_s=timeout_retry_s, dynamic=dynamic_arg,
                     extra_worker_args=extra_args,
+                    result_callback=_on_retry_result,
                 )
-                for r in retry_results:
-                    experiment_result = {
-                        "model": r["name"],
-                        "config": cfg_name,
-                        "mode": r.get("mode", "eval"),
-                        "status": r["status"],
-                        "wall_time_s": r.get("wall_time_s", 0),
-                        "retry": True,
-                    }
-                    for key in ("graph_count", "graph_break_count", "error",
-                               "break_reasons", "ops_per_graph", "compile_times"):
-                        if key in r:
-                            experiment_result[key] = r[key]
-                    if dynamo_flags:
-                        experiment_result["dynamo_flags"] = dynamo_flags
-
-                    # Overwrite the timeout entry in all_results
-                    for i, prev in enumerate(all_results):
-                        if (prev["model"] == experiment_result["model"]
-                                and prev["config"] == cfg_name
-                                and prev.get("mode") == experiment_result.get("mode")):
-                            all_results[i] = experiment_result
-                            break
-
-                    line = json.dumps(experiment_result)
-                    results_fh.write(line + "\n")
-                    results_fh.flush()
-                    ckpt_fh.write(line + "\n")
-                    ckpt_fh.flush()
 
     finally:
         results_fh.close()
