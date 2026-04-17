@@ -1095,8 +1095,18 @@ def _load_skip_models():
 
 
 def main():
+    import warnings
+    warnings.warn(
+        "run_sweep.py is deprecated. Use tools/run_experiment.py instead:\n"
+        "  run_experiment.py sweep    (was: run_sweep.py sweep)\n"
+        "  run_experiment.py explain  (was: run_sweep.py explain)\n"
+        "  run_experiment.py validate-shapes  (was: run_sweep.py validate)",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     parser = argparse.ArgumentParser(
-        description="Two-pass graph break sweep orchestrator",
+        description="Two-pass graph break sweep orchestrator "
+                    "(DEPRECATED — use tools/run_experiment.py instead)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     subparsers = parser.add_subparsers(dest="command", help="Available commands")

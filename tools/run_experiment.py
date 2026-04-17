@@ -1,37 +1,37 @@
 #!/usr/bin/env python3
-"""Experiment runner — config-driven model testing with self-describing results.
+"""Unified front-end for model graph break testing.
 
-Run ad-hoc experiments (flag quality tests, config ablations, regression bisects)
-using the same orchestrator infrastructure as the production sweep.
+Subcommands:
+  Experiments (config-driven):
+    template    Generate a starter experiment config
+    validate    Validate a config file
+    run         Run an experiment from a config file
+    merge       Merge incremental results
+
+  Corpus:
+    corpus      Build/update corpus from experiment results
+
+  Sweep (production workflow):
+    sweep       Two-pass graph break sweep (identify + explain)
+    explain     Explain-only pass from prior identify results
+    validate-shapes   Two-shape correctness check
+
+  Utilities:
+    selftest    Smoke test (3 models, both passes)
+    check-env   Pre-sweep environment validation
 
 Usage:
-  # Generate a starter config
-  python run_experiment.py template > experiments/configs/my-test.json
-
-  # Validate a config before running
-  python run_experiment.py validate experiments/configs/my-test.json
-
-  # Dry-run — resolve models, show work items, exit
-  python run_experiment.py run experiments/configs/my-test.json --dry-run
-
-  # Run an experiment
+  # Config-driven experiment
   python run_experiment.py run experiments/configs/my-test.json
 
-  # Run with explicit output directory
-  python run_experiment.py run experiments/configs/my-test.json \
-      --output experiments/results/my-run/
+  # Full production sweep
+  python run_experiment.py sweep --source hf diffusers custom
 
-  # Override workers/timeout from CLI (without editing config)
-  python run_experiment.py run experiments/configs/my-test.json --workers 1
+  # Build corpus from experiment results
+  python run_experiment.py corpus experiments/results/my-run/
 
-  # Resume an interrupted experiment
-  python run_experiment.py run experiments/configs/my-test.json \
-      --resume experiments/results/my-test-20260416-193000/
-
-  # Merge incremental results into an existing result set
-  python run_experiment.py merge \
-      --from experiments/results/new-models/ \
-      --into experiments/results/full-sweep/
+  # Explain-only pass
+  python run_experiment.py explain sweep_results/identify_results.json
 """
 import argparse
 import json
@@ -744,6 +744,206 @@ def _generate_summary(results, config, output_dir, duration):
     print(f"\nSummary saved to {summary_path}")
 
 
+def _import_sweep_module():
+    """Import run_sweep module from sweep/ directory."""
+    sys.path.insert(0, str(SWEEP_DIR))
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "run_sweep", SWEEP_DIR / "run_sweep.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def run_sweep_command(args):
+    """Run a two-pass sweep (identify + explain) on enumerated models."""
+    sweep_mod = _import_sweep_module()
+    sweep_mod.run_sweep(args)
+
+
+def run_explain_command(args):
+    """Run explain-only pass from prior identify results."""
+    sweep_mod = _import_sweep_module()
+    sweep_mod.run_explain(args)
+
+
+def run_validate_shapes_command(args):
+    """Run two-shape correctness validation on clean models."""
+    sweep_mod = _import_sweep_module()
+    sweep_mod.run_validation(args)
+
+
+def run_selftest_command(args):
+    """Run integration smoke test on a few models."""
+    sweep_mod = _import_sweep_module()
+    sweep_mod.run_test_mode(args)
+
+
+def run_check_env_command(args):
+    """Pre-sweep environment validation."""
+    sweep_mod = _import_sweep_module()
+    sweep_mod.check_env(args)
+
+
+def build_corpus(args):
+    """Build/update corpus from experiment results.
+
+    Bridges the experiment result format (results.jsonl with 'model' field)
+    to the corpus format expected by update_corpus.py.
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from update_corpus import (
+        update_corpus as uc_update, format_changelog, index_by_name_mode,
+        update_corpus_explain_only, CORPUS_PATH,
+    )
+
+    results_dir = Path(args.results_dir).resolve()
+    results_file = results_dir / "results.jsonl"
+    if not results_file.exists():
+        print(f"ERROR: {results_file} not found")
+        sys.exit(1)
+
+    # Load and normalize results
+    raw_results = []
+    with open(results_file) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                r = json.loads(line)
+                if "model" in r and "name" not in r:
+                    r["name"] = r.pop("model")
+                raw_results.append(r)
+            except json.JSONDecodeError:
+                continue
+
+    print(f"Loaded {len(raw_results)} results from {results_file}")
+
+    # Load config.json for version info
+    config_file = results_dir / "config.json"
+    versions = {}
+    if config_file.exists():
+        with open(config_file) as f:
+            cfg = json.load(f)
+        env = cfg.get("environment", {})
+        versions = env.get("versions", env)
+
+    # Determine pass type from experiment config
+    is_explain_experiment = False
+    if config_file.exists():
+        with open(config_file) as f:
+            cfg = json.load(f)
+        exp_settings = cfg.get("experiment", {}).get("settings", {})
+        if exp_settings.get("pass_num") == 2:
+            is_explain_experiment = True
+
+    # Split into identify (pass 1) and explain (pass 2) results
+    identify_results = []
+    explain_results = []
+    if is_explain_experiment:
+        explain_results = raw_results
+    else:
+        identify_results = raw_results
+
+    # Also handle --explain flag: load explain results from a separate directory
+    if args.explain:
+        explain_dir = Path(args.explain).resolve()
+        explain_file = explain_dir / "results.jsonl"
+        if not explain_file.exists():
+            print(f"ERROR: {explain_file} not found")
+            sys.exit(1)
+        with open(explain_file) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    r = json.loads(line)
+                    if "model" in r and "name" not in r:
+                        r["name"] = r.pop("model")
+                    explain_results.append(r)
+                except json.JSONDecodeError:
+                    continue
+        print(f"Loaded {len(explain_results)} explain results (including from {explain_dir})")
+
+    identify_idx = index_by_name_mode(identify_results) if identify_results else {}
+    explain_idx = index_by_name_mode(explain_results) if explain_results else {}
+
+    print(f"  Identify entries: {len(identify_idx)}")
+    print(f"  Explain entries: {len(explain_idx)}")
+
+    # Load corpus
+    corpus_path = Path(CORPUS_PATH).resolve()
+    output_dir = Path(args.output).resolve() if args.output else results_dir
+
+    print(f"\nLoading corpus from {corpus_path}")
+    with open(corpus_path) as f:
+        corpus = json.load(f)
+    print(f"  {len(corpus['models'])} models")
+
+    # Determine mode and run update
+    if not identify_idx and explain_idx:
+        # Explain-only mode
+        print("\nMode: EXPLAIN-ONLY (no identify results)")
+        corpus, changelog, health = update_corpus_explain_only(corpus, explain_idx)
+        pre_merge_names = None
+    else:
+        print(f"\nMode: {'REPLACE' if args.replace else 'OVERLAY'}")
+        corpus, changelog, pre_merge_names, health = uc_update(
+            corpus, identify_idx, explain_idx, versions, replace=args.replace)
+
+    # Print summary
+    status_changes = [c for c in changelog if c["type"] == "status_change"]
+    new_models = [c for c in changelog if c["type"] == "new_model"]
+    explain_updated = [c for c in changelog if c["type"] == "explain_updated"]
+    print(f"\nChanges: {len(changelog)} total")
+    if status_changes:
+        print(f"  Status changes: {len(status_changes)}")
+    if new_models:
+        print(f"  New models: {len(set(c['name'] for c in new_models))}")
+    if explain_updated:
+        print(f"  Explain updated: {len(explain_updated)}")
+
+    if health:
+        missing = health.get("missing_explain", [])
+        if missing:
+            print(f"\n  Warning: {len(set(n for n, m in missing))} models missing explain data")
+
+    if args.dry_run:
+        print("\n--- DRY RUN — no files written ---")
+        return
+
+    # Write corpus
+    print(f"\nWriting corpus to {corpus_path}")
+    with open(corpus_path, "w") as f:
+        json.dump(corpus, f, indent=2)
+        f.write("\n")
+
+    # Write changelog
+    output_dir.mkdir(parents=True, exist_ok=True)
+    changelog_path = output_dir / "changelog.md"
+    if not identify_idx and explain_idx:
+        # Simple explain-only changelog
+        lines = [
+            "# Explain-Only Merge Changelog\n",
+            f"**Date:** {time.strftime('%Y-%m-%d %H:%M')}",
+            f"**Source:** `{results_dir}`",
+            f"**Entries updated:** {len(explain_updated)}",
+            "",
+        ]
+        with open(changelog_path, "w") as f:
+            f.write("\n".join(lines) + "\n")
+    else:
+        changelog_text = format_changelog(
+            changelog, str(results_dir), versions, corpus, pre_merge_names, health)
+        with open(changelog_path, "w") as f:
+            f.write(changelog_text)
+
+    print(f"Changelog written to {changelog_path}")
+    print("Done.")
+
+
 def merge_results(source_dir, target_dir):
     """Merge incremental experiment results into an existing result set.
 
@@ -893,6 +1093,113 @@ def main():
     sub_merge.add_argument("--into", dest="merge_into", metavar="DIR", required=True,
                            help="Target results directory (updated in-place)")
 
+    # ── corpus ─────────────────────────────────────────────────────────────
+    sub_corpus = subparsers.add_parser(
+        "corpus",
+        help="Build/update corpus from experiment results (identify + explain)",
+        description="Converts experiment results into corpus format and generates "
+                    "a changelog. Wraps update_corpus.py logic.",
+    )
+    sub_corpus.add_argument("results_dir", metavar="RESULTS_DIR",
+                            help="Experiment results directory (must contain results.jsonl)")
+    sub_corpus.add_argument("--output", metavar="DIR",
+                            help="Output directory for corpus.json and changelog.md "
+                                 "(default: same as results_dir)")
+    sub_corpus.add_argument("--replace", action="store_true",
+                            help="Full replacement: results become entire corpus "
+                                 "(models not in results are dropped)")
+    sub_corpus.add_argument("--dry-run", action="store_true",
+                            help="Show what would change without writing")
+    sub_corpus.add_argument("--explain", metavar="DIR",
+                            help="Merge explain results from a separate experiment run")
+
+    # ── sweep ─────────────────────────────────────────────────────────────
+    DEFAULT_OUTPUT_DIR = str(REPO_ROOT / "sweep_results")
+
+    sub_sweep = subparsers.add_parser(
+        "sweep",
+        help="Two-pass graph break sweep (identify + explain)",
+        description="Run the full two-pass sweep: identify (fullgraph=True check) "
+                    "then explain (detailed break analysis on broken models).",
+    )
+    sweep_input = sub_sweep.add_mutually_exclusive_group()
+    sweep_input.add_argument("--source", nargs="+",
+                             default=["hf", "diffusers", "custom"],
+                             choices=["timm", "hf", "diffusers", "custom", "all"],
+                             help="Model libraries to enumerate (default: hf diffusers custom)")
+    sweep_input.add_argument("--models",
+                             help="JSON file with explicit model list")
+    sub_sweep.add_argument("--stability", choices=["stable", "unstable"],
+                           help="Filter by corpus stability")
+    sub_sweep.add_argument("--limit", type=int,
+                           help="Max models to test")
+    sub_sweep.add_argument("--modes", nargs="+", default=["eval", "train"],
+                           choices=["eval", "train"],
+                           help="Modes to run (default: eval train)")
+    sub_sweep.add_argument("--device", default="cuda", choices=["cpu", "cuda"])
+    sub_sweep.add_argument("--workers", type=int, default=4)
+    sub_sweep.add_argument("--timeout", type=int, default=180,
+                           help="Per-model timeout in seconds (default: 180)")
+    sub_sweep.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
+    sub_sweep.add_argument("--resume", action="store_true",
+                           help="Resume from checkpoint")
+    sub_sweep.add_argument("--dynamic-dim", choices=["batch", "all"],
+                           help="Dynamic shapes mode")
+    sub_sweep.add_argument("--no-auto-retry", action="store_true",
+                           help="Skip auto-retry of timed-out/errored models")
+    sub_sweep.add_argument("--identify-only", action="store_true",
+                           help="Stop after identify pass (skip explain)")
+
+    # ── explain ────────────────────────────────────────────────────────────
+    sub_explain = subparsers.add_parser(
+        "explain",
+        help="Explain-only pass from prior identify results",
+        description="Run the explain pass on broken models from a prior identify sweep.",
+    )
+    sub_explain.add_argument("file", metavar="FILE",
+                             help="Path to identify results JSON")
+    sub_explain.add_argument("--device", default="cuda", choices=["cpu", "cuda"])
+    sub_explain.add_argument("--workers", type=int, default=4)
+    sub_explain.add_argument("--timeout", type=int, default=180)
+    sub_explain.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
+    sub_explain.add_argument("--resume", action="store_true")
+
+    # ── validate-shapes ───────────────────────────────────────────────────
+    sub_valshapes = subparsers.add_parser(
+        "validate-shapes",
+        help="Two-shape correctness check on clean models",
+        description="Compile models with two different input shapes, "
+                    "compare outputs against eager mode.",
+    )
+    valshapes_input = sub_valshapes.add_mutually_exclusive_group()
+    valshapes_input.add_argument("--from", dest="from_file",
+                                 help="Identify results JSON — validates full_graph models")
+    valshapes_input.add_argument("--models",
+                                 help="JSON file with explicit model list")
+    sub_valshapes.add_argument("--device", default="cuda", choices=["cpu", "cuda"])
+    sub_valshapes.add_argument("--workers", type=int, default=4)
+    sub_valshapes.add_argument("--timeout", type=int, default=180)
+    sub_valshapes.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
+    sub_valshapes.add_argument("--resume", action="store_true")
+    sub_valshapes.add_argument("--dynamic-dim", choices=["batch", "all"],
+                               default="all",
+                               help="Dynamic shapes (default: all)")
+    sub_valshapes.add_argument("--limit", type=int)
+
+    # ── selftest ──────────────────────────────────────────────────────────
+    sub_selftest = subparsers.add_parser(
+        "selftest",
+        help="Smoke test: 3 models, both passes, validate output",
+    )
+    sub_selftest.add_argument("--device", default="cuda", choices=["cpu", "cuda"])
+
+    # ── check-env ─────────────────────────────────────────────────────────
+    sub_checkenv = subparsers.add_parser(
+        "check-env",
+        help="Pre-sweep environment validation (version check)",
+    )
+    sub_checkenv.add_argument("--device", default="cuda", choices=["cpu", "cuda"])
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -919,6 +1226,10 @@ def main():
         merge_results(args.merge_from, args.merge_into)
         return
 
+    if args.command == "corpus":
+        build_corpus(args)
+        return
+
     if args.command == "run":
         if args.output and args.resume:
             print("ERROR: --output and --resume are mutually exclusive. "
@@ -934,6 +1245,26 @@ def main():
             sys.exit(1)
 
         run_experiment(config, args)
+        return
+
+    if args.command == "sweep":
+        run_sweep_command(args)
+        return
+
+    if args.command == "explain":
+        run_explain_command(args)
+        return
+
+    if args.command == "validate-shapes":
+        run_validate_shapes_command(args)
+        return
+
+    if args.command == "selftest":
+        run_selftest_command(args)
+        return
+
+    if args.command == "check-env":
+        run_check_env_command(args)
         return
 
 
