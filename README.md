@@ -134,6 +134,23 @@ python3 tools/compare.py results_a.json results_b.json --labels "2.9" "2.10"
 python3 tools/compare.py --corpus-dynamic
 ```
 
+### Run experiments
+
+Test dynamo flags, config ablations, or new model sets with config-driven experiments:
+
+```bash
+# Generate a starter config and edit it
+python3 tools/run_experiment.py template > experiments/configs/my-test.json
+
+# Preview what will run (no GPU needed)
+python3 tools/run_experiment.py run experiments/configs/my-test.json --dry-run
+
+# Run the experiment
+python3 tools/run_experiment.py run experiments/configs/my-test.json
+```
+
+Full CLI reference, config schema, and recipes: [`experiments/README.md`](experiments/README.md)
+
 ### Validate corpus integrity
 
 ```bash
@@ -272,6 +289,7 @@ python3 sweep/worker.py --model hf/ModelName --device cuda
 | `sweep/models.py` | Model enumeration from HF/Diffusers/TIMM (base + ForCausalLM + ForConditionalGeneration) |
 | `sweep/worker.py` | Single-model subprocess (create → eager → compile) |
 | `sweep/run_sweep.py` | Orchestrator (parallel workers, timeouts, checkpointing) |
+| `sweep/orchestrator.py` | Shared worker management (spawn, harvest, timeout, kill, checkpoint) |
 | `sweep/sweep_watchdog.py` | Progress monitor + auto-restart on failure |
 | `sweep/large_models.json` | 17 models needing extended timeouts during sweeps |
 | `tools/query.py` | Query corpus by status, error, dynamic comparison |
@@ -285,6 +303,7 @@ python3 sweep/worker.py --model hf/ModelName --device cuda
 | `tools/generate_trace_reports.py` | Batch-generate tlparse HTML reports with index |
 | `tools/generate_index.py` | Generate corpus dashboard (docs/index.html) |
 | `tools/generate_traces.py` | Pre-generate tlparse reports for top N models |
+| `tools/run_experiment.py` | Config-driven experiment runner (flag tests, ablations, incremental sweeps) |
 | `tools/feedback_monitor.py` | Monitor GChat feedback space for user reports |
 | `tools/generate_nightly_summary.py` | Generate nightly comparison markdown (auto-run by `run_nightly.sh`) |
 | `tools/github_issue_monitor.py` | Monitor GitHub issues for new activity |
