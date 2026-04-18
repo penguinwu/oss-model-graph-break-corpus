@@ -6,14 +6,20 @@ PyTorch versions. Normalizes by testable models to avoid confounding from
 changing eager_error/create_error rates.
 
 Usage:
-    # Default: compare v2.8, v2.9, v2.10
+    # Default: auto-discover pt2.* directories
     python tools/analyze_trend.py
 
     # Custom version dirs
-    python tools/analyze_trend.py sweep_results/v2.8 sweep_results/v2.9 --labels "2.8" "2.9"
+    python tools/analyze_trend.py sweep_results/pt2.8 sweep_results/pt2.9 --labels "2.8" "2.9"
 
     # Include train mode
     python tools/analyze_trend.py --train
+
+    # Generate markdown version trend table
+    python tools/analyze_trend.py --markdown
+
+    # Validate results/*.md against computed data
+    python tools/analyze_trend.py --validate
 
     # JSON output
     python tools/analyze_trend.py --json
@@ -24,10 +30,16 @@ Usage:
 import argparse
 import json
 import os
+import re
 import sys
 from collections import Counter, defaultdict
 
-REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from corpus_constants import (
+    REPO_ROOT, SWEEP_RESULTS_DIR, RESULTS_DIR,
+    VERSION_DIR_PATTERN, FIX_TRANSITION, REGRESSION_TRANSITION,
+    find_version_dirs as _find_version_dirs,
+)
 
 
 def load_identify(path):
@@ -65,12 +77,11 @@ def load_explain(path):
     return d
 
 
-def find_version_dirs(args):
+def find_version_dirs_from_args(args):
     """Find version directories and their data files."""
     versions = []
 
     if args.dirs:
-        # Explicit directories provided
         for i, d in enumerate(args.dirs):
             label = args.labels[i] if args.labels and i < len(args.labels) else os.path.basename(d)
             p1 = os.path.join(d, "identify_results.json")
@@ -80,26 +91,12 @@ def find_version_dirs(args):
                 sys.exit(1)
             versions.append({"label": label, "identify": p1, "explain": p2, "dir": d})
     else:
-        # Auto-discover: sweep_results/pt2.* directories (exact match, no suffixes)
-        sweep_dir = os.path.join(REPO_ROOT, "sweep_results")
-        import re
-
-        def version_key(name):
-            parts = re.sub(r"^(pt|v)", "", name).split(".")
-            return tuple(int(p) for p in parts if p.isdigit())
-
-        version_dirs = sorted(
-            (d for d in os.listdir(sweep_dir)
-             if re.match(r"^pt2\.\d+$", d) and os.path.isfile(os.path.join(sweep_dir, d, "identify_results.json"))),
-            key=version_key,
-        )
-        for vd in version_dirs:
-            vpath = os.path.join(sweep_dir, vd)
+        for label, path in _find_version_dirs():
             versions.append({
-                "label": vd,
-                "identify": os.path.join(vpath, "identify_results.json"),
-                "explain": os.path.join(vpath, "explain_results.json"),
-                "dir": vpath,
+                "label": label,
+                "identify": os.path.join(path, "identify_results.json"),
+                "explain": os.path.join(path, "explain_results.json"),
+                "dir": path,
             })
 
     return versions
@@ -299,11 +296,12 @@ def print_report(versions_data, modes, common_models, show_details=False):
                         path_str = " → ".join(path)
                         print(f"    {name}: {path_str}")
 
-        # Fixed models detail (graph_break → full_graph)
+        # Fixed models detail
         if show_details and has_any_explain:
+            fix_label = f"{FIX_TRANSITION[0]} → {FIX_TRANSITION[1]}"
             fixed = []
             for t, models in transitions.items():
-                if "graph_break → full_graph" in t:
+                if fix_label in t:
                     fixed.extend(models)
             if fixed:
                 print(f"\n{'─'*70}")
@@ -317,6 +315,146 @@ def print_report(versions_data, modes, common_models, show_details=False):
                         print(f"  {name}: {bc} breaks")
 
 
+def count_fixes(versions_data, mode, common_models):
+    """Count graph_break->full_graph transitions between consecutive versions."""
+    fixes_per_version = []
+    regressions_per_version = []
+    for i in range(len(versions_data)):
+        if i == 0:
+            fixes_per_version.append(None)
+            regressions_per_version.append(None)
+            continue
+        prev = versions_data[i - 1]["identify_data"]
+        curr = versions_data[i]["identify_data"]
+        fixes = 0
+        regressions = 0
+        for n in common_models:
+            old = prev[n].get(mode, "missing")
+            new = curr[n].get(mode, "missing")
+            if (old, new) == FIX_TRANSITION:
+                fixes += 1
+            elif (old, new) == REGRESSION_TRANSITION:
+                regressions += 1
+        fixes_per_version.append(fixes)
+        regressions_per_version.append(regressions)
+    return fixes_per_version, regressions_per_version
+
+
+def generate_markdown(versions_data, common_models):
+    """Generate the markdown version trend table for results files."""
+    lines = []
+    lines.append(f"## Version Trend ({len(common_models)} common models)\n")
+    lines.append("| Version | eval full\\_graph | train full\\_graph | eval break | train break | Fixes | Regressions |")
+    lines.append("|---------|-----------------|-------------------|------------|-------------|-------|-------------|")
+
+    eval_stats = analyze_mode(versions_data, "eval", common_models)
+    train_stats = analyze_mode(versions_data, "train", common_models)
+    eval_fixes, eval_regs = count_fixes(versions_data, "eval", common_models)
+
+    for i, vd in enumerate(versions_data):
+        label = vd["label"].replace("pt", "")
+        e = eval_stats[i]
+        t = train_stats[i]
+        e_pct = round(100 * e["full_graph"] / len(common_models))
+        t_pct = round(100 * t["full_graph"] / len(common_models))
+        fixes = eval_fixes[i]
+        regs = eval_regs[i]
+        fix_str = "--" if fixes is None else str(fixes)
+        reg_str = "--" if regs is None else str(regs)
+        lines.append(
+            f"| {label} | {e['full_graph']} ({e_pct}%) | {t['full_graph']} ({t_pct}%) "
+            f"| {e['graph_break']} | {t['graph_break']} | {fix_str} | {reg_str} |"
+        )
+
+    return "\n".join(lines)
+
+
+def validate_results(versions_data, common_models):
+    """Validate that results/*.md version trend numbers match computed data."""
+    eval_stats = analyze_mode(versions_data, "eval", common_models)
+    train_stats = analyze_mode(versions_data, "train", common_models)
+    errors = []
+
+    for i, vd in enumerate(versions_data):
+        label = vd["label"]
+        ver = label.replace("pt", "")
+        md_path = os.path.join(RESULTS_DIR, f"{label}.md")
+        if not os.path.exists(md_path):
+            continue
+
+        with open(md_path) as f:
+            content = f.read()
+
+        e = eval_stats[i]
+        t = train_stats[i]
+
+        # Look for version trend table rows with this version's numbers
+        # Match patterns like "| 345 (74%) | 328 (70%) |"
+        for line in content.split("\n"):
+            if "Version Trend" in line and "common" not in line.lower() and "original" not in line.lower():
+                continue
+            if f"| {ver} " not in line and f"| **{ver}**" not in line:
+                continue
+            # Extract numbers from the line
+            nums = re.findall(r"\b(\d+)\s*\(\d+%\)", line)
+            if len(nums) >= 2:
+                md_eval = int(nums[0])
+                md_train = int(nums[1])
+                if md_eval != e["full_graph"]:
+                    errors.append(
+                        f"{md_path}: {label} eval full_graph: "
+                        f"file says {md_eval}, computed {e['full_graph']}"
+                    )
+                if md_train != t["full_graph"]:
+                    errors.append(
+                        f"{md_path}: {label} train full_graph: "
+                        f"file says {md_train}, computed {t['full_graph']}"
+                    )
+
+    # Also check results/README.md and top-level README.md
+    # Only validate lines within "Version Trend" sections (not "Expanded Corpus" etc.)
+    for readme in [os.path.join(RESULTS_DIR, "README.md"), os.path.join(REPO_ROOT, "README.md")]:
+        if not os.path.exists(readme):
+            continue
+        with open(readme) as f:
+            lines = f.read().split("\n")
+
+        in_trend_section = False
+        for line in lines:
+            if "version trend" in line.lower():
+                in_trend_section = True
+                continue
+            if line.startswith("##") and "version trend" not in line.lower():
+                in_trend_section = False
+                continue
+            if not in_trend_section:
+                continue
+
+            for i, vd in enumerate(versions_data):
+                label = vd["label"]
+                ver = label.replace("pt", "")
+                e = eval_stats[i]
+                t = train_stats[i]
+                if f"| {ver} " not in line and f"| [{ver}]" not in line and f"| **{ver}**" not in line:
+                    continue
+                nums = re.findall(r"\b(\d+)\s*\(\d+%\)", line)
+                if len(nums) >= 2:
+                    md_eval = int(nums[0])
+                    md_train = int(nums[1])
+                    if md_eval != e["full_graph"]:
+                        errors.append(
+                            f"{readme}: {ver} eval full_graph: "
+                            f"file says {md_eval}, computed {e['full_graph']}"
+                        )
+                    if md_train != t["full_graph"]:
+                        errors.append(
+                            f"{readme}: {ver} train full_graph: "
+                            f"file says {md_train}, computed {t['full_graph']}"
+                        )
+
+    return errors
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Analyze graph break trends across PyTorch versions",
@@ -328,19 +466,14 @@ def main():
     parser.add_argument("--train", action="store_true", help="Include train mode analysis")
     parser.add_argument("--details", action="store_true", help="Show per-model details for transitions")
     parser.add_argument("--json", action="store_true", help="JSON output")
+    parser.add_argument("--markdown", action="store_true", help="Output version trend table as markdown")
+    parser.add_argument("--validate", action="store_true", help="Validate results/*.md match computed data")
     args = parser.parse_args()
 
-    versions = find_version_dirs(args)
+    versions = find_version_dirs_from_args(args)
     if len(versions) < 2:
         print("ERROR: Need at least 2 versions to compare", file=sys.stderr)
         sys.exit(1)
-
-    if not args.json:
-        print(f"Comparing {len(versions)} versions: {', '.join(v['label'] for v in versions)}")
-        for v in versions:
-            print(f"  {v['label']}: identify={v['identify']}")
-            if os.path.exists(v["explain"]):
-                print(f"  {' ' * len(v['label'])}  explain={v['explain']}")
 
     # Load data
     for v in versions:
@@ -352,6 +485,36 @@ def main():
     common_models = all_sets[0]
     for s in all_sets[1:]:
         common_models &= s
+
+    if args.validate:
+        # For validation, only include versions that have results files.
+        # This prevents pt2.12 (nightly) from narrowing the common model set.
+        validated = [v for v in versions if os.path.exists(
+            os.path.join(RESULTS_DIR, f"{v['label']}.md"))]
+        if len(validated) < 2:
+            print("ERROR: Need at least 2 versions with results files to validate", file=sys.stderr)
+            sys.exit(1)
+        val_common = set.intersection(*(set(v["identify_data"].keys()) for v in validated))
+        errors = validate_results(validated, val_common)
+        if errors:
+            print(f"VALIDATION FAILED — {len(errors)} error(s):\n", file=sys.stderr)
+            for e in errors:
+                print(f"  ✗ {e}", file=sys.stderr)
+            sys.exit(1)
+        else:
+            print(f"OK — all version trend numbers in results/*.md match computed data ({len(val_common)} common models)")
+            sys.exit(0)
+
+    if args.markdown:
+        print(generate_markdown(versions, common_models))
+        sys.exit(0)
+
+    if not args.json:
+        print(f"Comparing {len(versions)} versions: {', '.join(v['label'] for v in versions)}")
+        for v in versions:
+            print(f"  {v['label']}: identify={v['identify']}")
+            if os.path.exists(v["explain"]):
+                print(f"  {' ' * len(v['label'])}  explain={v['explain']}")
 
     modes = ["eval"]
     if args.train:

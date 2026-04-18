@@ -109,7 +109,16 @@ def find_latest_nightly():
 def find_latest_release():
     """Find the highest versioned release directory."""
     sr = os.path.join(REPO_ROOT, "sweep_results")
-    versions = sorted(d for d in os.listdir(sr) if d.startswith("v2."))
+    import re
+
+    def version_key(name):
+        parts = re.sub(r"^pt", "", name).split(".")
+        return tuple(int(p) for p in parts if p.isdigit())
+
+    versions = sorted(
+        (d for d in os.listdir(sr) if re.match(r"^pt2\.\d+$", d)),
+        key=version_key,
+    )
     return versions[-1] if versions else None
 
 
