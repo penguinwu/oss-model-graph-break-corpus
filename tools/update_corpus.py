@@ -246,21 +246,20 @@ def update_corpus(corpus, identify_idx, explain_idx, versions, replace=False):
                 "name": name,
             })
 
-    # Update metadata
+    # Update metadata — only overwrite versions in replace mode
     if versions:
         meta = corpus.setdefault("metadata", {})
-        if "torch" in versions:
-            # Parse "2.10.0+cu128" → "2.10.0"
-            torch_ver = versions["torch"].split("+")[0]
-            meta["pytorch_version"] = torch_ver
-        if "transformers" in versions:
-            meta["transformers_version"] = versions["transformers"]
-        if "diffusers" in versions:
-            meta["diffusers_version"] = versions["diffusers"]
-        if "python" in versions:
-            # Parse "3.12.13+meta (...)" → "3.12.13"
-            py_ver = versions["python"].split("+")[0].split(" ")[0]
-            meta["python_version"] = py_ver
+        if replace:
+            if "torch" in versions:
+                torch_ver = versions["torch"].split("+")[0]
+                meta["pytorch_version"] = torch_ver
+            if "transformers" in versions:
+                meta["transformers_version"] = versions["transformers"]
+            if "diffusers" in versions:
+                meta["diffusers_version"] = versions["diffusers"]
+            if "python" in versions:
+                py_ver = versions["python"].split("+")[0].split(" ")[0]
+                meta["python_version"] = py_ver
         meta["last_updated"] = time.strftime("%Y-%m-%d")
 
     # Rebuild model list (preserve order, put new models at end)
