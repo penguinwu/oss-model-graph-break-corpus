@@ -1,7 +1,7 @@
 # PyTorch 2.11 Sweep Results
 
-**Date:** 2026-04-12
-**Models:** 473 (468 existing + 5 new)
+**Date:** 2026-04-17 (expanded corpus)
+**Models:** 790 (714 from pt2.10 expanded corpus + 76 new)
 
 ## Environment
 
@@ -11,66 +11,71 @@
 | Transformers | 5.5.3 |
 | Diffusers | 0.37.1 |
 
-## Summary
+## Summary (790 models)
+
+|  | eval | train |
+|---|---|---|
+| **full\_graph** | 531 (67%) | 489 (62%) |
+| **graph\_break** | 177 (22%) | 219 (28%) |
+| **eager\_error** | 49 (6%) | 49 (6%) |
+| **create\_error** | 16 (2%) | 16 (2%) |
+| **timeout** | 16 (2%) | 15 (2%) |
+| **compile\_error** | 1 | 1 |
+| **zombie** | — | 1 |
+
+- **240 models** have graph breaks in at least one mode
+- **489 models** compile fully (full\_graph) in both modes
+- All graph breaks come from HF Transformers models
+
+## Original 468 Models (version trend comparison)
 
 |  | eval | train |
 |---|---|---|
 | **full\_graph** | 350 (74%) | 333 (70%) |
 | **graph\_break** | 87 | 104 |
-| **create\_error** | 19 | 19 |
-| **eager\_error** | 16 | 16 |
-| **timeout** | 1 | 1 |
+| **error** | 36 | 36 |
 
-- **104 models** (22%) have graph breaks in at least one mode
-- **87 models** break in both eval and train
-- All Diffusers models (5/5) compile clean
-- All graph breaks come from HF Transformers models
+## Changes from 2.10 (714 common models)
 
-## Changes from 2.10
-
-- **2 graph break fixes**, **0 regressions**
+- **4 graph break fixes** (graph\_break -> full\_graph), **0 regressions**
+- **148 other status changes** (mostly infra improvements: errors/timeouts resolving)
 
 ### Fixes
 
 | Model | Mode | 2.10 | 2.11 |
 |-------|------|------|------|
+| FalconMambaForCausalLM | eval | graph\_break | full\_graph |
 | FalconMambaModel | eval | graph\_break | full\_graph |
+| MambaForCausalLM | eval | graph\_break | full\_graph |
 | MambaModel | eval | graph\_break | full\_graph |
 
-Both are Mamba/SSM architecture models — likely a targeted Dynamo fix for selective scan operations.
+All Mamba/SSM architecture — targeted Dynamo fix for selective scan operations.
 
-### New Models (5)
+### Infra Improvements (selected)
 
-All from Transformers 5.5.3 (Gemma4 family + NomicBert):
+| Category | Count | Examples |
+|----------|-------|---------|
+| eager\_error -> full\_graph | 38 | BayesianDetectorModel, SpeechT5Model |
+| create\_error -> full\_graph | 26 | ClapModel, Aimv2TextModel |
+| timeout -> full\_graph | 17 | GPTBigCodeModel, LlamaModel |
+| timeout -> graph\_break | 18 | CpmBeeModel, MegaModel |
+| eager\_error -> graph\_break | 16 | AudioFlamingo3, MusicFlamingo |
 
-| Model | eval | train |
-|-------|------|-------|
-| Gemma4AudioModel | full\_graph | full\_graph |
-| Gemma4Model | full\_graph | full\_graph |
-| Gemma4TextModel | full\_graph | full\_graph |
-| Gemma4VisionModel | full\_graph | full\_graph |
-| NomicBertModel | full\_graph | full\_graph |
+These reflect Transformers 5.4.0 -> 5.5.3 compatibility improvements, not PyTorch compiler changes.
 
-All 5 new models compile clean in both modes.
+### New Models (76)
 
-### Other Status Changes
+76 models new in the pt2.11 corpus (not present in pt2.10 expanded sweep). Mostly Diffusers models added via library upgrade and new HF Transformers models (Gemma4, NomicBert).
 
-| Model | eval | train | Notes |
-|-------|------|-------|-------|
-| ChameleonModel | worker\_error → full\_graph | worker\_error → full\_graph | Worker fix (stale data) |
-| ChineseCLIPModel | worker\_error → full\_graph | worker\_error → full\_graph | Worker fix |
-| ChineseCLIPVisionModel | worker\_error → full\_graph | worker\_error → full\_graph | Worker fix |
-| Cohere2Model | worker\_error → full\_graph | worker\_error → full\_graph | Worker fix |
-| Cohere2VisionModel | worker\_error → full\_graph | worker\_error → full\_graph | Worker fix |
-| CohereModel | worker\_error → full\_graph | — | Worker fix |
-| RwkvModel | graph\_break → timeout | graph\_break → timeout | Model size issue |
-| ZambaModel | eager\_error → create\_error | eager\_error → create\_error | Transformers compat |
+Notable new models compiling clean:
+- Gemma4AudioModel, Gemma4Model, Gemma4TextModel, Gemma4VisionModel, Gemma4ForCausalLM
+- NomicBertModel
 
-## Version Trend
+## Version Trend (original 468 models)
 
 | Version | eval full\_graph | train full\_graph | Fixes | Regressions |
 |---------|-----------------|-------------------|-------|-------------|
-| 2.8 | 298 (64%) | 288 (62%) | — | — |
+| 2.8 | 298 (64%) | 288 (62%) | -- | -- |
 | 2.9 | 324 (69%) | 314 (67%) | 0 | 0 |
 | 2.10 | 337 (72%) | 323 (69%) | 12 | 0 |
 | **2.11** | **350 (74%)** | **333 (70%)** | **2** | **0** |

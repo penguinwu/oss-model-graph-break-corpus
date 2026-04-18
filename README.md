@@ -1,6 +1,6 @@
 # OSS Model Compiler Quality Corpus
 
-A reusable corpus of **716 open-source models** (424 families) for measuring and improving `torch.compile` quality. Structured, reproducible, extensible.
+A reusable corpus of **790 open-source models** for measuring and improving `torch.compile` quality. Structured, reproducible, extensible.
 
 The first application tracks `fullgraph=True` success rates across PyTorch versions. But the corpus is designed to extend to other compiler quality studies: dynamic shape behavior, recompilation patterns, graph break taxonomy, and fix validation.
 
@@ -8,35 +8,34 @@ The first application tracks `fullgraph=True` success rates across PyTorch versi
 
 Compiler developers working on `torch.compile`. Three workflows:
 
-1. **Find & fix graph breaks** — reproduce any break with one command, see root causes and fix hints, prioritize by impact across 716 models
+1. **Find & fix graph breaks** — reproduce any break with one command, see root causes and fix hints, prioritize by impact across 790 models
 2. **Prioritize work** — see which break categories affect the most models, track version-over-version progress, identify high-ROI fixes
 3. **Validate tools** — test graph break fix skills, compiler changes, or diagnostics against a known corpus of real-world breaks
 
-## Results at a Glance (PyTorch 2.10, expanded corpus)
+## Results at a Glance (PyTorch 2.11)
 
 |  | eval | train |
 |---|---|---|
-| **full\_graph** | 521 (73%) | 478 (67%) |
-| **graph\_break** | 169 (24%) | 217 (30%) |
-| **error** | 26 (4%) | 21 (3%) |
+| **full\_graph** | 531 (67%) | 489 (62%) |
+| **graph\_break** | 177 (22%) | 219 (28%) |
+| **error** | 82 (10%) | 82 (10%) |
 
-- **716 models** across model families — base models, ForCausalLM, and ForConditionalGeneration
-- **242 models** have graph breaks in at least one mode (including dynamic shapes)
+- **790 models** across model families — base models, ForCausalLM, and ForConditionalGeneration
+- **240 models** have graph breaks in at least one mode
 - All graph breaks come from HF Transformers; Diffusers models compile clean
-- ForConditionalGeneration has the highest break rate (~43%) — vision-text merge paths
 
-### Version Trend (PyTorch 2.8 → 2.11, original 468 base models)
+### Version Trend (PyTorch 2.8 -> 2.11, original 468 base models)
 
-| Version | eval full\_graph | train full\_graph | eval break | train break | Models | Fixes | Regressions |
-|---------|-----------------|-------------------|------------|-------------|--------|-------|-------------|
-| 2.8  | 298 (64%) | 288 (62%) | 96  | 106 | 468 | —  | — |
-| 2.9  | 324 (69%) | 314 (67%) | 101 | 110 | 468 | 0  | 0 |
-| 2.10 | 337 (72%) | 323 (69%) | 90  | 105 | 468 | 12 | 0 |
-| 2.11 | 350 (74%) | 333 (70%) | 87  | 104 | 473 | 2  | 0 |
+| Version | eval full\_graph | train full\_graph | eval break | train break | Fixes | Regressions |
+|---------|-----------------|-------------------|------------|-------------|-------|-------------|
+| 2.8  | 298 (64%) | 288 (62%) | 96  | 106 | --  | -- |
+| 2.9  | 324 (69%) | 314 (67%) | 101 | 110 | 0  | 0 |
+| 2.10 | 337 (72%) | 323 (69%) | 90  | 105 | 12 | 0 |
+| 2.11 | 350 (74%) | 333 (70%) | 87  | 104 | 2  | 0 |
 
-Steady improvement across four releases. **Zero full\_graph→graph\_break regressions** in any release.
+Steady improvement across four releases. **Zero full\_graph->graph\_break regressions** in any release.
 
-The 2.10 expanded corpus (716 models) adds ForCausalLM and ForConditionalGeneration variants, testing the full model stack users actually compile.
+The expanded corpus (790 models) adds ForCausalLM and ForConditionalGeneration variants, testing the full model stack users actually compile.
 
 Nightly tracking and per-version details: [`results/`](results/)
 
@@ -162,7 +161,7 @@ python3 tools/validate.py
 
 ### Corpus dashboard
 
-A browsable HTML dashboard of all 716 models is available at `docs/index.html`:
+A browsable HTML dashboard of all 790 models is available at `docs/index.html`:
 
 ```bash
 python3 tools/generate_index.py    # generates docs/index.html

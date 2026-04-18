@@ -1,8 +1,7 @@
 # PyTorch 2.10 Sweep Results
 
 **Date:** 2026-04-15 (expanded corpus)
-**Models:** 732 (468 original + 264 new)
-**Model families:** 424 (30 new families, 234 new configurations)
+**Models:** 2031 (468 original + 1563 expanded)
 
 ## Environment
 
@@ -12,33 +11,35 @@
 | Transformers | 5.4.0 |
 | Diffusers | 0.37.1 |
 
-## Summary
+## Summary (2031 models, all sources)
 
 |  | eval | train |
 |---|---|---|
-| **full\_graph** | 533 (73%) | 490 (67%) |
-| **graph\_break** | 171 (23%) | 219 (30%) |
-| **error** | 28 (4%) | 21 (3%) |
+| **full\_graph** | 1513 (74%) | 1478 (73%) |
+| **graph\_break** | 166 (8%) | 196 (10%) |
+| **eager\_error** | 41 (2%) | 42 (2%) |
+| **create\_error** | 26 (1%) | 24 (1%) |
+| **timeout** | 269 (13%) | 269 (13%) |
+| **worker\_error** | 11 | 13 |
+| **zombie** | 5 | 5 |
 
-- **235 models** (32%) have graph breaks in at least one mode
-- **696 models** (95.1%) work in both eval and train modes
-- **486 models** compile fully (full\_graph) in both modes
+- **235 models** have graph breaks in at least one mode
+- **1478 models** compile fully (full\_graph) in both modes
+- Timeout rate is elevated due to large generative models (ForCausalLM variants)
 
-## Corpus Expansion (v2.12 sweep iteration)
+## Original 468 Models (version trend comparison)
 
-264 new models added to the corpus:
-- **30 new model families** — entirely new architectures (Llama4, Gemma3n, Dots1, etc.)
-- **234 new configurations** — ForCausalLM and ForConditionalGeneration variants of existing families
-
-28 previously-broken models fixed via config patches, dimension fixes, and input shape corrections.
-
-See `sweep_results/v2.12/changelog.md` for the full change list.
+|  | eval | train |
+|---|---|---|
+| **full\_graph** | 337 (72%) | 323 (69%) |
+| **graph\_break** | 90 | 105 |
+| **error** | 41 | 40 |
 
 ## Changes from 2.9 (original 468 models)
 
-- **12 graph break fixes** (graph\_break → full\_graph), **0 regressions**
+- **12 graph break fixes** (graph\_break -> full\_graph), **0 regressions**
 
-### Fixes (12 model×mode pairs)
+### Fixes (12 model x mode pairs)
 
 | Model | Mode | 2.9 | 2.10 |
 |-------|------|-----|------|
@@ -55,8 +56,6 @@ See `sweep_results/v2.12/changelog.md` for the full change list.
 | XLMModel | eval, train | graph\_break | full\_graph |
 | XmodModel | eval, train | graph\_break | full\_graph |
 
-## Notes
+## Corpus Expansion
 
-The largest batch of genuine graph break fixes in the corpus. These reflect real PyTorch Dynamo improvements between 2.9 and 2.10.
-
-The corpus expansion (v2.12 sweep) added ForCausalLM and ForConditionalGeneration variants, testing the full model stack users actually compile — not just base backbones. This revealed additional graph breaks in vision-text merge paths that were invisible at the base model level.
+The expanded corpus adds ForCausalLM and ForConditionalGeneration variants of existing families, testing the full model stack users actually compile. This revealed additional graph breaks in vision-text merge paths invisible at the base model level.
