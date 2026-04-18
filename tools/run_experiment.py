@@ -793,7 +793,11 @@ def run_check_env_command(args):
 
 
 def run_refresh_nightly(args):
-    """Upgrade nightly venv to the latest PyTorch nightly build."""
+    """Upgrade nightly venv to the latest PyTorch nightly build.
+
+    Tries CUDA variants in order (cu128, cu126) and falls back if primary
+    has no newer build. This handles periods where one variant's CI is broken.
+    """
     venv_dir = Path(args.venv).expanduser().resolve()
     pip = venv_dir / "bin" / "pip"
     python = venv_dir / "bin" / "python"
@@ -809,17 +813,41 @@ def run_refresh_nightly(args):
     old_version = result.stdout.strip() if result.returncode == 0 else "unknown"
     print(f"Current nightly: {old_version}")
 
-    # Upgrade torch (and optionally transformers/diffusers)
-    index_url = "https://download.pytorch.org/whl/nightly/cu128"
+    cuda_variants = [args.cuda_variant, "cu126"] if args.cuda_variant != "cu126" else ["cu126"]
     packages = ["torch", "torchvision", "torchaudio"]
+    installed = False
 
-    print(f"\nUpgrading: {', '.join(packages)}")
-    print(f"Index: {index_url}")
-    cmd = [str(pip), "install", "--pre", "--upgrade",
-           "--index-url", index_url] + packages
-    result = subprocess.run(cmd)
-    if result.returncode != 0:
-        print("ERROR: pip install failed")
+    for variant in cuda_variants:
+        index_url = f"https://download.pytorch.org/whl/nightly/{variant}"
+        print(f"\nTrying {variant}: {', '.join(packages)}")
+        print(f"Index: {index_url}")
+        cmd = [str(pip), "install", "--pre", "--upgrade",
+               "--index-url", index_url] + packages
+        result = subprocess.run(cmd)
+
+        if result.returncode != 0:
+            print(f"WARNING: {variant} install failed")
+            continue
+
+        # Check if version actually changed
+        check = subprocess.run(
+            [str(python), "-c", "import torch; print(torch.__version__)"],
+            capture_output=True, text=True)
+        new_version = check.stdout.strip() if check.returncode == 0 else "unknown"
+
+        if new_version != old_version:
+            print(f"\nUpdated via {variant}: {old_version} → {new_version}")
+            installed = True
+            break
+        elif variant != cuda_variants[-1]:
+            print(f"  {variant}: no newer build (still {new_version}), trying next variant...")
+        else:
+            print(f"  {variant}: no newer build available")
+            installed = True  # pip succeeded, just no update
+            break
+
+    if not installed:
+        print("ERROR: All CUDA variants failed")
         sys.exit(1)
 
     if args.with_transformers:
@@ -829,14 +857,14 @@ def run_refresh_nightly(args):
         if result.returncode != 0:
             print("WARNING: transformers/diffusers upgrade failed")
 
-    # Show new version
+    # Show final version
     result = subprocess.run(
         [str(python), "-c", "import torch; print(torch.__version__)"],
         capture_output=True, text=True)
     new_version = result.stdout.strip() if result.returncode == 0 else "unknown"
     print(f"\nDone: {old_version} → {new_version}")
     if old_version == new_version:
-        print("  (no update available)")
+        print("  (no update available on any variant)")
 
 
 def run_pipeline_command(args):
@@ -1438,6 +1466,8 @@ def main():
                              help="Path to nightly venv (default: ~/envs/torch-nightly)")
     sub_refresh.add_argument("--with-transformers", action="store_true",
                              help="Also upgrade transformers and diffusers")
+    sub_refresh.add_argument("--cuda-variant", default="cu128",
+                             help="Primary CUDA variant (default: cu128, falls back to cu126)")
 
     args = parser.parse_args()
 

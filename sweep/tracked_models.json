@@ -56,5 +56,18 @@
     "UMT5Model",
     "WhisperForConditionalGeneration",
     "WhisperModel"
+  ],
+  "tracked_fixes": [
+    {
+      "description": "copy.deepcopy graph break fix",
+      "prs": [
+        179611,
+        180585
+      ],
+      "status": "closed_not_merged",
+      "models_affected": 53,
+      "contact": "Animesh (anijain)",
+      "notes": "Both PRs closed without merging as of 2026-04-18. Monitor for replacement PR."
+    }
   ]
 }
