@@ -16,6 +16,9 @@ Subcommands:
     explain     Explain-only pass from prior identify results
     validate-shapes   Two-shape correctness check
 
+  Pipeline:
+    pipeline    Full sweep pipeline (check-env → sweep → corpus → scan → summary)
+
   Utilities:
     selftest    Smoke test (3 models, both passes)
     check-env   Pre-sweep environment validation
@@ -785,6 +788,138 @@ def run_check_env_command(args):
     sweep_mod.check_env(args)
 
 
+def run_pipeline_command(args):
+    """Orchestrate a full sweep pipeline: check-env → sweep → corpus → scan → summary."""
+    python = sys.executable
+    tools_dir = Path(__file__).resolve().parent
+    script = str(tools_dir / "run_experiment.py")
+    repo_root = tools_dir.parent
+
+    steps_done = []
+    label = args.label or time.strftime("pt-sweep-%Y%m%d")
+    output_dir = Path(args.output_dir).resolve() if args.output_dir else (
+        repo_root / "sweep_results")
+
+    def _run(cmd, desc, allow_fail=False):
+        print(f"\n{'='*70}")
+        print(f"PIPELINE: {desc}")
+        print(f"{'='*70}")
+        print(f"  CMD: {' '.join(cmd)}\n")
+        result = subprocess.run(cmd, cwd=str(repo_root))
+        if result.returncode != 0 and not allow_fail:
+            print(f"\nPIPELINE FAILED at step: {desc}")
+            print(f"  Exit code: {result.returncode}")
+            if steps_done:
+                print(f"  Completed steps: {', '.join(steps_done)}")
+            sys.exit(1)
+        steps_done.append(desc)
+
+    # Step 1: check-env
+    _run([python, script, "check-env"], "Environment check")
+
+    # Step 2: sweep (identify + explain)
+    sweep_cmd = [python, script, "sweep",
+                 "--source"] + args.source + [
+                 "--modes"] + args.modes + [
+                 "--workers", str(args.workers),
+                 "--timeout", str(args.timeout),
+                 "--output-dir", str(output_dir)]
+    if args.identify_only:
+        sweep_cmd.append("--identify-only")
+    if args.resume:
+        sweep_cmd.append("--resume")
+
+    if args.detach:
+        log_file = output_dir / f"{label}.log"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        print(f"\n{'='*70}")
+        print(f"PIPELINE: Sweep (detached)")
+        print(f"{'='*70}")
+        print(f"  CMD: {' '.join(sweep_cmd)}")
+        print(f"  LOG: {log_file}")
+        print(f"\nSweep will run in background. Monitor with:")
+        print(f"  tail -f {log_file}")
+        print(f"\nAfter completion, continue the pipeline with:")
+        print(f"  {python} {script} pipeline --continue-from corpus \\")
+        print(f"    --sweep-results <results-dir> --label {label}")
+        with open(log_file, "w") as lf:
+            proc = subprocess.Popen(
+                sweep_cmd, stdout=lf, stderr=subprocess.STDOUT,
+                cwd=str(repo_root), start_new_session=True)
+        print(f"  PID: {proc.pid}")
+        state_file = output_dir / f"{label}-pipeline-state.json"
+        with open(state_file, "w") as f:
+            json.dump({
+                "label": label, "pid": proc.pid, "log": str(log_file),
+                "output_dir": str(output_dir), "source": args.source,
+                "next_step": "corpus",
+            }, f, indent=2)
+        print(f"  State: {state_file}")
+        return
+
+    _run(sweep_cmd, "Sweep (identify + explain)")
+
+    # Find the results directory (most recent in output_dir)
+    results_dir = args.sweep_results
+    if not results_dir:
+        candidates = sorted(output_dir.iterdir(), key=lambda p: p.stat().st_mtime)
+        results_dir = str(candidates[-1]) if candidates else None
+    if not results_dir or not Path(results_dir).exists():
+        print(f"PIPELINE: Could not find sweep results in {output_dir}")
+        sys.exit(1)
+
+    _run_post_sweep(python, script, repo_root, results_dir, label, steps_done)
+
+
+def _run_post_sweep(python, script, repo_root, results_dir, label, steps_done):
+    """Run post-sweep pipeline steps: corpus → scan → summary."""
+    tools_dir = Path(script).parent
+
+    def _run(cmd, desc, allow_fail=False):
+        print(f"\n{'='*70}")
+        print(f"PIPELINE: {desc}")
+        print(f"{'='*70}")
+        print(f"  CMD: {' '.join(cmd)}\n")
+        result = subprocess.run(cmd, cwd=str(repo_root))
+        if result.returncode != 0 and not allow_fail:
+            print(f"\nPIPELINE FAILED at step: {desc}")
+            sys.exit(1)
+        steps_done.append(desc)
+
+    # Step 3: corpus update
+    _run([python, script, "corpus", results_dir], "Corpus update")
+
+    # Step 4: git diff to show changes
+    print(f"\n{'='*70}")
+    print("PIPELINE: Corpus diff")
+    print(f"{'='*70}")
+    diff_result = subprocess.run(
+        ["git", "diff", "--stat", "corpus/corpus.json"],
+        cwd=str(repo_root), capture_output=True, text=True)
+    if diff_result.stdout.strip():
+        print(diff_result.stdout)
+    else:
+        print("  No changes to corpus.")
+    steps_done.append("Corpus diff")
+
+    # Step 5: issue scan
+    file_issues = str(tools_dir / "file_issues.py")
+    if Path(file_issues).exists():
+        _run([python, file_issues, "scan", "-v"], "Issue scan", allow_fail=True)
+
+    # Step 6: summary
+    print(f"\n{'='*70}")
+    print("PIPELINE COMPLETE")
+    print(f"{'='*70}")
+    print(f"  Label: {label}")
+    print(f"  Steps: {', '.join(steps_done)}")
+    print(f"  Results: {results_dir}")
+    changelog = Path(results_dir) / "changelog.md"
+    if changelog.exists():
+        print(f"  Changelog: {changelog}")
+    print(f"\nNext: review changelog, then post to feedback space.")
+
+
 def build_corpus(args):
     """Build/update corpus from experiment results.
 
@@ -1186,6 +1321,39 @@ def main():
                                help="Dynamic shapes (default: all)")
     sub_valshapes.add_argument("--limit", type=int)
 
+    # ── pipeline ──────────────────────────────────────────────────────────
+    sub_pipeline = subparsers.add_parser(
+        "pipeline",
+        help="Full sweep pipeline: check-env → sweep → corpus → scan → summary",
+        description="Orchestrates a complete sweep workflow. Calls existing subcommands "
+                    "in sequence — no changes to sweep/corpus logic.",
+    )
+    sub_pipeline.add_argument("--label", metavar="NAME",
+                              help="Pipeline run label (default: pt-sweep-YYYYMMDD)")
+    sub_pipeline.add_argument("--source", nargs="+",
+                              default=["hf", "diffusers", "custom"],
+                              choices=["timm", "hf", "diffusers", "custom", "all"],
+                              help="Model sources (default: hf diffusers custom)")
+    sub_pipeline.add_argument("--modes", nargs="+", default=["eval", "train"],
+                              choices=["eval", "train"])
+    sub_pipeline.add_argument("--workers", type=int, default=4)
+    sub_pipeline.add_argument("--timeout", type=int, default=180)
+    sub_pipeline.add_argument("--output-dir", metavar="DIR",
+                              help="Sweep output directory")
+    sub_pipeline.add_argument("--identify-only", action="store_true",
+                              help="Stop sweep after identify pass")
+    sub_pipeline.add_argument("--resume", action="store_true",
+                              help="Resume sweep from checkpoint")
+    sub_pipeline.add_argument("--detach", action="store_true",
+                              help="Run sweep in background (nohup-style). "
+                                   "Pipeline pauses after launching sweep; "
+                                   "use --continue-from to resume post-sweep steps.")
+    sub_pipeline.add_argument("--continue-from", metavar="STEP",
+                              choices=["corpus", "scan", "summary"],
+                              help="Skip to a later pipeline step (requires --sweep-results)")
+    sub_pipeline.add_argument("--sweep-results", metavar="DIR",
+                              help="Path to sweep results dir (for --continue-from)")
+
     # ── selftest ──────────────────────────────────────────────────────────
     sub_selftest = subparsers.add_parser(
         "selftest",
@@ -1265,6 +1433,19 @@ def main():
 
     if args.command == "check-env":
         run_check_env_command(args)
+        return
+
+    if args.command == "pipeline":
+        if args.continue_from:
+            if not args.sweep_results:
+                print("ERROR: --continue-from requires --sweep-results")
+                sys.exit(1)
+            _run_post_sweep(
+                sys.executable, str(Path(__file__).resolve()),
+                REPO_ROOT, args.sweep_results,
+                args.label or "resumed", [])
+        else:
+            run_pipeline_command(args)
         return
 
 
