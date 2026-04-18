@@ -407,12 +407,15 @@ def _github_api(method, endpoint, data=None):
         f"-H 'Authorization: Bearer {token}' "
         f"-H 'Accept: application/vnd.github+json'"
     )
+    stdin_data = None
     if data:
-        cmd += f" -d '{json.dumps(data)}'"
+        cmd += " -d @-"
+        stdin_data = json.dumps(data)
 
     result = subprocess.run(
         ["sudo", "bash", "-c", cmd],
         capture_output=True, text=True, timeout=30,
+        input=stdin_data,
     )
     if result.returncode != 0:
         print(f"ERROR: GitHub API call failed: {result.stderr}")
