@@ -227,6 +227,15 @@ def _fix_config(model_name, config):
         if not getattr(config, "context_length", None):
             config.context_length = 96
 
+    # torch.compile materializes attention masks that eager skips — these two need config tweaks
+    if name_lower == "autoformermodel":
+        d_model = getattr(config, "d_model", 64)
+        num_heads = getattr(config, "encoder_attention_heads", 2)
+        config.context_length = d_model // num_heads
+
+    if name_lower == "informermodel":
+        config.distil = False
+
     # --- AyaVisionModel: embed_dim must be divisible by num_heads ---
     if name_lower == "ayavisionmodel":
         vision_cfg = getattr(config, "vision_config", None)
