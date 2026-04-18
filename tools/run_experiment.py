@@ -219,7 +219,7 @@ def validate_config(config, strict=True):
     return errors
 
 
-def _enumerate_all_sources():
+def _enumerate_all_sources(filter_unconfigured=True):
     """Enumerate models from all sources (hf + diffusers + custom)."""
     sys.path.insert(0, str(SWEEP_DIR))
     from models import enumerate_hf, enumerate_diffusers
@@ -229,7 +229,10 @@ def _enumerate_all_sources():
         enumerate_custom = lambda: []
 
     specs = enumerate_hf()
-    specs += [m for m in enumerate_diffusers() if m.get("has_config", True)]
+    diff_models = enumerate_diffusers()
+    if filter_unconfigured:
+        diff_models = [m for m in diff_models if m.get("has_config", True)]
+    specs += diff_models
     try:
         specs += enumerate_custom()
     except Exception:
@@ -275,9 +278,9 @@ def resolve_models(models_config, python_bin=None):
         return specs
 
     if source == "list":
-        # Explicit model list — enumerate all and filter
+        # Explicit model list — enumerate all (including unconfigured) and filter
         names = set(models_config["names"])
-        all_specs = _enumerate_all_sources()
+        all_specs = _enumerate_all_sources(filter_unconfigured=False)
         specs = [s for s in all_specs if s["name"] in names]
         found = {s["name"] for s in specs}
         missing = names - found
