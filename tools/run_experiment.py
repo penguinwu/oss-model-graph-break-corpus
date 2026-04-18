@@ -20,8 +20,9 @@ Subcommands:
     pipeline    Full sweep pipeline (check-env → sweep → corpus → scan → summary)
 
   Utilities:
-    selftest    Smoke test (3 models, both passes)
-    check-env   Pre-sweep environment validation
+    selftest        Smoke test (3 models, both passes)
+    check-env       Pre-sweep environment validation
+    refresh-nightly Upgrade nightly venv to latest PyTorch nightly
 
 Usage:
   # Config-driven experiment
@@ -791,6 +792,53 @@ def run_check_env_command(args):
     sweep_mod.check_env(args)
 
 
+def run_refresh_nightly(args):
+    """Upgrade nightly venv to the latest PyTorch nightly build."""
+    venv_dir = Path(args.venv).expanduser().resolve()
+    pip = venv_dir / "bin" / "pip"
+    python = venv_dir / "bin" / "python"
+
+    if not pip.exists():
+        print(f"ERROR: {pip} not found. Is --venv correct?")
+        sys.exit(1)
+
+    # Show current version
+    result = subprocess.run(
+        [str(python), "-c", "import torch; print(torch.__version__)"],
+        capture_output=True, text=True)
+    old_version = result.stdout.strip() if result.returncode == 0 else "unknown"
+    print(f"Current nightly: {old_version}")
+
+    # Upgrade torch (and optionally transformers/diffusers)
+    index_url = "https://download.pytorch.org/whl/nightly/cu128"
+    packages = ["torch", "torchvision", "torchaudio"]
+
+    print(f"\nUpgrading: {', '.join(packages)}")
+    print(f"Index: {index_url}")
+    cmd = [str(pip), "install", "--pre", "--upgrade",
+           "--index-url", index_url] + packages
+    result = subprocess.run(cmd)
+    if result.returncode != 0:
+        print("ERROR: pip install failed")
+        sys.exit(1)
+
+    if args.with_transformers:
+        print("\nUpgrading transformers + diffusers...")
+        result = subprocess.run(
+            [str(pip), "install", "--upgrade", "transformers", "diffusers"])
+        if result.returncode != 0:
+            print("WARNING: transformers/diffusers upgrade failed")
+
+    # Show new version
+    result = subprocess.run(
+        [str(python), "-c", "import torch; print(torch.__version__)"],
+        capture_output=True, text=True)
+    new_version = result.stdout.strip() if result.returncode == 0 else "unknown"
+    print(f"\nDone: {old_version} → {new_version}")
+    if old_version == new_version:
+        print("  (no update available)")
+
+
 def run_pipeline_command(args):
     """Orchestrate a full sweep pipeline: check-env → sweep → corpus → scan → summary."""
     python = sys.executable
@@ -816,6 +864,12 @@ def run_pipeline_command(args):
                 print(f"  Completed steps: {', '.join(steps_done)}")
             sys.exit(1)
         steps_done.append(desc)
+
+    # Step 0 (optional): refresh nightly venv
+    if getattr(args, "refresh_nightly", False):
+        refresh_cmd = [python, script, "refresh-nightly",
+                       "--venv", args.nightly_venv, "--with-transformers"]
+        _run(refresh_cmd, "Refresh nightly venv")
 
     # Step 1: check-env
     _run([python, script, "check-env"], "Environment check")
@@ -1356,6 +1410,10 @@ def main():
                               help="Skip to a later pipeline step (requires --sweep-results)")
     sub_pipeline.add_argument("--sweep-results", metavar="DIR",
                               help="Path to sweep results dir (for --continue-from)")
+    sub_pipeline.add_argument("--refresh-nightly", action="store_true",
+                              help="Upgrade nightly venv before sweep (step zero)")
+    sub_pipeline.add_argument("--nightly-venv", default="~/envs/torch-nightly",
+                              help="Path to nightly venv (default: ~/envs/torch-nightly)")
 
     # ── selftest ──────────────────────────────────────────────────────────
     sub_selftest = subparsers.add_parser(
@@ -1370,6 +1428,16 @@ def main():
         help="Pre-sweep environment validation (version check)",
     )
     sub_checkenv.add_argument("--device", default="cuda", choices=["cpu", "cuda"])
+
+    # ── refresh-nightly ──────────────────────────────────────────────────
+    sub_refresh = subparsers.add_parser(
+        "refresh-nightly",
+        help="Upgrade nightly venv to latest PyTorch nightly build",
+    )
+    sub_refresh.add_argument("--venv", default="~/envs/torch-nightly",
+                             help="Path to nightly venv (default: ~/envs/torch-nightly)")
+    sub_refresh.add_argument("--with-transformers", action="store_true",
+                             help="Also upgrade transformers and diffusers")
 
     args = parser.parse_args()
 
@@ -1436,6 +1504,10 @@ def main():
 
     if args.command == "check-env":
         run_check_env_command(args)
+        return
+
+    if args.command == "refresh-nightly":
+        run_refresh_nightly(args)
         return
 
     if args.command == "pipeline":
