@@ -54,8 +54,12 @@ def _run(cmd, desc, log_file=None, allow_fail=False):
     return result.returncode == 0
 
 
-def step0_refresh_venv(python, venv_dir):
-    """Refresh nightly venv to latest PyTorch nightly build."""
+def step0_refresh_venv(python, venv_dir, force=False):
+    """Refresh nightly venv to latest PyTorch nightly build.
+
+    Returns (version_string, git_version, is_stale).
+    is_stale=True means the nightly build is identical to the last sweep.
+    """
     old_ver = _get_torch_version(python)
     print(f"  Current: {old_ver}")
 
@@ -66,15 +70,28 @@ def step0_refresh_venv(python, venv_dir):
     )
 
     new_ver = _get_torch_version(python)
-    print(f"  After refresh: {new_ver}")
+    git_ver = _get_torch_git_version(python)
+    print(f"  After refresh: {new_ver} (git: {git_ver[:12]})")
 
-    if old_ver == new_ver:
-        print("  WARNING: Nightly version unchanged — no new build available")
-        print("  Proceeding with current version (still catches transformers/diffusers changes)")
-    else:
+    if old_ver != new_ver:
         print(f"  Updated: {old_ver} → {new_ver}")
 
-    return new_ver
+    last_git = _get_last_sweep_git_version()
+    is_stale = False
+    if last_git and git_ver == last_git:
+        is_stale = True
+        print(f"\n  *** STALE NIGHTLY DETECTED ***")
+        print(f"  Git commit {git_ver[:12]} is identical to last sweep.")
+        print(f"  No new PyTorch changes to test.")
+        if force:
+            print(f"  --force specified — sweeping anyway.")
+        else:
+            print(f"  Aborting to avoid wasting a weekly sweep.")
+            print(f"  Use --force to override.")
+    elif last_git:
+        print(f"  Last sweep git: {last_git[:12]} → current: {git_ver[:12]} (new commits)")
+
+    return new_ver, git_ver, is_stale
 
 
 def _get_torch_version(python):
@@ -83,6 +100,31 @@ def _get_torch_version(python):
         [python, "-c", "import torch; print(torch.__version__)"],
         capture_output=True, text=True)
     return result.stdout.strip() if result.returncode == 0 else "unknown"
+
+
+def _get_torch_git_version(python):
+    """Get torch git commit hash from a python executable."""
+    result = subprocess.run(
+        [python, "-c", "import torch; print(torch.version.git_version)"],
+        capture_output=True, text=True)
+    return result.stdout.strip() if result.returncode == 0 else "unknown"
+
+
+def _get_last_sweep_git_version():
+    """Get git_version from the most recent nightly sweep."""
+    nightly_dir = REPO_ROOT / "sweep_results" / "nightly"
+    if not nightly_dir.exists():
+        return None
+    dates = sorted(d.name for d in nightly_dir.iterdir()
+                   if d.is_dir() and d.name[:4].isdigit())
+    if not dates:
+        return None
+    last = nightly_dir / dates[-1] / "versions.json"
+    if not last.exists():
+        return None
+    with open(last) as f:
+        data = json.load(f)
+    return data.get("git_version") or data.get("torch_git")
 
 
 def step1_identify(python, output_dir, args):
@@ -373,6 +415,8 @@ def main():
                         help="Nightly venv path (default: ~/envs/torch-nightly)")
     parser.add_argument("--limit", type=int, default=0,
                         help="Max models to test (0 = all, for smoke testing)")
+    parser.add_argument("--force", action="store_true",
+                        help="Run sweep even if nightly is unchanged from last sweep")
     args = parser.parse_args()
 
     python = os.environ.get("SWEEP_PYTHON",
@@ -388,16 +432,23 @@ def main():
     print(f"Start:  {time.strftime('%H:%M:%S')}")
 
     # Step 0: Refresh venv
+    git_version = None
     if not args.skip_refresh:
-        nightly_version = step0_refresh_venv(python, args.venv)
+        nightly_version, git_version, is_stale = step0_refresh_venv(
+            python, args.venv, force=args.force)
+        if is_stale and not args.force:
+            print(f"\n=== Sweep aborted: nightly unchanged since last sweep ===")
+            sys.exit(0)
     else:
         nightly_version = _get_torch_version(python)
-        print(f"\nSkipping venv refresh (current: {nightly_version})")
+        git_version = _get_torch_git_version(python)
+        print(f"\nSkipping venv refresh (current: {nightly_version}, git: {git_version[:12]})")
 
     # Save version info
     versions_file = output_dir / "versions.json"
     versions_file.write_text(json.dumps({
         "pytorch": nightly_version,
+        "git_version": git_version,
         "date": date,
         "python": python,
         "refreshed": not args.skip_refresh,
