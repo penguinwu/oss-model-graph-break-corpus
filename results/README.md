@@ -9,7 +9,7 @@ Per-version summaries and nightly tracking for `torch.compile` quality across op
 | [2.8](pt2.8.md)   | 298 (64%) | 288 (62%) | 96  | 106 | --  | -- |
 | [2.9](pt2.9.md)   | 324 (69%) | 314 (67%) | 101 | 110 | 0  | 0 |
 | [2.10](pt2.10.md) | 337 (72%) | 323 (69%) | 90  | 105 | 12 | 0 |
-| [2.11](pt2.11.md) | 350 (74%) | 333 (70%) | 87  | 104 | 2  | 0 |
+| [2.11](pt2.11.md) | 345 (74%) | 328 (70%) | 87  | 104 | 2  | 0 |
 
 **Zero full\_graph->graph\_break regressions across all releases.**
 

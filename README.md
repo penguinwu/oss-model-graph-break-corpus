@@ -31,7 +31,7 @@ Compiler developers working on `torch.compile`. Three workflows:
 | 2.8  | 298 (64%) | 288 (62%) | 96  | 106 | --  | -- |
 | 2.9  | 324 (69%) | 314 (67%) | 101 | 110 | 0  | 0 |
 | 2.10 | 337 (72%) | 323 (69%) | 90  | 105 | 12 | 0 |
-| 2.11 | 350 (74%) | 333 (70%) | 87  | 104 | 2  | 0 |
+| 2.11 | 345 (74%) | 328 (70%) | 87  | 104 | 2  | 0 |
 
 Steady improvement across four releases. **Zero full\_graph->graph\_break regressions** in any release.
 

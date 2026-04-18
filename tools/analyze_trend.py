@@ -80,17 +80,17 @@ def find_version_dirs(args):
                 sys.exit(1)
             versions.append({"label": label, "identify": p1, "explain": p2, "dir": d})
     else:
-        # Auto-discover: sweep_results/v2.* directories
+        # Auto-discover: sweep_results/pt2.* directories (exact match, no suffixes)
         sweep_dir = os.path.join(REPO_ROOT, "sweep_results")
+        import re
 
         def version_key(name):
-            """Sort v2.8, v2.9, v2.10 by numeric version."""
-            parts = name.lstrip("v").split(".")
+            parts = re.sub(r"^(pt|v)", "", name).split(".")
             return tuple(int(p) for p in parts if p.isdigit())
 
         version_dirs = sorted(
             (d for d in os.listdir(sweep_dir)
-             if d.startswith("v") and os.path.isfile(os.path.join(sweep_dir, d, "identify_results.json"))),
+             if re.match(r"^pt2\.\d+$", d) and os.path.isfile(os.path.join(sweep_dir, d, "identify_results.json"))),
             key=version_key,
         )
         for vd in version_dirs:
