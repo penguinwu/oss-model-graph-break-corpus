@@ -49,7 +49,7 @@ The codebase has two layers: **sweep/** runs the actual tests, **tools/** analyz
 | `selftest` | 3-model smoke test |
 | `check-env` | Pre-sweep environment validation |
 | `refresh-nightly` | Upgrade nightly venv to latest PyTorch |
-| `template` / `validate` / `run` / `merge` | Config-driven experiment system |
+| `template` / `validate` / `run` / `merge` | Config-driven experiment system (see [experiments/README.md](experiments/README.md)) |
 
 ## Common Workflows
 
@@ -94,6 +94,28 @@ python tools/file_issues.py sweep-update \
 ```
 
 sweep-report classifies every graph break into an issue category, computes leverage rankings (which fixes unlock the most fullgraph models), generates issue bodies with affected model tables, and flags close candidates with evidence. sweep-update reads the reviewed plan and PATCHes GitHub issues.
+
+### Run experiments (flag tests, ablations, model subsets)
+
+```bash
+# Generate a starter config
+python tools/run_experiment.py template > experiments/configs/my-test.json
+
+# Edit the config: set models (list, corpus_filter, sample, all),
+# dynamo_flags per config variant, and execution settings
+
+# Validate and preview
+python tools/run_experiment.py validate experiments/configs/my-test.json
+python tools/run_experiment.py run experiments/configs/my-test.json --dry-run
+
+# Run
+python tools/run_experiment.py run experiments/configs/my-test.json
+
+# Merge incremental results into an existing sweep
+python tools/run_experiment.py merge --from experiments/results/my-run/ --into sweep_results/pt2.11/
+```
+
+Full config schema, output format, and recipes: [experiments/README.md](experiments/README.md)
 
 ### Reproduce and debug a graph break
 
