@@ -67,6 +67,19 @@
     "source": "hf",
     "timeout_tier": "very_large"
   },
+  "Gemma4-text": {
+    "discovered": "2026-04-19",
+    "phase_at_timeout": "explain Gemma4-text",
+    "source": "custom",
+    "timeout_tier": "very_large"
+  },
+  "Gemma4-vision": {
+    "discovered": "2026-04-19",
+    "resolved_status": "skipped",
+    "source": "custom",
+    "timeout_tier": "large",
+    "wall_time_s": 10.0
+  },
   "GroundingDinoModel": {
     "discovered": "2026-04-01",
     "resolved_status": "graph_break",

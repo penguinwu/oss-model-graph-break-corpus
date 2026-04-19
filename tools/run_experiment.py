@@ -16,8 +16,8 @@ Subcommands:
     explain     Explain-only pass from prior identify results
     validate-shapes   Two-shape correctness check
 
-  Pipeline:
-    pipeline    Full sweep pipeline (check-env → sweep → corpus → scan → summary)
+  Nightly:
+    nightly     Automated nightly regression sweep (full workflow)
 
   Utilities:
     selftest        Smoke test (3 models, both passes)
@@ -40,10 +40,12 @@ Usage:
 import argparse
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 
 # Add sweep/ to path for orchestrator imports
@@ -867,43 +869,456 @@ def run_refresh_nightly(args):
         print("  (no update available on any variant)")
 
 
-def run_pipeline_command(args):
-    """Orchestrate a full sweep pipeline: check-env → sweep → corpus → scan → summary."""
+CORPUS_PATH = REPO_ROOT / "corpus" / "corpus.json"
+TRACKED_MODELS_FILE = REPO_ROOT / "sweep" / "tracked_models.json"
+
+
+def _nightly_build_age_days(version_str):
+    """Days since this nightly was built, from version like '2.12.0.dev20260407+cu128'.
+
+    Returns None for non-nightly versions (source builds, releases).
+    """
+    m = re.search(r'dev(\d{8})', version_str)
+    if not m:
+        return None
+    try:
+        build_date = datetime.strptime(m.group(1), '%Y%m%d')
+        return (datetime.now() - build_date).days
+    except ValueError:
+        return None
+
+
+def _get_torch_git_version(python):
+    """Get torch git commit hash from a python executable."""
+    result = subprocess.run(
+        [python, "-c", "import torch; print(torch.version.git_version)"],
+        capture_output=True, text=True)
+    return result.stdout.strip() if result.returncode == 0 else "unknown"
+
+
+def _get_last_sweep_git_version():
+    """Get git_version from the most recent nightly sweep."""
+    nightly_dir = REPO_ROOT / "sweep_results" / "nightly"
+    if not nightly_dir.exists():
+        return None
+    dates = sorted(d.name for d in nightly_dir.iterdir()
+                   if d.is_dir() and d.name[:4].isdigit())
+    if not dates:
+        return None
+    last = nightly_dir / dates[-1] / "versions.json"
+    if not last.exists():
+        return None
+    with open(last) as f:
+        data = json.load(f)
+    return data.get("git_version") or data.get("torch_git")
+
+
+def pipeline_preflight(python, device="cuda"):
+    """Fast environment validation — catches 80% of failures in <30 seconds."""
+    print(f"\n{'=' * 70}")
+    print("PIPELINE: Preflight checks")
+    print(f"{'=' * 70}")
+    errors = []
+
+    if not Path(python).exists():
+        errors.append(f"Python not found: {python}")
+    else:
+        print(f"  OK: python {python}")
+
+    result = subprocess.run(
+        [python, "-c",
+         "import torch; import torch._dynamo; "
+         "print(f'{torch.__version__}|{torch.cuda.is_available()}|{torch.cuda.device_count()}')"],
+        capture_output=True, text=True, timeout=30)
+    if result.returncode != 0:
+        errors.append(f"torch import failed: {result.stderr.strip()[:200]}")
+    else:
+        parts = result.stdout.strip().split("|")
+        print(f"  OK: torch {parts[0]}, cuda={parts[1]}, devices={parts[2]}")
+        if device == "cuda" and parts[1] != "True":
+            errors.append("CUDA requested but torch.cuda.is_available() is False")
+        if device == "cuda" and parts[2] == "0":
+            errors.append("CUDA requested but no GPU devices found")
+
+    result = subprocess.run(
+        [python, "-c", "import transformers; print(transformers.__version__)"],
+        capture_output=True, text=True, timeout=15)
+    if result.returncode != 0:
+        errors.append(f"transformers import failed: {result.stderr.strip()[:200]}")
+    else:
+        print(f"  OK: transformers {result.stdout.strip()}")
+
+    if not CORPUS_PATH.exists():
+        errors.append(f"Corpus not found: {CORPUS_PATH}")
+    else:
+        try:
+            with open(CORPUS_PATH) as f:
+                corpus = json.load(f)
+            print(f"  OK: corpus ({len(corpus.get('models', []))} models)")
+        except (json.JSONDecodeError, KeyError) as e:
+            errors.append(f"Corpus parse error: {e}")
+
+    sweep_script = REPO_ROOT / "sweep" / "run_sweep.py"
+    if not sweep_script.exists():
+        errors.append(f"Sweep script not found: {sweep_script}")
+    else:
+        print(f"  OK: sweep script")
+
+    import shutil
+    free_gb = shutil.disk_usage(str(REPO_ROOT)).free / (1024**3)
+    if free_gb < 5:
+        errors.append(f"Low disk: {free_gb:.1f}GB free (need 5GB)")
+    else:
+        print(f"  OK: {free_gb:.0f}GB free")
+
+    if device == "cuda":
+        result = subprocess.run(
+            [python, "-c",
+             "import torch; t = torch.randn(1000, 1000, device='cuda'); "
+             "free, total = torch.cuda.mem_get_info(); "
+             f"print(f'{{free/1e9:.1f}}GB free / {{total/1e9:.1f}}GB total')"],
+            capture_output=True, text=True, timeout=15)
+        if result.returncode != 0:
+            errors.append(f"GPU allocation failed: {result.stderr.strip()[:200]}")
+        else:
+            print(f"  OK: GPU {result.stdout.strip()}")
+
+    if errors:
+        print(f"\n  PREFLIGHT FAILED — {len(errors)} error(s):")
+        for e in errors:
+            print(f"    ✗ {e}")
+        return False
+    print("  PREFLIGHT PASSED")
+    return True
+
+
+def pipeline_canary(python, output_dir, device="cuda", timeout=180):
+    """Run 1 model end-to-end as a gate before the full sweep (~30s vs ~3h)."""
+    print(f"\n{'=' * 70}")
+    print("PIPELINE: Canary sweep (1 model)")
+    print(f"{'=' * 70}")
+
+    canary_dir = Path(output_dir) / "canary"
+    canary_dir.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        python, str(REPO_ROOT / "sweep" / "run_sweep.py"), "sweep",
+        "--device", device,
+        "--workers", "1",
+        "--timeout", str(timeout),
+        "--output-dir", str(canary_dir),
+        "--identify-only",
+        "--source", "hf",
+        "--limit", "1",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True,
+                            cwd=str(REPO_ROOT), timeout=timeout + 60)
+    if result.returncode != 0:
+        print(f"  Canary exit code: {result.returncode}")
+        if result.stderr:
+            print(f"  stderr: {result.stderr[-500:]}")
+        print("  CANARY FAILED — sweep infrastructure broken")
+        return False
+
+    results_file = canary_dir / "identify_results.json"
+    if not results_file.exists():
+        print("  CANARY FAILED — no results file produced")
+        return False
+
+    with open(results_file) as f:
+        data = json.load(f)
+    results = data.get("results", [])
+    if not results:
+        print("  CANARY FAILED — results file empty")
+        return False
+
+    print(f"  OK: {results[0].get('name', '?')} → {results[0].get('status', '?')}")
+    print("  CANARY PASSED")
+    return True
+
+
+def pipeline_staleness_check(python, force=False):
+    """Check if nightly build has changed since last sweep.
+
+    Returns (git_version, is_stale). Stale = same git hash as last sweep.
+    """
+    git_ver = _get_torch_git_version(python)
+    last_git = _get_last_sweep_git_version()
+
+    if not last_git:
+        print(f"  No prior sweep found — treating as fresh (git: {git_ver[:12]})")
+        return git_ver, False
+
+    if git_ver == last_git:
+        print(f"\n  *** STALE NIGHTLY DETECTED ***")
+        print(f"  Git commit {git_ver[:12]} is identical to last sweep.")
+        if force:
+            print(f"  --force specified — sweeping anyway.")
+            return git_ver, False
+        else:
+            print(f"  Aborting to avoid wasting a sweep cycle.")
+            return git_ver, True
+
+    print(f"  Last sweep git: {last_git[:12]} → current: {git_ver[:12]} (new commits)")
+    return git_ver, False
+
+
+def pipeline_detect_and_explain(python, results_dir, device="cuda",
+                                workers=4, timeout=180):
+    """Detect status changes vs corpus, run explain on changed + tracked models."""
+    print(f"\n{'=' * 70}")
+    print("PIPELINE: Detect changes + targeted explain")
+    print(f"{'=' * 70}")
+
+    identify_file = Path(results_dir) / "identify_results.json"
+    if not identify_file.exists():
+        print(f"  No identify results — skipping explain")
+        return
+
+    with open(identify_file) as f:
+        identify_data = json.load(f)
+    new_results = {(r["name"], r["mode"]): r["status"]
+                   for r in identify_data.get("results", [])}
+
+    with open(CORPUS_PATH) as f:
+        corpus = json.load(f)
+    old_results = {}
+    for m in corpus["models"]:
+        for mode in ("eval", "train"):
+            status = m.get(mode, {}).get("status")
+            if status:
+                old_results[(m["name"], mode)] = status
+
+    changed = set()
+    for key, new_status in new_results.items():
+        old_status = old_results.get(key)
+        if old_status and old_status != new_status:
+            changed.add(key[0])
+    for key in new_results:
+        if key not in old_results:
+            changed.add(key[0])
+
+    tracked = set()
+    if TRACKED_MODELS_FILE.exists():
+        with open(TRACKED_MODELS_FILE) as f:
+            tracked = set(json.load(f).get("models", []))
+
+    explain_set = changed | tracked
+    explain_models = [r for r in identify_data.get("results", [])
+                      if r["name"] in explain_set
+                      and r.get("status") in ("graph_break", "compile_error")]
+
+    print(f"  Status changes: {len(changed)} models")
+    if changed:
+        for name in sorted(changed)[:10]:
+            old = old_results.get((name, "eval"), "?")
+            new = new_results.get((name, "eval"), "?")
+            print(f"    {name}: {old} → {new}")
+        if len(changed) > 10:
+            print(f"    ... and {len(changed) - 10} more")
+    print(f"  Tracked models: {len(tracked)}")
+    print(f"  Models needing explain: {len(explain_models)}")
+
+    if not explain_models:
+        print("  No models need explain — skipping")
+        return
+
+    explain_input = Path(results_dir) / "explain_targets.json"
+    explain_data = {"metadata": identify_data.get("metadata", {}),
+                    "results": explain_models}
+    with open(explain_input, "w") as f:
+        json.dump(explain_data, f, indent=2)
+
+    explain_dir = Path(results_dir) / "explain"
+    explain_dir.mkdir(exist_ok=True)
+
+    cmd = [
+        python, str(REPO_ROOT / "tools" / "run_experiment.py"), "explain",
+        str(explain_input),
+        "--device", device,
+        "--workers", str(workers),
+        "--timeout", str(timeout),
+        "--output-dir", str(explain_dir),
+    ]
+
+    start = time.perf_counter()
+    result = subprocess.run(cmd, cwd=str(REPO_ROOT))
+    elapsed = time.perf_counter() - start
+
+    if result.returncode == 0:
+        print(f"  Explain done in {elapsed:.0f}s")
+    else:
+        print(f"  Explain failed after {elapsed:.0f}s")
+
+
+def pipeline_generate_summary(results_dir, nightly_version, summary_file):
+    """Generate a human-readable nightly summary."""
+    identify_file = Path(results_dir) / "identify_results.json"
+    if not identify_file.exists():
+        return
+
+    with open(identify_file) as f:
+        data = json.load(f)
+    results = data.get("results", [])
+
+    from collections import Counter
+    status_counts = Counter(r.get("status", "unknown") for r in results)
+
+    with open(CORPUS_PATH) as f:
+        corpus = json.load(f)
+    old_results = {}
+    for m in corpus["models"]:
+        for mode in ("eval", "train"):
+            status = m.get(mode, {}).get("status")
+            if status:
+                old_results[(m["name"], mode)] = status
+
+    regressions, fixes = [], []
+    for r in results:
+        key = (r["name"], r["mode"])
+        old = old_results.get(key)
+        new = r.get("status")
+        if not old or old == new:
+            continue
+        if old == "full_graph" and new != "full_graph":
+            regressions.append((r["name"], r["mode"], old, new))
+        elif old != "full_graph" and new == "full_graph":
+            fixes.append((r["name"], r["mode"], old, new))
+
+    lines = [
+        f"Nightly Sweep Summary — {time.strftime('%Y-%m-%d')}",
+        f"PyTorch: {nightly_version}",
+        f"Models tested: {len(results)}",
+        "",
+        "Status breakdown:",
+    ]
+    for status, count in sorted(status_counts.items(), key=lambda x: -x[1]):
+        lines.append(f"  {status}: {count}")
+
+    if fixes:
+        lines.append(f"\nFixes ({len(fixes)}):")
+        for name, mode, old, new in fixes:
+            lines.append(f"  {name} ({mode}): {old} → {new}")
+    if regressions:
+        lines.append(f"\nRegressions ({len(regressions)}):")
+        for name, mode, old, new in regressions:
+            lines.append(f"  {name} ({mode}): {old} → {new}")
+    if not fixes and not regressions:
+        lines.append("\nNo status changes from corpus.")
+
+    Path(summary_file).write_text("\n".join(lines) + "\n")
+
+
+def run_nightly_command(args):
+    """Nightly regression sweep — the full automated workflow.
+
+    refresh → staleness check → preflight → canary → sweep →
+    detect+explain → corpus → scan → summary
+    """
     python = sys.executable
     tools_dir = Path(__file__).resolve().parent
     script = str(tools_dir / "run_experiment.py")
     repo_root = tools_dir.parent
 
     steps_done = []
-    label = args.label or time.strftime("pt-sweep-%Y%m%d")
-    output_dir = Path(args.output_dir).resolve() if args.output_dir else (
-        repo_root / "sweep_results")
+    label = args.label or time.strftime("nightly-%Y%m%d")
+    venv_dir = Path(args.venv).expanduser().resolve()
+    sweep_python = str(venv_dir / "bin" / "python")
+
+    if args.output_dir:
+        output_dir = Path(args.output_dir).resolve()
+    else:
+        output_dir = repo_root / "sweep_results" / "nightly" / time.strftime("%Y-%m-%d")
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     def _run(cmd, desc, allow_fail=False):
         print(f"\n{'='*70}")
-        print(f"PIPELINE: {desc}")
+        print(f"NIGHTLY: {desc}")
         print(f"{'='*70}")
-        print(f"  CMD: {' '.join(cmd)}\n")
+        print(f"  CMD: {' '.join(str(c) for c in cmd)}\n")
         result = subprocess.run(cmd, cwd=str(repo_root))
         if result.returncode != 0 and not allow_fail:
-            print(f"\nPIPELINE FAILED at step: {desc}")
+            print(f"\nNIGHTLY FAILED at step: {desc}")
             print(f"  Exit code: {result.returncode}")
             if steps_done:
                 print(f"  Completed steps: {', '.join(steps_done)}")
             sys.exit(1)
         steps_done.append(desc)
 
-    # Step 0 (optional): refresh nightly venv
-    if getattr(args, "refresh_nightly", False):
-        refresh_cmd = [python, script, "refresh-nightly",
-                       "--venv", args.nightly_venv, "--with-transformers"]
-        _run(refresh_cmd, "Refresh nightly venv")
+    print(f"{'='*70}")
+    print(f"Nightly sweep — {label}")
+    print(f"{'='*70}")
+    print(f"  Python: {sweep_python}")
+    print(f"  Output: {output_dir}")
+    print(f"  Start:  {time.strftime('%H:%M:%S')}")
 
-    # Step 1: check-env
-    _run([python, script, "check-env"], "Environment check")
+    # ── Refresh venv ──────────────────────────────────────────────────
+    _run([python, script, "refresh-nightly",
+          "--venv", str(venv_dir), "--with-transformers"],
+         "Refresh nightly venv")
 
-    # Step 2: sweep (identify + explain)
-    sweep_cmd = [python, script, "sweep",
+    # ── Version + source build fallback ─────────────────────────────
+    ver_result = subprocess.run(
+        [sweep_python, "-c", "import torch; print(torch.__version__)"],
+        capture_output=True, text=True)
+    nightly_version = ver_result.stdout.strip() if ver_result.returncode == 0 else "unknown"
+
+    age_days = _nightly_build_age_days(nightly_version)
+    if age_days is not None and age_days > 3:
+        print(f"\n  *** PIP NIGHTLY IS STALE ({age_days} days old: {nightly_version}) ***")
+        build_script = repo_root / "scripts" / "build-nightly-from-source.sh"
+        if build_script.exists():
+            print(f"  Attempting build from source...")
+            build_result = subprocess.run(
+                ["bash", str(build_script), str(venv_dir)],
+                cwd=str(repo_root))
+            if build_result.returncode == 0:
+                ver_result = subprocess.run(
+                    [sweep_python, "-c", "import torch; print(torch.__version__)"],
+                    capture_output=True, text=True)
+                nightly_version = ver_result.stdout.strip() if ver_result.returncode == 0 else "unknown"
+                print(f"  Source build succeeded: {nightly_version}")
+                steps_done.append("Source build (pip stale)")
+            else:
+                print(f"  WARNING: Source build failed (exit {build_result.returncode})")
+                print(f"  Continuing with stale pip nightly ({nightly_version})")
+        else:
+            print(f"  WARNING: Build script not found at {build_script}")
+    elif age_days is not None:
+        print(f"  Pip nightly is fresh ({age_days} days old)")
+
+    # ── Staleness check ───────────────────────────────────────────────
+    git_version, is_stale = pipeline_staleness_check(
+        sweep_python, force=getattr(args, "force", False))
+    if is_stale:
+        print(f"\n=== Nightly aborted: build unchanged since last sweep ===")
+        sys.exit(0)
+    steps_done.append("Staleness check")
+
+    # Save version info
+    (output_dir / "versions.json").write_text(json.dumps({
+        "pytorch": nightly_version,
+        "git_version": git_version,
+        "date": time.strftime("%Y-%m-%d"),
+        "python": sweep_python,
+    }, indent=2))
+
+    # ── Preflight ─────────────────────────────────────────────────────
+    device = getattr(args, "device", "cuda")
+    if not pipeline_preflight(sweep_python, device=device):
+        print(f"\n=== Nightly aborted: preflight failed ===")
+        sys.exit(1)
+    steps_done.append("Preflight")
+
+    # ── Canary ────────────────────────────────────────────────────────
+    if not pipeline_canary(sweep_python, output_dir, device=device,
+                           timeout=args.timeout):
+        print(f"\n=== Nightly aborted: canary failed ===")
+        sys.exit(1)
+    steps_done.append("Canary")
+
+    # ── Sweep ─────────────────────────────────────────────────────────
+    sweep_cmd = [sweep_python, script, "sweep",
                  "--source"] + args.source + [
                  "--modes"] + args.modes + [
                  "--workers", str(args.workers),
@@ -914,46 +1329,29 @@ def run_pipeline_command(args):
     if args.resume:
         sweep_cmd.append("--resume")
 
-    if args.detach:
-        log_file = output_dir / f"{label}.log"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        print(f"\n{'='*70}")
-        print(f"PIPELINE: Sweep (detached)")
-        print(f"{'='*70}")
-        print(f"  CMD: {' '.join(sweep_cmd)}")
-        print(f"  LOG: {log_file}")
-        print(f"\nSweep will run in background. Monitor with:")
-        print(f"  tail -f {log_file}")
-        print(f"\nAfter completion, continue the pipeline with:")
-        print(f"  {python} {script} pipeline --continue-from corpus \\")
-        print(f"    --sweep-results <results-dir> --label {label}")
-        with open(log_file, "w") as lf:
-            proc = subprocess.Popen(
-                sweep_cmd, stdout=lf, stderr=subprocess.STDOUT,
-                cwd=str(repo_root), start_new_session=True)
-        print(f"  PID: {proc.pid}")
-        state_file = output_dir / f"{label}-pipeline-state.json"
-        with open(state_file, "w") as f:
-            json.dump({
-                "label": label, "pid": proc.pid, "log": str(log_file),
-                "output_dir": str(output_dir), "source": args.source,
-                "next_step": "corpus",
-            }, f, indent=2)
-        print(f"  State: {state_file}")
-        return
-
     _run(sweep_cmd, "Sweep (identify + explain)")
 
-    # Find the results directory (most recent in output_dir)
-    results_dir = args.sweep_results
-    if not results_dir:
-        candidates = sorted(output_dir.iterdir(), key=lambda p: p.stat().st_mtime)
-        results_dir = str(candidates[-1]) if candidates else None
-    if not results_dir or not Path(results_dir).exists():
-        print(f"PIPELINE: Could not find sweep results in {output_dir}")
+    # Find results directory
+    candidates = sorted(
+        [p for p in output_dir.iterdir() if p.is_dir() and p.name != "canary"],
+        key=lambda p: p.stat().st_mtime)
+    results_dir = str(candidates[-1]) if candidates else str(output_dir)
+    if not Path(results_dir).exists():
+        print(f"NIGHTLY: Could not find sweep results in {output_dir}")
         sys.exit(1)
 
+    # ── Targeted explain on changed + tracked models ──────────────────
+    pipeline_detect_and_explain(sweep_python, results_dir, device=device,
+                                workers=args.workers, timeout=args.timeout)
+
+    # ── Corpus update + scan ──────────────────────────────────────────
     _run_post_sweep(python, script, repo_root, results_dir, label, steps_done)
+
+    # ── Summary ───────────────────────────────────────────────────────
+    summary_file = Path(results_dir) / "summary.txt"
+    pipeline_generate_summary(results_dir, nightly_version, summary_file)
+    if summary_file.exists():
+        print(f"\n{summary_file.read_text()}")
 
 
 def _run_post_sweep(python, script, repo_root, results_dir, label, steps_done):
@@ -1406,42 +1804,35 @@ def main():
                                help="Dynamic shapes (default: all)")
     sub_valshapes.add_argument("--limit", type=int)
 
-    # ── pipeline ──────────────────────────────────────────────────────────
-    sub_pipeline = subparsers.add_parser(
-        "pipeline",
-        help="Full sweep pipeline: check-env → sweep → corpus → scan → summary",
-        description="Orchestrates a complete sweep workflow. Calls existing subcommands "
-                    "in sequence — no changes to sweep/corpus logic.",
+    # ── nightly ───────────────────────────────────────────────────────────
+    sub_nightly = subparsers.add_parser(
+        "nightly",
+        help="Automated nightly regression sweep (full workflow)",
+        description="refresh → staleness check → preflight → canary → sweep → "
+                    "detect+explain → corpus → scan → summary. "
+                    "One command, fully automated.",
     )
-    sub_pipeline.add_argument("--label", metavar="NAME",
-                              help="Pipeline run label (default: pt-sweep-YYYYMMDD)")
-    sub_pipeline.add_argument("--source", nargs="+",
-                              default=["hf", "diffusers", "custom"],
-                              choices=["timm", "hf", "diffusers", "custom", "all"],
-                              help="Model sources (default: hf diffusers custom)")
-    sub_pipeline.add_argument("--modes", nargs="+", default=["eval", "train"],
-                              choices=["eval", "train"])
-    sub_pipeline.add_argument("--workers", type=int, default=4)
-    sub_pipeline.add_argument("--timeout", type=int, default=180)
-    sub_pipeline.add_argument("--output-dir", metavar="DIR",
-                              help="Sweep output directory")
-    sub_pipeline.add_argument("--identify-only", action="store_true",
-                              help="Stop sweep after identify pass")
-    sub_pipeline.add_argument("--resume", action="store_true",
-                              help="Resume sweep from checkpoint")
-    sub_pipeline.add_argument("--detach", action="store_true",
-                              help="Run sweep in background (nohup-style). "
-                                   "Pipeline pauses after launching sweep; "
-                                   "use --continue-from to resume post-sweep steps.")
-    sub_pipeline.add_argument("--continue-from", metavar="STEP",
-                              choices=["corpus", "scan", "summary"],
-                              help="Skip to a later pipeline step (requires --sweep-results)")
-    sub_pipeline.add_argument("--sweep-results", metavar="DIR",
-                              help="Path to sweep results dir (for --continue-from)")
-    sub_pipeline.add_argument("--refresh-nightly", action="store_true",
-                              help="Upgrade nightly venv before sweep (step zero)")
-    sub_pipeline.add_argument("--nightly-venv", default="~/envs/torch-nightly",
-                              help="Path to nightly venv (default: ~/envs/torch-nightly)")
+    sub_nightly.add_argument("--venv", default="~/envs/torch-nightly",
+                             help="Nightly venv path (default: ~/envs/torch-nightly)")
+    sub_nightly.add_argument("--label", metavar="NAME",
+                             help="Run label (default: nightly-YYYYMMDD)")
+    sub_nightly.add_argument("--source", nargs="+",
+                             default=["hf", "diffusers", "custom"],
+                             choices=["timm", "hf", "diffusers", "custom", "all"],
+                             help="Model sources (default: hf diffusers custom)")
+    sub_nightly.add_argument("--modes", nargs="+", default=["eval", "train"],
+                             choices=["eval", "train"])
+    sub_nightly.add_argument("--workers", type=int, default=4)
+    sub_nightly.add_argument("--timeout", type=int, default=180)
+    sub_nightly.add_argument("--output-dir", metavar="DIR",
+                             help="Output dir (default: sweep_results/nightly/YYYY-MM-DD)")
+    sub_nightly.add_argument("--identify-only", action="store_true",
+                             help="Stop after identify pass (skip explain)")
+    sub_nightly.add_argument("--resume", action="store_true",
+                             help="Resume sweep from checkpoint")
+    sub_nightly.add_argument("--force", action="store_true",
+                             help="Run even if nightly build is unchanged")
+    sub_nightly.add_argument("--device", default="cuda", choices=["cpu", "cuda"])
 
     # ── selftest ──────────────────────────────────────────────────────────
     sub_selftest = subparsers.add_parser(
@@ -1540,17 +1931,8 @@ def main():
         run_refresh_nightly(args)
         return
 
-    if args.command == "pipeline":
-        if args.continue_from:
-            if not args.sweep_results:
-                print("ERROR: --continue-from requires --sweep-results")
-                sys.exit(1)
-            _run_post_sweep(
-                sys.executable, str(Path(__file__).resolve()),
-                REPO_ROOT, args.sweep_results,
-                args.label or "resumed", [])
-        else:
-            run_pipeline_command(args)
+    if args.command == "nightly":
+        run_nightly_command(args)
         return
 
 

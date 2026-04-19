@@ -1,0 +1,6 @@
+{
+  "pytorch": "2.13.0a0+git96c92e0",
+  "git_version": "96c92e04d03385205381d460e67a8e93978ddc6e",
+  "date": "2026-04-19",
+  "python": "/home/pengwu/envs/torch-nightly/bin/python"
+}

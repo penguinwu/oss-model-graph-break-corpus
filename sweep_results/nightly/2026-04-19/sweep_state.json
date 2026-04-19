@@ -1,0 +1,37 @@
+{
+  "status": "done",
+  "pid": 8479,
+  "output_dir": "/home/pengwu/projects/oss-model-graph-break-corpus/sweep_results/nightly/2026-04-19",
+  "started": "2026-04-19T00:04:06",
+  "args": [
+    "sweep",
+    "--source",
+    "hf",
+    "diffusers",
+    "custom",
+    "--modes",
+    "eval",
+    "train",
+    "--workers",
+    "4",
+    "--timeout",
+    "180",
+    "--output-dir",
+    "/home/pengwu/projects/oss-model-graph-break-corpus/sweep_results/nightly/2026-04-19"
+  ],
+  "restart_count": 0,
+  "versions": {
+    "torch": "2.13.0a0+git96c92e0",
+    "torch_git": "96c92e04d03385205381d460e67a8e93978ddc6e",
+    "transformers": "5.5.4",
+    "diffusers": "0.37.1",
+    "python": "3.12.13+meta (3.12:3bb231a, Mar 03 2026, 12:38:32) [Clang 19.1.2 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro"
+  },
+  "total_models": 734,
+  "total_work_items": 1468,
+  "modes": [
+    "eval",
+    "train"
+  ],
+  "finished": "2026-04-19T05:07:52"
+}
