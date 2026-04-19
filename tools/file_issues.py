@@ -681,11 +681,11 @@ def categorize_issue(issue, sweep_results):
     new_broken_models = sorted(set(e["model"] for e in still_broken))
     new_count = len(new_broken_models)
 
-    if not still_broken and evidence:
+    if not still_broken and not not_found and evidence:
         action = "CLOSE"
     elif not still_broken and not evidence:
         action = "KEEP"
-    elif new_count < old_count:
+    elif evidence or new_count < old_count:
         action = "UPDATE"
     else:
         action = "KEEP"
@@ -759,8 +759,12 @@ def print_reconcile_plan(plan):
         print(f"\n--- UPDATE ({len(updates)} issues) ---\n")
         for a in sorted(updates, key=lambda x: x["issue"]["number"]):
             iss = a["issue"]
+            fixed_count = len(set(e["model"] for e in a["evidence"]))
+            broken_count = a["new_count"]
+            nf_count = len(set(m for m, _ in a["not_found"]))
             print(f"  #{iss['number']}: {iss['title']}")
-            print(f"       {a['old_count']} models → {a['new_count']} models")
+            print(f"       {fixed_count} fixed, {broken_count} still broken"
+                  f"{f', {nf_count} not in sweep' if nf_count else ''}")
             if a["evidence"]:
                 names = sorted(set(e["model"] for e in a["evidence"]))
                 print(f"       Fixed: {', '.join(names[:8])}"
