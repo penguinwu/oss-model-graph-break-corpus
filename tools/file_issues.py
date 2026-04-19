@@ -1,42 +1,23 @@
 #!/usr/bin/env python3
-"""Scan corpus for errors and manage GitHub issues.
+"""Post-sweep issue management for the OSS model graph-break corpus.
 
-Scans corpus.json for error categories, groups by root cause, and generates
-or files GitHub issues with the correct labels and templates.
-
-Subcommands:
-  scan        Scan corpus and show draft issues (no side effects)
-  file        Create issues on GitHub (requires token)
-  reconcile   Compare sweep results against machine-filed issues.
-              Generates a plan with per-model evidence; --apply executes it.
+Two commands:
+  sweep-report  Analyze sweep results, generate a reviewable update plan (read-only)
+  sweep-update  Apply a reviewed plan to update GitHub issues (writes)
 
 Usage:
-  # See what issues would be filed
-  python tools/file_issues.py scan
-
-  # File issues for real
-  python tools/file_issues.py file
-
-  # Generate a reconcile plan (no side effects)
-  python tools/file_issues.py reconcile --results sweep_results/nightly/2026-04-19/identify_results.json
+  # After a sweep, generate the report
+  python tools/file_issues.py sweep-report \
+    --explain sweep_results/nightly/2026-04-19/explain_results.json \
+    --identify sweep_results/nightly/2026-04-19/identify_results.json
 
   # Review the plan, then apply it
-  python tools/file_issues.py reconcile --apply sweep_results/nightly/2026-04-19/reconcile-plan.json
-
-  # Only scan explain_errors
-  python tools/file_issues.py scan --category explain_error
-
-  # Validate against nightly before filing
-  python tools/file_issues.py scan --validate /path/to/nightly/results.jsonl
-
-  # Show existing issues for context
-  python tools/file_issues.py scan --show-existing
+  python tools/file_issues.py sweep-update \
+    --plan sweep_results/nightly/2026-04-19/sweep-report.json
 """
 import argparse
 import json
-import os
 import re
-import subprocess
 import sys
 import time
 import urllib.request
@@ -44,99 +25,14 @@ from collections import defaultdict
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-CORPUS_PATH = REPO_ROOT / "corpus" / "corpus.json"
 REPO_SLUG = "penguinwu/oss-model-graph-break-corpus"
-
-# ── Label taxonomy ────────────────────────────────────────────────────────
-# These rules determine which label a group of errors gets.
-# Order matters: first match wins.
-LABEL_RULES = {
-    "for:dynamo-team": [
-        "compile_error", "zombie", "explain_error_dynamo",
-    ],
-    "corpus-infra": [
-        "create_error", "timeout", "explain_error_model",
-    ],
-}
-
-# ── Error classifiers ─────────────────────────────────────────────────────
-# Functions that take a list of (model_name, mode, error_text) and return
-# groups of {cause_key: [(model, mode, error_text), ...]}.
-
-def _classify_explain_errors(entries):
-    """Group explain_error entries by root cause."""
-    groups = defaultdict(list)
-    for name, mode, err in entries:
-        if "PendingUnbackedSymbolNotFound" in err:
-            groups["PendingUnbackedSymbolNotFound"].append((name, mode, err))
-        elif "Could not guard on data-dependent expression" in err:
-            groups["data-dependent-guard"].append((name, mode, err))
-        elif "mark_static_address" in err:
-            groups["mark_static_address"].append((name, mode, err))
-        elif "fake tensors" in err:
-            groups["fake-tensor-failure"].append((name, mode, err))
-        elif "Attention mask" in err or "attention mask" in err:
-            groups["attention-mask-shape"].append((name, mode, err))
-        else:
-            groups["other-explain-error"].append((name, mode, err))
-    return groups
-
-
-def _classify_create_errors(entries):
-    """Group create_error entries by root cause."""
-    groups = defaultdict(list)
-    for name, mode, err in entries:
-        if "No module named" in err:
-            groups["missing-dependency"].append((name, mode, err))
-        elif "does not appear to have" in err or "not found" in err.lower():
-            groups["model-not-found"].append((name, mode, err))
-        else:
-            groups["other-create-error"].append((name, mode, err))
-    return groups
-
-
-def _classify_compile_errors(entries):
-    """Group compile_error entries."""
-    groups = defaultdict(list)
-    for name, mode, err in entries:
-        groups["compile-error"].append((name, mode, err))
-    return groups
-
-
-def _classify_timeout(entries):
-    """Group timeout entries."""
-    groups = defaultdict(list)
-    for name, mode, err in entries:
-        groups["timeout"].append((name, mode, err))
-    return groups
-
-
-def _classify_eager_errors(entries):
-    """Group eager_error entries by root cause."""
-    groups = defaultdict(list)
-    for name, mode, err in entries:
-        if "CUDA" in err or "cuda" in err:
-            groups["cuda-error"].append((name, mode, err))
-        elif "out of memory" in err.lower() or "OOM" in err:
-            groups["oom"].append((name, mode, err))
-        else:
-            groups["other-eager-error"].append((name, mode, err))
-    return groups
-
-
-CLASSIFIERS = {
-    "explain_error": _classify_explain_errors,
-    "create_error": _classify_create_errors,
-    "compile_error": _classify_compile_errors,
-    "timeout": _classify_timeout,
-    "eager_error": _classify_eager_errors,
-}
+PROXY_URL = "http://localhost:7824/fetch"
+ISSUE_MARKER = "<!-- filed-by: otter/file_issues.py -->"
 
 
 # ── Graph-break classifier ──────────────────────────────────────────────
 # Maps break_reasons from explain_results.json to issue-level categories.
 # Each rule: (key, issue_number, match_fn(explanation, location) → bool)
-# A model can match multiple rules (appears in multiple issues).
 
 GRAPH_BREAK_RULES = [
     ("data_dep_shape_ops", 18, lambda exp, loc:
@@ -190,332 +86,17 @@ MODEL_SPECIFIC_ISSUES = {
     17: lambda name: "Gemma4" in name or "Gemma4Text" in name,
 }
 
-
-def classify_break_reasons(explain_path):
-    """Classify break_reasons from explain_results.json into issue categories.
-
-    Returns:
-        {issue_key: {"issue_number": N|None, "models": {name: [modes]},
-                     "break_count": int, "sample_explanation": str}}
-    """
-    with open(explain_path) as f:
-        data = json.load(f)
-
-    results = defaultdict(lambda: {
-        "issue_number": None, "models": defaultdict(set),
-        "break_count": 0, "sample_explanations": [],
-    })
-
-    for entry in data.get("results", []):
-        if not entry.get("break_reasons"):
-            continue
-        model = entry["name"]
-        mode = entry.get("mode", "eval")
-
-        for br in entry["break_reasons"]:
-            reason_text = br.get("reason", "")
-
-            exp_match = re.search(r'Explanation:\s*(.+?)(?:\n|$)', reason_text)
-            loc_match = re.search(r'at\s+(\S+\.py):\d+', reason_text)
-            explanation = exp_match.group(1).strip() if exp_match else reason_text
-            location = loc_match.group(1) if loc_match else ""
-
-            for key, issue_num, match_fn in GRAPH_BREAK_RULES:
-                if match_fn(explanation, location):
-                    bucket = results[key]
-                    bucket["issue_number"] = issue_num
-                    bucket["models"][model].add(mode)
-                    bucket["break_count"] += 1
-                    if len(bucket["sample_explanations"]) < 2:
-                        bucket["sample_explanations"].append(
-                            {"model": model, "explanation": explanation[:200]})
-
-        for issue_num, name_fn in MODEL_SPECIFIC_ISSUES.items():
-            if name_fn(model):
-                key = f"model_specific_{issue_num}"
-                results[key]["issue_number"] = issue_num
-                results[key]["models"][model].add(mode)
-
-    output = {}
-    for key, bucket in results.items():
-        output[key] = {
-            "issue_number": bucket["issue_number"],
-            "models": {name: sorted(modes)
-                       for name, modes in sorted(bucket["models"].items())},
-            "model_count": len(bucket["models"]),
-            "break_count": bucket["break_count"],
-            "sample_explanations": bucket.get("sample_explanations", []),
-        }
-
-    return output
-
-# ── Label assignment ──────────────────────────────────────────────────────
-
-# Causes that are Dynamo team issues (compiler bugs)
-DYNAMO_CAUSES = {
-    "PendingUnbackedSymbolNotFound", "data-dependent-guard",
-    "mark_static_address", "compile-error", "zombie",
-}
-
-# Causes that are our infrastructure issues
-INFRA_CAUSES = {
-    "missing-dependency", "model-not-found", "other-create-error",
-    "timeout", "fake-tensor-failure", "attention-mask-shape",
-    "other-explain-error", "cuda-error", "oom", "other-eager-error",
+CORPUS_INFRA_ISSUES = {
+    45: "create_error",
+    46: "timeout",
+    52: "eager_error",
+    53: "cuda_error",
 }
 
 
-def assign_labels(category, cause_key):
-    """Assign GitHub labels based on error category and root cause."""
-    labels = []
-
-    if cause_key in DYNAMO_CAUSES:
-        labels.append("for:dynamo-team")
-    else:
-        labels.append("corpus-infra")
-
-    if category == "explain_error":
-        labels.append("explain-error")
-
-    return labels
-
-
-def assign_title_prefix(labels):
-    """Generate title prefix from labels."""
-    prefixes = []
-    if "corpus-infra" in labels:
-        prefixes.append("[corpus-infra]")
-    if "explain-error" in labels:
-        prefixes.append("[explain_error]")
-    return " ".join(prefixes)
-
-
-# ── Corpus scanner ────────────────────────────────────────────────────────
-
-def scan_corpus(corpus_path=None, categories=None):
-    """Scan corpus for all error categories. Returns dict of category → entries."""
-    corpus_path = corpus_path or CORPUS_PATH
-    with open(corpus_path) as f:
-        corpus = json.load(f)
-
-    all_categories = categories or list(CLASSIFIERS.keys()) + ["zombie"]
-
-    entries_by_category = defaultdict(list)
-
-    for m in corpus["models"]:
-        for mode in ("eval", "train"):
-            md = m.get(mode, {})
-            status = md.get("status", "")
-
-            if status in all_categories:
-                err = md.get("error", "")
-                entries_by_category[status].append((m["name"], mode, err))
-
-            # explain_error is a separate field, not a status
-            if "explain_error" in all_categories and md.get("explain_error"):
-                entries_by_category["explain_error"].append(
-                    (m["name"], mode, md["explain_error"]))
-
-    return dict(entries_by_category)
-
-
-def group_by_cause(entries_by_category):
-    """Apply classifiers to group entries by root cause.
-
-    Returns list of issue drafts:
-    [{"category", "cause", "labels", "models", "sample_error", "model_count"}, ...]
-    """
-    drafts = []
-
-    for category, entries in entries_by_category.items():
-        classifier = CLASSIFIERS.get(category)
-        if not classifier:
-            # Unclassified category — one big group
-            models = sorted(set(name for name, mode, _ in entries))
-            sample = entries[0][2][:200] if entries else ""
-            labels = ["corpus-infra"]
-            drafts.append({
-                "category": category,
-                "cause": category,
-                "labels": labels,
-                "models": _models_with_modes(entries),
-                "model_count": len(models),
-                "sample_error": sample,
-            })
-            continue
-
-        groups = classifier(entries)
-        for cause_key, cause_entries in groups.items():
-            models = sorted(set(name for name, mode, _ in cause_entries))
-            sample = cause_entries[0][2][:200] if cause_entries else ""
-            labels = assign_labels(category, cause_key)
-
-            drafts.append({
-                "category": category,
-                "cause": cause_key,
-                "labels": labels,
-                "models": _models_with_modes(cause_entries),
-                "model_count": len(models),
-                "sample_error": sample,
-            })
-
-    return drafts
-
-
-def _models_with_modes(entries):
-    """Deduplicate entries to {model_name: [modes]}."""
-    by_model = defaultdict(set)
-    for name, mode, _ in entries:
-        by_model[name].add(mode)
-    return {name: sorted(modes) for name, modes in sorted(by_model.items())}
-
-
-# ── Nightly validation ────────────────────────────────────────────────────
-
-def validate_against_results(drafts, results_path):
-    """Check which issues are already fixed in a validation run.
-
-    Reads results.jsonl and marks drafts as fixed/still-broken.
-    """
-    results_path = Path(results_path)
-    if not results_path.exists():
-        print(f"WARNING: Validation results not found: {results_path}")
-        return drafts
-
-    # Load validation results
-    val_results = {}
-    with open(results_path) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                r = json.loads(line)
-                name = r.get("name", r.get("model"))
-                mode = r.get("mode", "eval")
-                val_results[(name, mode)] = r
-            except json.JSONDecodeError:
-                continue
-
-    for draft in drafts:
-        fixed = []
-        still_broken = []
-        not_tested = []
-
-        for model_name, modes in draft["models"].items():
-            for mode in modes:
-                key = (model_name, mode)
-                if key not in val_results:
-                    not_tested.append((model_name, mode))
-                    continue
-
-                val_r = val_results[key]
-                val_status = val_r.get("status", "")
-
-                if draft["category"] == "explain_error":
-                    # For explain_error: "ok" means the explain pass now works
-                    if val_status == "ok":
-                        fixed.append((model_name, mode))
-                    else:
-                        still_broken.append((model_name, mode))
-                else:
-                    # For other categories: check if status improved
-                    if val_status in ("full_graph", "graph_break", "ok"):
-                        fixed.append((model_name, mode))
-                    else:
-                        still_broken.append((model_name, mode))
-
-        draft["validation"] = {
-            "fixed": fixed,
-            "still_broken": still_broken,
-            "not_tested": not_tested,
-            "all_fixed": len(still_broken) == 0 and len(not_tested) == 0,
-        }
-
-    return drafts
-
-
-# ── Issue body generation ─────────────────────────────────────────────────
-
-def format_issue_body(draft, corpus_meta):
-    """Generate markdown issue body from a draft."""
-    category = draft["category"]
-    cause = draft["cause"]
-    models = draft["models"]
-    sample = draft["sample_error"]
-
-    pytorch_ver = corpus_meta.get("pytorch_version", "?")
-    transformers_ver = corpus_meta.get("transformers_version", "?")
-
-    lines = ["## Summary\n"]
-
-    lines.append(
-        f"{draft['model_count']} models with `{category}` "
-        f"(root cause: `{cause}`).\n"
-    )
-    lines.append(f"**PyTorch:** {pytorch_ver}")
-    lines.append(f"**Transformers:** {transformers_ver}")
-    lines.append(f"**Impact:** {draft['model_count']} models\n")
-
-    # Affected models table
-    lines.append("## Affected Models\n")
-    lines.append("| Model | Modes |")
-    lines.append("|-------|-------|")
-    for model_name, modes in models.items():
-        lines.append(f"| {model_name} | {', '.join(modes)} |")
-    lines.append("")
-
-    # Sample error
-    if sample:
-        lines.append("## Error\n")
-        lines.append("```")
-        lines.append(sample)
-        lines.append("```\n")
-
-    # Validation results
-    val = draft.get("validation")
-    if val:
-        lines.append("## Nightly Validation\n")
-        if val["all_fixed"]:
-            lines.append(
-                "**All models pass on nightly.** "
-                "This issue is already fixed in development.\n"
-            )
-        else:
-            if val["fixed"]:
-                lines.append(
-                    f"**Fixed on nightly ({len(val['fixed'])} entries):** "
-                    f"{', '.join(n for n, m in val['fixed'][:5])}"
-                    f"{'...' if len(val['fixed']) > 5 else ''}\n"
-                )
-            if val["still_broken"]:
-                lines.append(
-                    f"**Still broken on nightly ({len(val['still_broken'])} entries):** "
-                    f"{', '.join(n for n, m in val['still_broken'][:5])}"
-                    f"{'...' if len(val['still_broken']) > 5 else ''}\n"
-                )
-
-    lines.append("\n<!-- filed-by: otter/file_issues.py -->")
-
-    return "\n".join(lines)
-
-
-ISSUE_MARKER = "<!-- filed-by: otter/file_issues.py -->"
-
-
-def format_issue_title(draft):
-    """Generate issue title from a draft."""
-    prefix = assign_title_prefix(draft["labels"])
-    cause = draft["cause"].replace("-", " ").replace("_", " ")
-    count = draft["model_count"]
-    title = f"{prefix} {cause} ({count} models)".strip()
-    return title
-
-
-# ── GitHub API ────────────────────────────────────────────────────────────
+# ── GitHub API ───────────────────────────────────────────────────────────
 
 def _get_github_token():
-    """Read GitHub token from gh CLI config."""
     gh_config = Path.home() / ".config" / "gh" / "hosts.yml"
     if not gh_config.exists():
         return None
@@ -526,50 +107,7 @@ def _get_github_token():
     return None
 
 
-def _github_api(method, endpoint, data=None):
-    """Make a GitHub API call via sudo+fwdproxy."""
-    token = _get_github_token()
-    if not token:
-        print("ERROR: No GitHub token found in ~/.config/gh/hosts.yml")
-        sys.exit(1)
-
-    url = f"https://api.github.com{endpoint}"
-    cmd = (
-        f"curl -s -x http://fwdproxy:8080 '{url}' "
-        f"-X {method} "
-        f"-H 'Authorization: Bearer {token}' "
-        f"-H 'Accept: application/vnd.github+json'"
-    )
-    stdin_data = None
-    if data:
-        cmd += " -d @-"
-        stdin_data = json.dumps(data)
-
-    result = subprocess.run(
-        ["sudo", "bash", "-c", cmd],
-        capture_output=True, text=True, timeout=30,
-        input=stdin_data,
-    )
-    if result.returncode != 0:
-        print(f"ERROR: GitHub API call failed: {result.stderr}")
-        return None
-
-    try:
-        return json.loads(result.stdout)
-    except json.JSONDecodeError:
-        print(f"ERROR: Invalid JSON response: {result.stdout[:200]}")
-        return None
-
-
-PROXY_URL = "http://localhost:7824/fetch"
-
-
 def _proxy_api(endpoint, method="GET", body=None):
-    """Make a GitHub API call via the local web proxy.
-
-    Unlike _github_api (which uses sudo+fwdproxy), this works under
-    the agent:claude_code identity by routing through localhost:7824.
-    """
     token = _get_github_token()
     if not token:
         print("ERROR: No GitHub token found in ~/.config/gh/hosts.yml")
@@ -584,7 +122,7 @@ def _proxy_api(endpoint, method="GET", body=None):
 
     payload = {"url": url, "method": method, "headers": headers}
     if body is not None:
-        payload["body"] = body  # must be dict, NOT json.dumps(dict)
+        payload["body"] = body
 
     req = urllib.request.Request(
         PROXY_URL,
@@ -598,9 +136,8 @@ def _proxy_api(endpoint, method="GET", body=None):
         return None
 
     if not resp.get("ok"):
-        status = resp.get("status", "?")
-        error = resp.get("error", "unknown")
-        print(f"ERROR: GitHub API {method} {endpoint} → {status}: {error}")
+        print(f"ERROR: GitHub API {method} {endpoint} → "
+              f"{resp.get('status', '?')}: {resp.get('error', 'unknown')}")
         return None
 
     content = resp.get("content", "")
@@ -612,97 +149,384 @@ def _proxy_api(endpoint, method="GET", body=None):
         return content
 
 
-def fetch_existing_issues():
-    """Fetch all open issues from the repo."""
+def fetch_open_issues():
     issues = []
     page = 1
     while True:
-        data = _github_api(
-            "GET",
-            f"/repos/{REPO_SLUG}/issues?state=open&per_page=100&page={page}",
-        )
+        data = _proxy_api(
+            f"/repos/{REPO_SLUG}/issues?state=open&per_page=100&page={page}")
         if not data or not isinstance(data, list) or len(data) == 0:
             break
-        issues.extend(data)
+        for issue in data:
+            if "pull_request" not in issue:
+                issues.append(issue)
         if len(data) < 100:
             break
         page += 1
     return issues
 
 
-def check_duplicates(drafts, existing_issues):
-    """Check which drafts might duplicate existing issues."""
-    existing_titles = [i["title"].lower() for i in existing_issues]
+# ── Data loading ─────────────────────────────────────────────────────────
 
-    for draft in drafts:
-        cause = draft["cause"].lower().replace("-", " ").replace("_", " ")
-        category = draft["category"].lower()
-
-        potential_dupes = []
-        for i, title in enumerate(existing_titles):
-            # Check if the cause keyword appears in any existing title
-            if cause in title or category in title:
-                potential_dupes.append(existing_issues[i])
-
-        draft["potential_duplicates"] = potential_dupes
-
-    return drafts
+def load_explain_data(explain_path):
+    with open(explain_path) as f:
+        data = json.load(f)
+    return data.get("results", [])
 
 
-def create_issue(title, body, labels):
-    """Create a GitHub issue. Returns issue data or None."""
-    # Ensure labels exist
-    for label in labels:
-        _github_api("POST", f"/repos/{REPO_SLUG}/labels",
-                    {"name": label, "color": "ededed"})
-
-    data = {
-        "title": title,
-        "body": body,
-        "labels": labels,
-    }
-    return _github_api("POST", f"/repos/{REPO_SLUG}/issues", data)
-
-
-# ── Reconcile helpers ────────────────────────────────────────────────────
-
-ERROR_STATUSES = frozenset({
-    "create_error", "compile_error", "timeout", "eager_error", "worker_error",
-})
-
-
-def load_sweep_results(results_path):
-    """Load identify_results.json → {(name, mode): result_dict}."""
-    with open(results_path) as f:
+def load_identify_data(identify_path):
+    with open(identify_path) as f:
         data = json.load(f)
     results = data.get("results", data) if isinstance(data, dict) else data
-    by_key = {}
-    for r in results:
-        by_key[(r["name"], r.get("mode", "eval"))] = r
-    return by_key
-
-
-def load_sweep_metadata(results_path):
-    """Extract sweep metadata (version, date) from results file."""
-    with open(results_path) as f:
-        data = json.load(f)
-    meta = data.get("metadata", {})
+    meta = data.get("metadata", {}) if isinstance(data, dict) else {}
     versions = meta.get("versions", {})
-    return {
+    metadata = {
         "pytorch_version": versions.get("torch", meta.get("pytorch_version", "unknown")),
+        "transformers_version": versions.get("transformers", meta.get("transformers_version", "unknown")),
         "timestamp": meta.get("timestamp", "unknown"),
     }
+    return results, metadata
 
 
-def parse_our_affected_models(body):
-    """Parse model names from our own issue body format.
+# ── Classifier ───────────────────────────────────────────────────────────
 
-    Only handles the format produced by format_issue_body():
-      ## Affected Models
-      | Model | Modes |
-      |-------|-------|
-      | ModelName | eval, train |
+def classify_breaks(explain_entries):
+    """Classify break_reasons into issue categories.
+
+    Returns:
+        {rule_key: {"issue_number": N, "models": {name: {"modes": set, "breaks": int}},
+                    "total_breaks": int, "sample_reasons": [str]}}
     """
+    classified = defaultdict(lambda: {
+        "issue_number": None,
+        "models": defaultdict(lambda: {"modes": set(), "breaks": 0}),
+        "total_breaks": 0,
+        "sample_reasons": [],
+    })
+    unclassified = defaultdict(lambda: {"models": set(), "count": 0})
+
+    for entry in explain_entries:
+        if not entry.get("break_reasons"):
+            continue
+        model = entry["name"]
+        mode = entry.get("mode", "eval")
+
+        for br in entry["break_reasons"]:
+            reason_text = br.get("reason", "")
+            exp_match = re.search(r'Explanation:\s*(.+?)(?:\n|$)', reason_text)
+            loc_match = re.search(r'at\s+(\S+\.py):\d+', reason_text)
+            explanation = exp_match.group(1).strip() if exp_match else reason_text
+            location = loc_match.group(1) if loc_match else ""
+
+            matched = False
+            for key, issue_num, match_fn in GRAPH_BREAK_RULES:
+                if match_fn(explanation, location):
+                    bucket = classified[key]
+                    bucket["issue_number"] = issue_num
+                    bucket["models"][model]["modes"].add(mode)
+                    bucket["models"][model]["breaks"] += 1
+                    bucket["total_breaks"] += 1
+                    if len(bucket["sample_reasons"]) < 3:
+                        bucket["sample_reasons"].append(reason_text[:300])
+                    matched = True
+                    break
+
+            if not matched:
+                short = explanation[:80]
+                unclassified[short]["models"].add(model)
+                unclassified[short]["count"] += 1
+
+        for issue_num, name_fn in MODEL_SPECIFIC_ISSUES.items():
+            if name_fn(model):
+                key = f"model_specific_{issue_num}"
+                classified[key]["issue_number"] = issue_num
+                classified[key]["models"][model]["modes"].add(mode)
+
+    return dict(classified), dict(unclassified)
+
+
+def classify_infra(identify_entries):
+    """Classify identify results into corpus-infra categories.
+
+    Returns:
+        {status: {"models": {name: {"modes": set, "error": str}}, ...}}
+    """
+    infra = defaultdict(lambda: {"models": defaultdict(lambda: {"modes": set(), "error": ""})})
+
+    for entry in identify_entries:
+        status = entry.get("status", "")
+        name = entry["name"]
+        mode = entry.get("mode", "eval")
+        error = str(entry.get("fullgraph_error", entry.get("error", "")))[:200]
+
+        if status == "create_error":
+            infra["create_error"]["models"][name]["modes"].add(mode)
+            infra["create_error"]["models"][name]["error"] = error
+        elif status == "timeout":
+            infra["timeout"]["models"][name]["modes"].add(mode)
+        elif status == "eager_error":
+            is_cuda = "CUDA error" in error or "cudaError" in error
+            cat = "cuda_error" if is_cuda else "eager_error"
+            infra[cat]["models"][name]["modes"].add(mode)
+            infra[cat]["models"][name]["error"] = error
+
+    return dict(infra)
+
+
+# ── Leverage analysis ────────────────────────────────────────────────────
+
+def compute_leverage(explain_entries):
+    """For each issue, count models that would become fullgraph if fixed.
+
+    A model becomes fullgraph from fixing issue X if X is its ONLY issue.
+    """
+    model_issues = defaultdict(lambda: defaultdict(set))
+
+    for entry in explain_entries:
+        if not entry.get("break_reasons"):
+            continue
+        model = entry["name"]
+        mode = entry.get("mode", "eval")
+
+        for br in entry["break_reasons"]:
+            reason_text = br.get("reason", "")
+            exp_match = re.search(r'Explanation:\s*(.+?)(?:\n|$)', reason_text)
+            loc_match = re.search(r'at\s+(\S+\.py):\d+', reason_text)
+            explanation = exp_match.group(1).strip() if exp_match else reason_text
+            location = loc_match.group(1) if loc_match else ""
+
+            for key, issue_num, match_fn in GRAPH_BREAK_RULES:
+                if issue_num is not None and match_fn(explanation, location):
+                    model_issues[model][mode].add(issue_num)
+                    break
+
+    leverage = defaultdict(set)
+    for model, modes in model_issues.items():
+        for mode, issues in modes.items():
+            if len(issues) == 1:
+                leverage[list(issues)[0]].add(model)
+
+    return {num: sorted(models) for num, models in
+            sorted(leverage.items(), key=lambda x: -len(x[1]))}
+
+
+# ── Cross-references ─────────────────────────────────────────────────────
+
+def compute_cross_refs(classified):
+    """Find which issues share models."""
+    issue_models = {}
+    for key, data in classified.items():
+        num = data["issue_number"]
+        if num is not None:
+            issue_models[num] = set(data["models"].keys())
+
+    cross_refs = defaultdict(set)
+    issues = list(issue_models.keys())
+    for i, num_a in enumerate(issues):
+        for num_b in issues[i + 1:]:
+            overlap = issue_models[num_a] & issue_models[num_b]
+            if overlap:
+                cross_refs[num_a].add(num_b)
+                cross_refs[num_b].add(num_a)
+
+    return {num: sorted(refs) for num, refs in cross_refs.items()}
+
+
+# ── Body generation ──────────────────────────────────────────────────────
+
+def generate_dynamo_body(rule_key, data, metadata, leverage, cross_refs):
+    """Generate issue body for a dynamo graph-break issue."""
+    issue_num = data["issue_number"]
+    models = data["models"]
+    total_breaks = data["total_breaks"]
+    pt_ver = metadata["pytorch_version"]
+    tf_ver = metadata["transformers_version"]
+    timestamp = metadata["timestamp"]
+
+    sample = data["sample_reasons"][0] if data["sample_reasons"] else ""
+    reason_block = ""
+    if sample:
+        exp_match = re.search(r'Graph Break Reason:.*?(?=\n\n|\Z)', sample, re.DOTALL)
+        reason_block = exp_match.group(0) if exp_match else sample[:200]
+
+    lines = ["## Summary\n"]
+    lines.append(f"{len(models)} models produce {total_breaks} graph breaks "
+                 f"from this pattern.\n")
+
+    if reason_block:
+        lines.append("## Break Reason\n")
+        lines.append("```")
+        lines.append(reason_block)
+        lines.append("```\n")
+
+    lines.append("## Affected Models\n")
+    lines.append("| Model | Modes | Breaks |")
+    lines.append("|-------|-------|--------|")
+    for name in sorted(models.keys()):
+        m = models[name]
+        modes = ", ".join(sorted(m["modes"]))
+        lines.append(f"| {name} | {modes} | {m['breaks']} |")
+    lines.append("")
+
+    lev_models = leverage.get(issue_num, [])
+    if lev_models:
+        lines.append(f"## Impact\n")
+        lines.append(f"Fixing this pattern moves **{len(lev_models)} models** "
+                     f"to fullgraph (models where this is the only break reason).\n")
+
+    refs = cross_refs.get(issue_num, [])
+    if refs:
+        lines.append("## Related Issues\n")
+        for ref in refs:
+            lines.append(f"- #{ref}")
+        lines.append("")
+
+    lines.append(f"## Tested On\n")
+    lines.append(f"- PyTorch {pt_ver}")
+    lines.append(f"- Transformers {tf_ver}")
+    lines.append(f"- Sweep date: {timestamp}\n")
+    lines.append(ISSUE_MARKER)
+
+    return "\n".join(lines)
+
+
+def generate_model_specific_body(issue_num, data, explain_entries, metadata,
+                                 leverage, cross_refs):
+    """Generate body for a model-specific issue."""
+    models = data["models"]
+    pt_ver = metadata["pytorch_version"]
+    tf_ver = metadata["transformers_version"]
+    timestamp = metadata["timestamp"]
+
+    lines = ["## Summary\n"]
+    model_names = sorted(models.keys())
+    lines.append(f"Model-specific tracking for: {', '.join(model_names)}\n")
+
+    lines.append("## Affected Models\n")
+    lines.append("| Model | Modes | Status |")
+    lines.append("|-------|-------|--------|")
+    for name in model_names:
+        m = models[name]
+        modes = ", ".join(sorted(m["modes"]))
+        lines.append(f"| {name} | {modes} | graph_break |")
+    lines.append("")
+
+    lines.append("## Break Reasons\n")
+    for entry in explain_entries:
+        if entry["name"] in models and entry.get("break_reasons"):
+            lines.append(f"### {entry['name']} ({entry.get('mode', 'eval')})\n")
+            seen = set()
+            for br in entry["break_reasons"]:
+                reason = br.get("reason", "")
+                exp_match = re.search(r'Explanation:\s*(.+?)(?:\n|$)', reason)
+                exp = exp_match.group(1).strip() if exp_match else reason[:100]
+                if exp not in seen:
+                    seen.add(exp)
+                    lines.append(f"- {exp}")
+            lines.append("")
+
+    refs = cross_refs.get(issue_num, [])
+    if refs:
+        lines.append("## Related Issues\n")
+        for ref in refs:
+            lines.append(f"- #{ref}")
+        lines.append("")
+
+    lines.append(f"## Tested On\n")
+    lines.append(f"- PyTorch {pt_ver}")
+    lines.append(f"- Transformers {tf_ver}")
+    lines.append(f"- Sweep date: {timestamp}\n")
+    lines.append(ISSUE_MARKER)
+
+    return "\n".join(lines)
+
+
+def generate_infra_body(status_key, data, metadata):
+    """Generate body for a corpus-infra issue."""
+    models = data["models"]
+    pt_ver = metadata["pytorch_version"]
+    tf_ver = metadata["transformers_version"]
+    timestamp = metadata["timestamp"]
+
+    status_labels = {
+        "create_error": "fail during model instantiation (before compilation)",
+        "timeout": "exceed the 180-second compilation timeout",
+        "eager_error": "fail during eager execution (before compilation)",
+        "cuda_error": "trigger a CUDA device-side assert during eager execution",
+    }
+
+    lines = ["## Summary\n"]
+    lines.append(f"{len(models)} models {status_labels.get(status_key, status_key)}.\n")
+
+    lines.append("## Affected Models\n")
+    lines.append("| Model | Modes | Error |")
+    lines.append("|-------|-------|-------|")
+    for name in sorted(models.keys()):
+        m = models[name]
+        modes = ", ".join(sorted(m["modes"]))
+        error = m.get("error", "")[:80]
+        lines.append(f"| {name} | {modes} | {error} |")
+    lines.append("")
+
+    lines.append(f"## Environment\n")
+    lines.append(f"- PyTorch {pt_ver}")
+    lines.append(f"- Transformers {tf_ver}")
+    lines.append(f"- Sweep date: {timestamp}\n")
+    lines.append(ISSUE_MARKER)
+
+    return "\n".join(lines)
+
+
+# ── Title generation ─────────────────────────────────────────────────────
+
+RULE_TITLES = {
+    "data_dep_shape_ops": "Data-dependent output shape ops (nonzero, repeat_interleave, masked_select)",
+    "non_tensor_output": "Non-Tensor output from torch ops",
+    "local_scalar_dense": "_local_scalar_dense data-dependent op",
+    "logging_logger": "logging.Logger calls during forward()",
+    "proxy_conversion": "Proxy conversion failure in DETR/detection models",
+    "exception_handler": "Observed exception (try/except) in forward()",
+    "lock_context_mgr": "Unsupported context manager (lock)",
+    "contextvar": "ContextVar.get() not traceable",
+    "callable_builtin": "Unsupported builtin callable()",
+    "setattr_class": "Unsupported setattr on class type",
+    "requires_grad": "Tensor.requires_grad mutation",
+    "function_get": "function.__get__ descriptor not traceable",
+    "builtin_lt": "Unsupported builtin lt operator with tensor arguments",
+    "rng_seed": "RNG seeding (Generator.seed + manual_seed)",
+    "uninit_module": "nn.Parameter constructor and uninitialized nn.Module",
+    "import_config_skip": "Frame skip breaks from import_utils.py / configuration_utils.py",
+    "frame_skip": "Frame skip breaks from output_capturing.py",
+    "find_spec_skip": "Skipped function call (find_spec)",
+    "tensor_item": "Tensor.item() not traceable",
+    "data_dep_branch": "Data-dependent branching",
+}
+
+INFRA_TITLES = {
+    "create_error": ("model fails to instantiate (create_error)", "models fail to instantiate (create_error)"),
+    "timeout": ("model exceeds 180s compile timeout", "models exceed 180s compile timeout"),
+    "eager_error": ("model fails during eager execution (eager_error)", "models fail during eager execution (eager_error)"),
+    "cuda_error": ("model hits CUDA error during eager execution", "models hit CUDA error during eager execution"),
+}
+
+
+def generate_dynamo_title(rule_key, data):
+    base = RULE_TITLES.get(rule_key, rule_key)
+    n_models = len(data["models"])
+    n_breaks = data["total_breaks"]
+    return f"[dynamo] {base} ({n_models} models, {n_breaks} breaks)"
+
+
+def generate_infra_title(status_key, data):
+    titles = INFRA_TITLES.get(status_key, (status_key, status_key))
+    n_models = len(data["models"])
+    base = titles[0] if n_models == 1 else titles[1]
+    return f"[corpus-infra] {n_models} {base}"
+
+
+# ── Issue parsing ────────────────────────────────────────────────────────
+
+def parse_affected_models(body):
     if not body:
         return {}
     models = {}
@@ -726,552 +550,304 @@ def parse_our_affected_models(body):
                 if len(parts) >= 3 and parts[1]:
                     model = parts[1]
                     modes = re.findall(r'\b(eval|train)\b', parts[2])
-                    if modes:
-                        models[model] = sorted(set(modes))
-                    else:
-                        models[model] = ["eval", "train"]
+                    models[model] = sorted(set(modes)) if modes else ["eval", "train"]
             else:
                 break
     return models
 
 
-def fetch_open_issues_proxy():
-    """Fetch all open issues via web proxy. Filters out pull requests."""
-    issues = []
-    page = 1
-    while True:
-        data = _proxy_api(
-            f"/repos/{REPO_SLUG}/issues?state=open&per_page=100&page={page}")
-        if not data or not isinstance(data, list) or len(data) == 0:
-            break
-        for issue in data:
-            if "pull_request" not in issue:
-                issues.append(issue)
-        if len(data) < 100:
-            break
-        page += 1
-    return issues
+# ── Plan building ────────────────────────────────────────────────────────
 
+def build_sweep_report(explain_path, identify_path):
+    """Build the full sweep report plan."""
+    explain_entries = load_explain_data(explain_path)
+    identify_entries, metadata = load_identify_data(identify_path)
 
-def is_our_issue(issue):
-    """Check if an issue was filed by file_issues.py."""
-    body = issue.get("body", "") or ""
-    return ISSUE_MARKER in body
+    print(f"Loaded {len(explain_entries)} explain entries, "
+          f"{len(identify_entries)} identify entries")
+    print(f"PyTorch {metadata['pytorch_version']}, {metadata['timestamp']}")
 
+    print("Classifying breaks...")
+    classified, unclassified = classify_breaks(explain_entries)
 
-def categorize_issue(issue, sweep_results):
-    """Determine action for a machine-filed issue: CLOSE, UPDATE, or KEEP."""
-    models = parse_our_affected_models(issue.get("body", ""))
-    if not models:
-        return {"action": "KEEP", "reason": "no models parsed", "issue": issue}
+    print("Classifying infra...")
+    infra = classify_infra(identify_entries)
 
-    label_names = {l["name"] for l in issue.get("labels", [])}
-    is_graph_break_issue = "graph-break" in label_names
-    fixed_for_this = frozenset({"full_graph"}) if is_graph_break_issue else frozenset({"full_graph", "graph_break"})
+    print("Computing leverage...")
+    leverage = compute_leverage(explain_entries)
 
-    evidence = []
-    still_broken = []
-    not_found = []
+    print("Computing cross-references...")
+    cross_refs = compute_cross_refs(classified)
 
-    for model_name, modes in models.items():
-        for mode in modes:
-            key = (model_name, mode)
-            if key not in sweep_results:
-                not_found.append((model_name, mode))
-                continue
-            status = sweep_results[key].get("status", "")
-            if status in fixed_for_this:
-                evidence.append({
-                    "model": model_name,
-                    "mode": mode,
-                    "old_status": "broken",
-                    "new_status": status,
-                })
-            else:
-                still_broken.append({
-                    "model": model_name,
-                    "mode": mode,
-                    "status": status,
-                })
+    print("Fetching open issues...")
+    open_issues = fetch_open_issues()
+    issue_by_number = {i["number"]: i for i in open_issues}
+    print(f"  {len(open_issues)} open issues")
 
-    old_count = len(models)
-    new_broken_models = sorted(set(e["model"] for e in still_broken))
-    new_count = len(new_broken_models)
+    plan_issues = []
 
-    if not still_broken and not not_found and evidence:
-        action = "CLOSE"
-    elif not still_broken and not evidence:
-        action = "KEEP"
-    elif evidence or new_count < old_count:
-        action = "UPDATE"
-    else:
-        action = "KEEP"
+    for rule_key, data in sorted(classified.items()):
+        issue_num = data["issue_number"]
+        if issue_num is None:
+            continue
 
-    return {
-        "action": action,
-        "issue": {"number": issue["number"], "title": issue["title"],
-                  "url": issue.get("html_url", "")},
-        "old_count": old_count,
-        "new_count": new_count,
-        "evidence": evidence,
-        "still_broken": still_broken,
-        "not_found": [(m, mode) for m, mode in not_found],
-    }
+        models_dict = {name: {"modes": sorted(m["modes"]), "breaks": m["breaks"]}
+                       for name, m in data["models"].items()}
+        data_for_body = {
+            "issue_number": issue_num,
+            "models": {n: {"modes": m["modes"], "breaks": m["breaks"]}
+                       for n, m in models_dict.items()},
+            "total_breaks": data["total_breaks"],
+            "sample_reasons": data["sample_reasons"],
+        }
 
+        if rule_key.startswith("model_specific_"):
+            title = issue_by_number[issue_num]["title"] if issue_num in issue_by_number else f"Model-specific #{issue_num}"
+            body = generate_model_specific_body(
+                issue_num, data_for_body, explain_entries, metadata,
+                leverage, cross_refs)
+        else:
+            title = generate_dynamo_title(rule_key, data_for_body)
+            body = generate_dynamo_body(
+                rule_key, data_for_body, metadata, leverage, cross_refs)
 
-def build_reconcile_plan(results_path, sweep_results, open_issues):
-    """Build plan: categorize our issues, find new errors."""
-    sweep_meta = load_sweep_metadata(results_path)
-    our_issues = [i for i in open_issues if is_our_issue(i)]
-    skipped = [i for i in open_issues if not is_our_issue(i)]
+        current = issue_by_number.get(issue_num)
+        current_title = current["title"] if current else None
 
-    actions = []
-    for issue in our_issues:
-        result = categorize_issue(issue, sweep_results)
-        actions.append(result)
+        lev = leverage.get(issue_num, [])
+
+        plan_issues.append({
+            "number": issue_num,
+            "rule_key": rule_key,
+            "type": "model_specific" if rule_key.startswith("model_specific_") else "dynamo",
+            "current_title": current_title,
+            "proposed_title": title,
+            "proposed_body": body,
+            "model_count": len(models_dict),
+            "break_count": data["total_breaks"],
+            "leverage_models": len(lev),
+            "title_changed": current_title != title if current_title else True,
+        })
+
+    for status_key, data in sorted(infra.items()):
+        issue_num = None
+        for num, skey in CORPUS_INFRA_ISSUES.items():
+            if skey == status_key:
+                issue_num = num
+                break
+        if issue_num is None:
+            continue
+
+        models_dict = {name: {"modes": sorted(m["modes"]), "error": m.get("error", "")}
+                       for name, m in data["models"].items()}
+        data_for_body = {"models": {n: {"modes": m["modes"], "error": m.get("error", "")}
+                                    for n, m in models_dict.items()}}
+
+        title = generate_infra_title(status_key, data_for_body)
+        body = generate_infra_body(status_key, data_for_body, metadata)
+
+        current = issue_by_number.get(issue_num)
+        current_title = current["title"] if current else None
+
+        plan_issues.append({
+            "number": issue_num,
+            "rule_key": status_key,
+            "type": "corpus-infra",
+            "current_title": current_title,
+            "proposed_title": title,
+            "proposed_body": body,
+            "model_count": len(models_dict),
+            "break_count": 0,
+            "leverage_models": 0,
+            "title_changed": current_title != title if current_title else True,
+        })
+
+    # Lifecycle: issues with 0 models in current data
+    tracked_issue_nums = {p["number"] for p in plan_issues}
+    close_candidates = []
+    for issue in open_issues:
+        num = issue["number"]
+        if num not in tracked_issue_nums and ISSUE_MARKER in (issue.get("body") or ""):
+            close_candidates.append({
+                "number": num,
+                "title": issue["title"],
+                "reason": "No models matched in current sweep",
+            })
+
+    leverage_ranking = [
+        {"issue": num, "models_to_fullgraph": len(models),
+         "model_names": models[:5]}
+        for num, models in sorted(leverage.items(), key=lambda x: -len(x[1]))
+        if len(models) > 0
+    ]
+
+    unclassified_list = [
+        {"pattern": pat, "model_count": len(d["models"]), "break_count": d["count"]}
+        for pat, d in sorted(unclassified.items(), key=lambda x: -x[1]["count"])
+    ]
 
     plan = {
-        "sweep": sweep_meta,
-        "results_path": str(results_path),
-        "our_issues": len(our_issues),
-        "untagged_issues": len(skipped),
-        "untagged_issue_numbers": [i["number"] for i in skipped],
-        "actions": actions,
+        "metadata": metadata,
+        "explain_path": str(explain_path),
+        "identify_path": str(identify_path),
+        "issues": plan_issues,
+        "leverage_ranking": leverage_ranking,
+        "close_candidates": close_candidates,
+        "unclassified_patterns": unclassified_list,
     }
+
     return plan
 
 
-def print_reconcile_plan(plan):
-    """Print plan with per-model evidence for closes."""
-    sweep = plan["sweep"]
-    actions = plan["actions"]
-    closes = [a for a in actions if a["action"] == "CLOSE"]
-    updates = [a for a in actions if a["action"] == "UPDATE"]
-    keeps = [a for a in actions if a["action"] == "KEEP"]
+def print_sweep_report(plan):
+    """Print human-readable summary of the plan."""
+    meta = plan["metadata"]
+    issues = plan["issues"]
+    leverage = plan["leverage_ranking"]
+
+    dynamo = [i for i in issues if i["type"] in ("dynamo", "model_specific")]
+    infra = [i for i in issues if i["type"] == "corpus-infra"]
+    changed = [i for i in issues if i["title_changed"]]
 
     print(f"\n{'=' * 70}")
-    print(f"RECONCILE PLAN")
-    print(f"  Sweep: PyTorch {sweep['pytorch_version']} ({sweep['timestamp']})")
-    print(f"  Scope: {plan['our_issues']} tagged issues "
-          f"({plan['untagged_issues']} untagged — skipped)")
+    print(f"SWEEP REPORT")
+    print(f"  PyTorch {meta['pytorch_version']} ({meta['timestamp']})")
+    print(f"  {len(dynamo)} dynamo issues, {len(infra)} corpus-infra issues")
+    print(f"  {len(changed)} titles would change")
     print(f"{'=' * 70}")
 
-    if closes:
-        print(f"\n--- PROPOSE CLOSE ({len(closes)} issues) ---\n")
-        for a in sorted(closes, key=lambda x: x["issue"]["number"]):
-            iss = a["issue"]
-            print(f"  #{iss['number']}: {iss['title']}")
-            print(f"  {iss.get('url', '')}")
-            print(f"  Evidence ({len(a['evidence'])} model/mode pairs fixed):")
-            for e in sorted(a["evidence"], key=lambda x: (x["model"], x["mode"])):
-                print(f"    {e['model']:40s} {e['mode']:5s}  "
-                      f"{e['old_status']} → {e['new_status']}")
-            if a["not_found"]:
-                print(f"  Not in sweep ({len(a['not_found'])} — removed/skipped):")
-                for m, mode in sorted(a["not_found"]):
-                    print(f"    {m:40s} {mode}")
+    if leverage:
+        print(f"\n--- HIGH-LEVERAGE FIXES (models → fullgraph if fixed) ---\n")
+        for entry in leverage[:10]:
+            print(f"  #{entry['issue']:3d}: {entry['models_to_fullgraph']} models")
+
+    if changed:
+        print(f"\n--- TITLE CHANGES ---\n")
+        for i in sorted(changed, key=lambda x: x["number"]):
+            print(f"  #{i['number']}: {i['current_title']}")
+            print(f"     → {i['proposed_title']}")
             print()
 
-    if updates:
-        print(f"\n--- UPDATE ({len(updates)} issues) ---\n")
-        for a in sorted(updates, key=lambda x: x["issue"]["number"]):
-            iss = a["issue"]
-            fixed_count = len(set(e["model"] for e in a["evidence"]))
-            broken_count = a["new_count"]
-            nf_count = len(set(m for m, _ in a["not_found"]))
-            print(f"  #{iss['number']}: {iss['title']}")
-            print(f"       {fixed_count} fixed, {broken_count} still broken"
-                  f"{f', {nf_count} not in sweep' if nf_count else ''}")
-            if a["evidence"]:
-                names = sorted(set(e["model"] for e in a["evidence"]))
-                print(f"       Fixed: {', '.join(names[:8])}"
-                      f"{'...' if len(names) > 8 else ''}")
-            if a["still_broken"]:
-                names = sorted(set(e["model"] for e in a["still_broken"]))
-                print(f"       Still broken: {', '.join(names[:8])}"
-                      f"{'...' if len(names) > 8 else ''}")
-            print()
+    close = plan.get("close_candidates", [])
+    if close:
+        print(f"\n--- CLOSE CANDIDATES ({len(close)}) ---\n")
+        for c in close:
+            print(f"  #{c['number']}: {c['title']}")
+            print(f"    Reason: {c['reason']}")
 
-    if keeps:
-        print(f"\n--- KEEP ({len(keeps)} issues) ---\n")
-        for a in sorted(keeps, key=lambda x: x["issue"]["number"]):
-            iss = a["issue"]
-            print(f"  #{iss['number']}: {iss['title']}")
-        print()
+    unc = plan.get("unclassified_patterns", [])
+    if unc:
+        print(f"\n--- UNCLASSIFIED PATTERNS ---\n")
+        for u in unc:
+            print(f"  [{u['model_count']} models, {u['break_count']} breaks] "
+                  f"{u['pattern']}")
 
-    if plan["untagged_issues"] > 0:
-        nums = plan["untagged_issue_numbers"]
-        print(f"--- SKIPPED ({plan['untagged_issues']} untagged — no marker) ---")
-        print(f"  Issues: {', '.join(f'#{n}' for n in sorted(nums))}")
-        print()
-
-    print(f"{'=' * 70}")
-    print(f"SUMMARY: {len(closes)} close, {len(updates)} update, {len(keeps)} keep")
+    print(f"\n{'=' * 70}")
+    total_models = sum(i["model_count"] for i in dynamo)
+    total_breaks = sum(i["break_count"] for i in dynamo)
+    print(f"DYNAMO: {len(dynamo)} issues covering {total_models} model/issue "
+          f"pairs, {total_breaks} total breaks")
+    if leverage:
+        top = leverage[0]
+        print(f"TOP LEVERAGE: #{top['issue']} → {top['models_to_fullgraph']} "
+              f"models to fullgraph")
     print(f"{'=' * 70}\n")
 
 
-def apply_reconcile_plan(plan_path):
-    """Execute a previously-generated reconcile plan."""
-    with open(plan_path) as f:
-        plan = json.load(f)
+# ── Plan execution ───────────────────────────────────────────────────────
 
-    sweep = plan["sweep"]
-    actions_taken = 0
+def apply_sweep_update(plan):
+    """PATCH all issues in the plan."""
+    issues = plan["issues"]
+    success = 0
+    failed = 0
 
-    for a in plan["actions"]:
-        if a["action"] == "CLOSE":
-            num = a["issue"]["number"]
-            evidence_lines = []
-            for e in sorted(a["evidence"], key=lambda x: (x["model"], x["mode"])):
-                evidence_lines.append(
-                    f"| {e['model']} | {e['mode']} | {e['new_status']} |")
-            evidence_table = (
-                "| Model | Mode | Status |\n|-------|------|--------|\n"
-                + "\n".join(evidence_lines)
-            )
-            comment = (
-                f"**Verified fixed** on PyTorch {sweep['pytorch_version']} "
-                f"({sweep['timestamp']}).\n\n"
-                f"All tracked models now pass:\n\n{evidence_table}\n\n"
-                f"Closing."
-            )
-            print(f"  Closing #{num}...")
-            _proxy_api(f"/repos/{REPO_SLUG}/issues/{num}/comments",
-                       method="POST", body={"body": comment})
-            _proxy_api(f"/repos/{REPO_SLUG}/issues/{num}",
-                       method="PATCH",
-                       body={"state": "closed", "state_reason": "completed"})
-            actions_taken += 1
-            time.sleep(1)
+    for entry in sorted(issues, key=lambda x: x["number"]):
+        num = entry["number"]
+        title = entry["proposed_title"]
+        body = entry["proposed_body"]
 
-        elif a["action"] == "UPDATE":
-            num = a["issue"]["number"]
-            fixed_names = sorted(set(e["model"] for e in a["evidence"]))
-            broken_names = sorted(set(e["model"] for e in a["still_broken"]))
-            comment = (
-                f"**Sweep update** — PyTorch {sweep['pytorch_version']} "
-                f"({sweep['timestamp']}).\n\n"
-                f"{a['old_count']} → {a['new_count']} models.\n\n"
-                f"**Fixed ({len(fixed_names)}):** {', '.join(fixed_names)}\n\n"
-                f"**Still broken ({len(broken_names)}):** "
-                f"{', '.join(broken_names)}"
-            )
-            print(f"  Updating #{num}...")
-            _proxy_api(f"/repos/{REPO_SLUG}/issues/{num}/comments",
-                       method="POST", body={"body": comment})
-            actions_taken += 1
-            time.sleep(1)
-
-    print(f"\n  Done: {actions_taken} actions executed.")
-
-
-# ── CLI ───────────────────────────────────────────────────────────────────
-
-def cmd_scan(args):
-    """Scan corpus and display draft issues."""
-    categories = [args.category] if args.category else None
-    entries = scan_corpus(categories=categories)
-
-    if not entries:
-        print("No errors found in corpus.")
-        return
-
-    drafts = group_by_cause(entries)
-
-    # Validation
-    if args.validate:
-        print(f"Validating against: {args.validate}")
-        drafts = validate_against_results(drafts, args.validate)
-
-    # Dedup check
-    if args.show_existing:
-        print("Fetching existing issues...")
-        existing = fetch_existing_issues()
-        drafts = check_duplicates(drafts, existing)
-        print(f"Found {len(existing)} open issues\n")
-
-    # Load corpus metadata for body generation
-    with open(CORPUS_PATH) as f:
-        corpus_meta = json.load(f).get("metadata", {})
-
-    # Display drafts
-    print(f"{'=' * 70}")
-    print(f"ISSUE SCAN: {len(drafts)} issue groups found")
-    print(f"{'=' * 70}\n")
-
-    for i, draft in enumerate(drafts, 1):
-        title = format_issue_title(draft)
-        labels_str = ", ".join(draft["labels"])
-
-        print(f"--- Draft #{i} ---")
-        print(f"  Title:  {title}")
-        print(f"  Labels: {labels_str}")
-        print(f"  Models: {draft['model_count']}")
-
-        if draft.get("validation"):
-            val = draft["validation"]
-            if val["all_fixed"]:
-                print(f"  Nightly: ✓ ALL FIXED — skip filing")
-            else:
-                fixed = len(val["fixed"])
-                broken = len(val["still_broken"])
-                untested = len(val["not_tested"])
-                print(f"  Nightly: {fixed} fixed, {broken} still broken, "
-                      f"{untested} not tested")
-
-        dupes = draft.get("potential_duplicates", [])
-        if dupes:
-            print(f"  ⚠ Possible duplicates:")
-            for d in dupes[:3]:
-                print(f"    #{d['number']}: {d['title']}")
-
-        if args.verbose:
-            print(f"  Sample: {draft['sample_error'][:100]}")
-            print(f"  Models: {', '.join(list(draft['models'].keys())[:5])}"
-                  f"{'...' if draft['model_count'] > 5 else ''}")
-
-        print()
-
-    # Summary
-    dynamo = [d for d in drafts if "for:dynamo-team" in d["labels"]]
-    infra = [d for d in drafts if "corpus-infra" in d["labels"]]
-    validated_fixed = [d for d in drafts
-                       if d.get("validation", {}).get("all_fixed")]
-
-    print(f"Summary: {len(dynamo)} for:dynamo-team, {len(infra)} corpus-infra")
-    if validated_fixed:
-        print(f"  {len(validated_fixed)} already fixed on nightly (skip filing)")
-
-
-def cmd_file(args):
-    """File issues on GitHub."""
-    categories = [args.category] if args.category else None
-    entries = scan_corpus(categories=categories)
-
-    if not entries:
-        print("No errors found in corpus.")
-        return
-
-    drafts = group_by_cause(entries)
-
-    # Validation
-    if args.validate:
-        print(f"Validating against: {args.validate}")
-        drafts = validate_against_results(drafts, args.validate)
-
-    # Dedup check
-    print("Fetching existing issues for dedup check...")
-    existing = fetch_existing_issues()
-    drafts = check_duplicates(drafts, existing)
-
-    # Load corpus metadata
-    with open(CORPUS_PATH) as f:
-        corpus_meta = json.load(f).get("metadata", {})
-
-    # Filter out validated-fixed issues
-    to_file = []
-    skipped_fixed = []
-    skipped_dupe = []
-
-    for draft in drafts:
-        if draft.get("validation", {}).get("all_fixed"):
-            skipped_fixed.append(draft)
-            continue
-        if draft.get("potential_duplicates") and not args.force:
-            skipped_dupe.append(draft)
-            continue
-        to_file.append(draft)
-
-    if skipped_fixed:
-        print(f"\nSkipping {len(skipped_fixed)} issues fixed on nightly:")
-        for d in skipped_fixed:
-            print(f"  - {format_issue_title(d)}")
-
-    if skipped_dupe:
-        print(f"\nSkipping {len(skipped_dupe)} potential duplicates "
-              f"(use --force to file anyway):")
-        for d in skipped_dupe:
-            title = format_issue_title(d)
-            dupes = d["potential_duplicates"]
-            print(f"  - {title}")
-            for dup in dupes[:2]:
-                print(f"    ↳ existing #{dup['number']}: {dup['title']}")
-
-    if not to_file:
-        print("\nNo new issues to file.")
-        return
-
-    print(f"\n{'=' * 70}")
-    print(f"FILING {len(to_file)} issues:")
-    print(f"{'=' * 70}")
-
-    for draft in to_file:
-        title = format_issue_title(draft)
-        body = format_issue_body(draft, corpus_meta)
-        labels = draft["labels"]
-
-        print(f"\n  {title}")
-        print(f"  Labels: {', '.join(labels)}")
-
-        if args.dry_run:
-            print(f"  [DRY RUN — not filed]")
-            continue
-
-        result = create_issue(title, body, labels)
+        print(f"  Updating #{num}: {title[:60]}...")
+        result = _proxy_api(
+            f"/repos/{REPO_SLUG}/issues/{num}",
+            method="PATCH",
+            body={"title": title, "body": body},
+        )
         if result and "number" in result:
-            print(f"  → Created #{result['number']}")
+            success += 1
         else:
-            print(f"  → FAILED: {result}")
+            print(f"    FAILED")
+            failed += 1
+        time.sleep(0.5)
 
-    if args.dry_run:
-        print(f"\n--- DRY RUN — {len(to_file)} issues would be filed ---")
+    print(f"\nDone: {success} updated, {failed} failed.")
 
 
-def cmd_reconcile(args):
-    """Reconcile open issues against sweep results."""
-    if not args.results and not args.apply:
-        print("ERROR: provide --results to generate a plan, "
-              "or --apply to execute one.")
+# ── CLI ──────────────────────────────────────────────────────────────────
+
+def cmd_sweep_report(args):
+    explain_path = Path(args.explain)
+    identify_path = Path(args.identify)
+
+    if not explain_path.exists():
+        print(f"ERROR: {explain_path} not found")
+        sys.exit(1)
+    if not identify_path.exists():
+        print(f"ERROR: {identify_path} not found")
         sys.exit(1)
 
-    if args.apply:
-        plan_path = Path(args.apply)
-        if not plan_path.exists():
-            print(f"ERROR: Plan file not found: {plan_path}")
-            sys.exit(1)
-        print(f"Applying plan from {plan_path}...\n")
-        apply_reconcile_plan(plan_path)
-        return
+    plan = build_sweep_report(explain_path, identify_path)
+    print_sweep_report(plan)
 
-    results_path = Path(args.results)
-    if not results_path.exists():
-        print(f"ERROR: Results file not found: {results_path}")
-        sys.exit(1)
-
-    print(f"Loading sweep results from {results_path}...")
-    sweep_results = load_sweep_results(results_path)
-    print(f"  {len(sweep_results)} model/mode pairs loaded")
-
-    print("Fetching open issues...")
-    open_issues = fetch_open_issues_proxy()
-    print(f"  {len(open_issues)} open issues found")
-
-    plan = build_reconcile_plan(results_path, sweep_results, open_issues)
-    print_reconcile_plan(plan)
-
-    plan_out = results_path.parent / "reconcile-plan.json"
+    plan_out = explain_path.parent / "sweep-report.json"
     with open(plan_out, "w") as f:
         json.dump(plan, f, indent=2)
     print(f"Plan saved to: {plan_out}")
-    print(f"Review, then run: python tools/file_issues.py reconcile --apply {plan_out}\n")
+    print(f"Review, then run: python tools/file_issues.py sweep-update "
+          f"--plan {plan_out}")
 
 
-def cmd_classify(args):
-    """Classify graph break patterns from explain results."""
-    explain_path = Path(args.explain)
-    if not explain_path.exists():
-        print(f"ERROR: Explain file not found: {explain_path}")
+def cmd_sweep_update(args):
+    plan_path = Path(args.plan)
+    if not plan_path.exists():
+        print(f"ERROR: {plan_path} not found")
         sys.exit(1)
 
-    results = classify_break_reasons(explain_path)
+    with open(plan_path) as f:
+        plan = json.load(f)
 
-    if args.output_json:
-        json.dump(results, sys.stdout, indent=2)
-        print()
-        return
+    meta = plan["metadata"]
+    issues = plan["issues"]
+    print(f"Applying sweep update plan")
+    print(f"  PyTorch {meta['pytorch_version']} ({meta['timestamp']})")
+    print(f"  {len(issues)} issues to update\n")
 
-    sorted_results = sorted(results.items(),
-                            key=lambda x: -x[1]["break_count"])
-
-    print(f"\n{'=' * 70}")
-    print(f"GRAPH BREAK CLASSIFICATION")
-    print(f"{'=' * 70}\n")
-
-    total_models = set()
-    for key, info in sorted_results:
-        issue = info["issue_number"]
-        issue_str = f"#{issue}" if issue else "NEW"
-        models = info["models"]
-        total_models.update(models.keys())
-
-        print(f"  [{issue_str:>4s}] {key}")
-        print(f"        {info['model_count']} models, "
-              f"{info['break_count']} breaks")
-        names = list(models.keys())
-        if len(names) <= 6:
-            print(f"        Models: {', '.join(names)}")
-        else:
-            print(f"        Models: {', '.join(names[:5])}... "
-                  f"(+{len(names) - 5} more)")
-        print()
-
-    mapped = [r for r in sorted_results if r[1]["issue_number"] is not None]
-    unmapped = [r for r in sorted_results if r[1]["issue_number"] is None]
-
-    print(f"{'=' * 70}")
-    print(f"SUMMARY: {len(sorted_results)} categories, "
-          f"{len(total_models)} unique models")
-    print(f"  {len(mapped)} mapped to existing issues, "
-          f"{len(unmapped)} need new issues")
-    if unmapped:
-        for key, info in unmapped:
-            print(f"    NEW: {key} ({info['model_count']} models, "
-                  f"{info['break_count']} breaks)")
-    print(f"{'=' * 70}\n")
+    apply_sweep_update(plan)
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Scan corpus for errors and manage GitHub issues",
+        description="Post-sweep issue management for the OSS model graph-break corpus",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
-    # ── scan ──
-    sub_scan = subparsers.add_parser("scan", help="Scan corpus and show draft issues")
-    sub_scan.add_argument("--category",
-                          choices=list(CLASSIFIERS.keys()),
-                          help="Only scan this error category")
-    sub_scan.add_argument("--validate", metavar="RESULTS_JSONL",
-                          help="Validate against results from another PyTorch version")
-    sub_scan.add_argument("--show-existing", action="store_true",
-                          help="Fetch and show existing issues for dedup check")
-    sub_scan.add_argument("--verbose", "-v", action="store_true",
-                          help="Show sample errors and model names")
-
-    # ── file ──
-    sub_file = subparsers.add_parser("file", help="File issues on GitHub")
-    sub_file.add_argument("--category",
-                          choices=list(CLASSIFIERS.keys()),
-                          help="Only file issues for this error category")
-    sub_file.add_argument("--validate", metavar="RESULTS_JSONL",
-                          help="Validate against nightly results before filing")
-    sub_file.add_argument("--dry-run", action="store_true",
-                          help="Show what would be filed without creating issues")
-    sub_file.add_argument("--force", action="store_true",
-                          help="File even if potential duplicates exist")
-
-    # ── reconcile ──
-    sub_recon = subparsers.add_parser(
-        "reconcile",
-        help="Reconcile open issues against sweep results")
-    sub_recon.add_argument(
-        "--results", metavar="RESULTS_JSON",
-        help="Path to identify_results.json — generates a plan")
-    sub_recon.add_argument(
-        "--apply", metavar="PLAN_JSON",
-        help="Apply a previously-generated reconcile plan")
-
-    # ── classify ──
-    sub_classify = subparsers.add_parser(
-        "classify",
-        help="Classify graph break patterns from explain results")
-    sub_classify.add_argument(
+    sub_report = subparsers.add_parser(
+        "sweep-report",
+        help="Analyze sweep results and generate update plan (read-only)")
+    sub_report.add_argument(
         "--explain", required=True, metavar="EXPLAIN_JSON",
         help="Path to explain_results.json")
-    sub_classify.add_argument(
-        "--json", action="store_true", dest="output_json",
-        help="Output as JSON instead of table")
+    sub_report.add_argument(
+        "--identify", required=True, metavar="IDENTIFY_JSON",
+        help="Path to identify_results.json")
+
+    sub_update = subparsers.add_parser(
+        "sweep-update",
+        help="Apply a reviewed update plan to GitHub issues")
+    sub_update.add_argument(
+        "--plan", required=True, metavar="PLAN_JSON",
+        help="Path to sweep-report.json plan file")
 
     args = parser.parse_args()
 
@@ -1279,14 +855,10 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    if args.command == "scan":
-        cmd_scan(args)
-    elif args.command == "file":
-        cmd_file(args)
-    elif args.command == "reconcile":
-        cmd_reconcile(args)
-    elif args.command == "classify":
-        cmd_classify(args)
+    if args.command == "sweep-report":
+        cmd_sweep_report(args)
+    elif args.command == "sweep-update":
+        cmd_sweep_update(args)
 
 
 if __name__ == "__main__":
