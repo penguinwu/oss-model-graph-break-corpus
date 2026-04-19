@@ -2,128 +2,156 @@
 
 ## What This Is
 
-A reusable corpus of 468 open-source models for measuring and improving `torch.compile` quality. The first application tracks `fullgraph=True` success rates across PyTorch versions; the infrastructure extends to dynamic shape behavior, recompilation patterns, and other compiler diagnostics.
+A corpus of 734 open-source models for measuring `torch.compile` quality. Tracks `fullgraph=True` success rates across PyTorch versions, with graph break classification, root cause analysis, and issue management.
 
-## Key Files
+Models come from HuggingFace Transformers, Diffusers, and custom repos. Each model is tested in eval and train modes.
 
-- `corpus/corpus.json` — main dataset (468 models, eval + train modes, static + dynamic results)
-- `tools/query.py` — query the corpus (by status, error text, dynamic comparison, top errors)
-- `tools/reproduce.py` — reproduce a single model's graph break
-- `tools/analyze_explain.py` — graph break taxonomy and root cause analysis
-- `tools/analyze_trend.py` — version trend analysis across PyTorch releases
-- `tools/validate.py` — corpus integrity checks (golden set, schema)
-- `tools/compare.py` — compare two sweep results
-- `tools/feedback_monitor.py` — monitor GChat feedback space for user reports
-- `tools/github_issue_monitor.py` — monitor GitHub issues for new activity
-- `sweep/run_sweep.py` — run a full sweep (orchestrator)
-- `sweep/worker.py` — single-model test worker (model creation, input generation, compile test)
-- `sweep/sweep_watchdog.py` — monitor sweep progress, auto-restart on failure
+## Script Map
 
-## Common Tasks
+The codebase has two layers: **sweep/** runs the actual tests, **tools/** analyzes results and manages issues.
+
+### Sweep execution (sweep/)
+
+| Script | Purpose | When to use |
+|--------|---------|-------------|
+| `sweep/run_sweep.py` | Sweep engine — identify + explain passes | Direct sweep: `python sweep/run_sweep.py sweep` |
+| `sweep/worker.py` | Single-model subprocess worker | Debugging: `python sweep/worker.py --model hf/ModelName` |
+| `sweep/orchestrator.py` | Parallel dispatch, checkpointing, GPU health | Imported by run_sweep.py (not called directly) |
+| `sweep/explain.py` | Graph break analysis (shared) | Imported by worker.py |
+| `sweep/models.py` | Model enumeration (HF, Diffusers, TIMM, custom) | Imported by run_sweep.py |
+| `sweep/sweep_watchdog.py` | Progress monitor, auto-restart | Long sweeps: `python sweep/sweep_watchdog.py` |
+
+### Unified CLI (tools/)
+
+| Script | Purpose | When to use |
+|--------|---------|-------------|
+| `tools/run_experiment.py` | Unified front-end — wraps sweep + experiments + nightly | `python tools/run_experiment.py <subcommand>` |
+| `tools/file_issues.py` | Post-sweep issue management (sweep-report + sweep-update) | After a sweep completes |
+| `tools/analyze_sweep.py` | Status breakdown by source/variant/mode | Quick results overview |
+| `tools/analyze_explain.py` | Graph break taxonomy and root cause analysis | Deep-dive on break reasons |
+| `tools/analyze_trend.py` | Cross-version trend analysis | Comparing PyTorch releases |
+| `tools/compare.py` | Compare two sweep results | Before/after comparison |
+| `tools/update_corpus.py` | Merge sweep results into corpus.json | After a sweep, before committing |
+| `tools/check_pr_status.py` | Check whether a PyTorch PR landed on main | Before asserting a PR's status |
+| `tools/reproduce.py` | Reproduce a single model's graph break | Debugging a specific model |
+| `tools/query.py` | Query the corpus (by status, error, etc.) | Exploring corpus data |
+| `tools/validate.py` | Corpus integrity checks | After modifying corpus.json |
+| `tools/smoke_test.py` | 3-model infrastructure smoke test | Verifying sweep infra works |
+
+### run_experiment.py subcommands
+
+| Subcommand | Purpose |
+|------------|---------|
+| `sweep` | Run a two-pass sweep (wraps sweep/run_sweep.py) |
+| `explain` | Explain-only pass from prior identify results |
+| `nightly` | Full automated pipeline: refresh → staleness check → preflight → canary → sweep → explain → corpus update → summary |
+| `corpus` | Build/update corpus from sweep results |
+| `selftest` | 3-model smoke test |
+| `check-env` | Pre-sweep environment validation |
+| `refresh-nightly` | Upgrade nightly venv to latest PyTorch |
+| `template` / `validate` / `run` / `merge` | Config-driven experiment system |
+
+## Common Workflows
+
+### Run a full sweep
+
+```bash
+# Activate your venv (needs PyTorch + transformers + diffusers)
+source ~/envs/torch-nightly/bin/activate
+
+# Full sweep: identify + explain, HF + Diffusers + custom models
+python sweep/run_sweep.py sweep \
+    --source hf diffusers custom \
+    --workers 4 \
+    --timeout 180
+
+# Or via the unified CLI (equivalent)
+python tools/run_experiment.py sweep \
+    --source hf diffusers custom
+```
+
+### Run the nightly pipeline (automated)
+
+```bash
+python tools/run_experiment.py nightly \
+    --venv ~/envs/torch-nightly \
+    --source hf diffusers custom
+```
+
+This runs: venv refresh → staleness check (abort if PyTorch unchanged) → preflight → canary (1 model gate) → full sweep → explain → corpus update → summary.
+
+### Post-sweep: classify and update issues
+
+```bash
+# Generate a reviewable plan (read-only, safe to run anytime)
+python tools/file_issues.py sweep-report \
+    --explain sweep_results/nightly/2026-04-19/explain_results.json \
+    --identify sweep_results/nightly/2026-04-19/identify_results.json
+
+# Review the plan file, then apply
+python tools/file_issues.py sweep-update \
+    --plan sweep_results/nightly/2026-04-19/sweep-report.json
+```
+
+sweep-report classifies every graph break into an issue category, computes leverage rankings (which fixes unlock the most fullgraph models), generates issue bodies with affected model tables, and flags close candidates with evidence. sweep-update reads the reviewed plan and PATCHes GitHub issues.
+
+### Reproduce and debug a graph break
+
+```bash
+python tools/reproduce.py ModelName --explain          # Show break reasons
+python tools/reproduce.py ModelName --explain --verbose # Full explain output
+python tools/reproduce.py ModelName --dynamic mark     # Test with dynamic shapes
+TORCH_TRACE=/tmp/trace python tools/reproduce.py ModelName  # Capture trace
+```
 
 ### Query the corpus
+
 ```bash
-python tools/query.py                          # summary
-python tools/query.py --status graph_break     # all graph break models
-python tools/query.py --error deepcopy         # search by error text
-python tools/query.py --compare-dynamic        # static vs dynamic=mark
+python tools/query.py                          # Summary
+python tools/query.py --status graph_break     # All graph break models
+python tools/query.py --error deepcopy         # Search by error text
 ```
 
-### Reproduce a graph break
+### Compare sweep results
+
 ```bash
-python tools/reproduce.py BartModel            # eval mode
-python tools/reproduce.py BartModel --mode train
-```
-
-### Run a sweep
-```bash
-python sweep/run_sweep.py \
-    --device cuda \
-    --python /path/to/python \
-    --source hf+diffusers \
-    --identify-only \
-    --identify-modes eval train \
-    --workers 4 \
-    --timeout 180 \
-    --timeout-large 600 \
-    --output-dir sweep_results/$(date +%Y%m%d)
-```
-
-Add `--dynamic mark` or `--dynamic true` for dynamic shape testing.
-Add `--resume` to resume from a crash.
-
-### Adding a model fix
-Model-specific fixes live in `sweep/worker.py`:
-- `_fix_config()` — patch config values
-- `_create_config()` — composite models needing factory methods
-- `_generate_inputs()` — model-specific input overrides
-- `_reduce_model_size()` — cap layers/hidden dims for GPU fit
-
-After fixing, re-run the single model to verify:
-```bash
-python sweep/worker.py --model hf/ModelName --device cuda
+python tools/compare.py sweep_results/pt2.11/ sweep_results/nightly/2026-04-19/
 ```
 
 ## Conventions
 
 - Batch size must be >= 2 (PyTorch specializes on 0 and 1)
 - Backend is always `eager` (tests Dynamo tracing, not inductor codegen)
+- Default sources: `hf diffusers custom` (TIMM/dynamic require explicit request)
 - Never use 0 or 1 as input dimensions for dynamic shape testing
-- Run HF models first in sweeps (highest graph break density)
+- Sweep results go in `sweep_results/<label>/` (e.g., `sweep_results/nightly/2026-04-19/`)
 
-## Agent Recipes
+## Key Data Files
 
-### Fix a data inconsistency
-1. Identify the issue in `corpus/corpus.json` (wrong status, missing field, stale count)
-2. Fix the data directly in corpus.json
-3. Run `python tools/validate.py --fix` to regenerate summary block and fix has_graph_break flags
-4. Run `python tools/validate.py` to confirm all checks pass
-5. Check golden set: if you changed a golden set model, flag for Peng (Tier 3 — never update golden_set.json yourself)
+- `corpus/corpus.json` — main dataset (models + results across versions)
+- `sweep_results/nightly/<date>/identify_results.json` — latest sweep raw results
+- `sweep_results/nightly/<date>/explain_results.json` — graph break explanations
+- `sweep/large_models.json` — models needing extended timeouts
+- `sweep/tracked_models.json` — models tracked for specific PR fixes
 
-### Update corpus from sweep results
-1. Run the sweep: `python sweep/run_sweep.py --device cuda ...`
-2. Run `python tools/update_corpus.py <sweep_results_dir>` to merge results into corpus.json
-3. Run `python tools/validate.py` to confirm integrity
-4. Run `python tools/compare.py <old_results> <new_results>` to generate a changelog
-5. Commit and flag Peng for review and push
+## Model-Specific Fixes
 
-### Add a CLI flag to query.py
-1. Add the argument in the argparse block (search for `parser.add_argument`)
-2. Add filtering logic in the main query loop
-3. Ensure `--json` output includes the new field if applicable
-4. Test: `python tools/query.py --your-new-flag` and `python tools/query.py --your-new-flag --json`
-5. Run `python tools/validate.py` to confirm tool output checks still pass
+Fixes for individual models live in `sweep/worker.py`:
+- `_fix_config()` — patch config values (e.g., reduce vocab, fix invalid defaults)
+- `_create_config()` — composite models needing factory construction
+- `_generate_inputs()` — models with non-standard input signatures
+- `_reduce_model_size()` — cap layers/hidden dims for GPU fit
 
-### Add a model-specific fix in worker.py
-1. Identify the failure mode (create_error, eager_error, graph_break with specific error)
-2. Choose the right fix point:
-   - `_fix_config()` — patch config values (e.g., reduce vocab, fix invalid defaults)
-   - `_create_config()` — composite models needing factory construction
-   - `_generate_inputs()` — models with non-standard input signatures
-   - `_reduce_model_size()` — models that OOM even at 2 layers
-3. Add the fix with a comment explaining why
-4. Test: `python sweep/worker.py --model hf/ModelName --device cuda`
-5. Re-run `python tools/validate.py` after updating corpus
+After fixing, test with: `python sweep/worker.py --model hf/ModelName --device cuda`
 
-### Check environment before a sweep
-```bash
-python tools/version_check.py          # Compare installed vs corpus versions
-python sweep/run_sweep.py --check-env  # Pre-sweep validation (exits pass/fail)
-```
+## GitHub Issues
 
-### Reproduce and debug a graph break
-```bash
-python tools/reproduce.py ModelName --explain          # Show break reasons
-python tools/reproduce.py ModelName --explain --verbose # Full explain output
-python tools/reproduce.py ModelName --dynamic mark     # Test with dynamic shapes
-TORCH_TRACE=/tmp/trace python tools/reproduce.py ModelName  # Capture trace
-pip install tlparse && tlparse /tmp/trace -o /tmp/report     # Visualize trace
-```
+Issues track graph break patterns at https://github.com/penguinwu/oss-model-graph-break-corpus/issues.
 
-### GitHub issue labels
-Issues use `for:*` labels to route to the right team:
-- `for:dynamo-team` — PyTorch Dynamo compiler fixes
-- `for:hf-transformers` — HuggingFace Transformers model/library fixes
-- `for:corpus-tooling` — corpus pipeline and tooling improvements
+- **Dynamo issues** — pattern-level graph break categories (e.g., data-dependent branching, context managers)
+- **Model-specific issues** — breaks unique to individual models
+- **Corpus-infra issues** — models that fail before compilation (create_error, timeout, eager_error)
 
-When creating issues, always include: repro command, break count / impact, and the appropriate `for:*` label.
+The classifier rules live in `tools/file_issues.py` (`GRAPH_BREAK_RULES`). Each rule maps a break reason pattern to an issue number.
+
+Issue bodies include: affected model tables, break reason samples, leverage analysis (models to fullgraph if fixed), and cross-references to related issues. All machine-filed issues contain `<!-- filed-by: otter/file_issues.py -->`.
