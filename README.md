@@ -1,6 +1,6 @@
 # OSS Model Compiler Quality Corpus
 
-A reusable corpus of **790 open-source models** for measuring and improving `torch.compile` quality. Structured, reproducible, extensible.
+A reusable corpus of **734 open-source models** for measuring and improving `torch.compile` quality. Structured, reproducible, extensible.
 
 The first application tracks `fullgraph=True` success rates across PyTorch versions. But the corpus is designed to extend to other compiler quality studies: dynamic shape behavior, recompilation patterns, graph break taxonomy, and fix validation.
 
@@ -8,7 +8,7 @@ The first application tracks `fullgraph=True` success rates across PyTorch versi
 
 Compiler developers working on `torch.compile`. Three workflows:
 
-1. **Find & fix graph breaks** — reproduce any break with one command, see root causes and fix hints, prioritize by impact across 790 models
+1. **Find & fix graph breaks** — reproduce any break with one command, see root causes and fix hints, prioritize by impact across 734 models
 2. **Prioritize work** — see which break categories affect the most models, track version-over-version progress, identify high-ROI fixes
 3. **Validate tools** — test graph break fix skills, compiler changes, or diagnostics against a known corpus of real-world breaks
 
@@ -20,7 +20,7 @@ Compiler developers working on `torch.compile`. Three workflows:
 | **graph\_break** | 177 (22%) | 219 (28%) |
 | **error** | 82 (10%) | 82 (10%) |
 
-- **790 models** across model families — base models, ForCausalLM, and ForConditionalGeneration
+- **734 models** across model families — base models, ForCausalLM, and ForConditionalGeneration
 - **240 models** have graph breaks in at least one mode
 - All graph breaks come from HF Transformers; Diffusers models compile clean
 
@@ -35,7 +35,7 @@ Compiler developers working on `torch.compile`. Three workflows:
 
 Steady improvement across four releases. **Zero full\_graph->graph\_break regressions** in any release.
 
-The expanded corpus (790 models) adds ForCausalLM and ForConditionalGeneration variants, testing the full model stack users actually compile.
+The expanded corpus (734 models) adds ForCausalLM and ForConditionalGeneration variants, testing the full model stack users actually compile.
 
 Nightly tracking and per-version details: [`results/`](results/)
 
@@ -150,6 +150,23 @@ python3 tools/run_experiment.py run experiments/configs/my-test.json
 
 Full CLI reference, config schema, and recipes: [`experiments/README.md`](experiments/README.md)
 
+### Post-sweep: classify breaks and update issues
+
+After a sweep completes, classify graph breaks into issue categories and update GitHub issues:
+
+```bash
+# Generate a reviewable plan (read-only, safe to run anytime)
+python3 tools/file_issues.py sweep-report \
+    --explain sweep_results/nightly/2026-04-19/explain_results.json \
+    --identify sweep_results/nightly/2026-04-19/identify_results.json
+
+# Review the JSON plan file, then apply changes to GitHub
+python3 tools/file_issues.py sweep-update \
+    --plan sweep_results/nightly/2026-04-19/sweep-report.json
+```
+
+The report shows: leverage rankings (which fixes unlock the most fullgraph models), title changes, close candidates with evidence, and unclassified patterns.
+
 ### Validate corpus integrity
 
 ```bash
@@ -161,7 +178,7 @@ python3 tools/validate.py
 
 ### Corpus dashboard
 
-A browsable HTML dashboard of all 790 models is available at `docs/index.html`:
+A browsable HTML dashboard of all 734 models is available at `docs/index.html`:
 
 ```bash
 python3 tools/generate_index.py    # generates docs/index.html
@@ -291,6 +308,7 @@ python3 sweep/worker.py --model hf/ModelName --device cuda
 | `sweep/orchestrator.py` | Shared worker management (spawn, harvest, timeout, kill, checkpoint) |
 | `sweep/sweep_watchdog.py` | Progress monitor + auto-restart on failure |
 | `sweep/large_models.json` | 17 models needing extended timeouts during sweeps |
+| `tools/file_issues.py` | Post-sweep issue management (sweep-report + sweep-update) |
 | `tools/query.py` | Query corpus by status, error, dynamic comparison |
 | `tools/reproduce.py` | Reproduce a single model's graph break |
 | `tools/analyze_explain.py` | Graph break taxonomy and root cause analysis |
