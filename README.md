@@ -52,7 +52,7 @@ python3 tools/reproduce.py BartModel --explain
 
 Full methodology, taxonomy, and analysis: [design/design-doc.md](design/design-doc.md)
 
-Graph break pattern analysis for PT2 team: [analysis/graph-break-analysis.md](analysis/graph-break-analysis.md)
+Graph break pattern analysis for PT2 team: [analysis/releases/graph-break-analysis.md](analysis/releases/graph-break-analysis.md)
 
 ## Feedback
 
