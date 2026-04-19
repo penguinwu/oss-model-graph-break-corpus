@@ -199,6 +199,13 @@ def harvest_worker(handle):
     }
 
 
+_KNOWN_PHASES = frozenset({
+    "create", "eager", "compile", "done",
+    "eager_retry_image_tokens",
+    "eager_a", "shape_b", "compiled_b", "eager_b", "compare",
+})
+
+
 def timeout_result(handle):
     """Build a timeout result, extracting phase from stderr if possible."""
     phase = "unknown"
@@ -206,7 +213,9 @@ def timeout_result(handle):
         with open(handle.stderr_path) as f:
             for line in reversed(f.read().splitlines()):
                 if line.startswith("PHASE:"):
-                    phase = line.split(":", 1)[1]
+                    candidate = line.split(":", 1)[1].strip()
+                    if candidate in _KNOWN_PHASES or candidate.startswith("chaos_"):
+                        phase = candidate
                     break
     except Exception:
         pass
