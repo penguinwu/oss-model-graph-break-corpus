@@ -542,7 +542,7 @@ This enables a feedback loop: Dynamo engineers or users can file issues against 
 | Corpus (JSON) | `corpus/corpus.json` |
 | Graph break analysis | `analysis/graph-break-analysis.md` |
 | GitHub issue monitor | `tools/github_issue_monitor.py` |
-| Design doc | `docs/design-doc.md` |
+| Design doc | `design/design-doc.md` |
 | Google Drive folder | [Link](https://drive.google.com/drive/folders/1r74REnQBKK6ssoF6dS9mcbBrIZ8hrtBd) |
 
 ---

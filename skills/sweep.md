@@ -163,7 +163,7 @@ After the sweep is validated and results are final:
 - [ ] Update `results/v2.X.md` with current model counts, status breakdown, and changes
 - [ ] Update `corpus/summary.md` with refreshed stats
 - [ ] Update `README.md` model counts and results-at-a-glance section
-- [ ] Update `docs/error-models.md` if error models changed
+- [ ] Update `design/error-models.md` if error models changed
 - [ ] Regenerate `docs/index.html` dashboard: `python3 tools/generate_index.py`
 - [ ] Commit all doc updates together
 - [ ] Verify actual git state (`git log origin/main..HEAD`) before reporting push counts
