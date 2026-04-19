@@ -15,3 +15,4 @@ data/pt2-issues/*_backup.json
 data/pt2-issues/pt2_analysis_data.json
 data/pt2-issues/pt2_analysis_output.txt
 data/pt2-issues/pt2_analysis_summary.json
+myclaw.db
