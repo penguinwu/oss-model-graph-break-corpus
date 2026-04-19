@@ -85,16 +85,41 @@ def compare_two(results_a, results_b, label_a="A", label_b="B", mode="eval"):
             changed.append((name, sa, sb))
 
     if changed:
-        print(f"Changed models ({len(changed)}):")
-        # Group by transition
+        # Separate compile regressions from infra changes
+        compile_regressions = []
+        infra_changes = []
+        other_changes = []
+        for name, sa, sb in changed:
+            if sa == "full_graph" and sb == "timeout":
+                phase = b.get(name, {}).get("phase_at_timeout", "unknown")
+                if phase == "compile":
+                    compile_regressions.append((name, phase))
+                else:
+                    infra_changes.append((name, f"timeout at {phase}"))
+            elif sa == "full_graph" and sb not in ("full_graph",):
+                other_changes.append((name, sa, sb))
+            else:
+                other_changes.append((name, sa, sb))
+
+        if compile_regressions:
+            print(f"\n⚠ COMPILE REGRESSIONS ({len(compile_regressions)}):")
+            for n, phase in sorted(compile_regressions):
+                print(f"    {n}  (timeout during {phase})")
+
+        print(f"\nChanged models ({len(changed)}):")
         from collections import defaultdict
         transitions = defaultdict(list)
         for name, sa, sb in changed:
-            transitions[(sa, sb)].append(name)
-        for (sa, sb), names in sorted(transitions.items(), key=lambda x: -len(x[1])):
-            print(f"\n  {sa} → {sb} ({len(names)}):")
-            for n in sorted(names):
-                print(f"    {n}")
+            phase_info = ""
+            if sb == "timeout" and name in b:
+                phase = b[name].get("phase_at_timeout", "")
+                if phase:
+                    phase_info = f" [phase: {phase}]"
+            transitions[(sa, sb)].append((name, phase_info))
+        for (sa, sb), entries in sorted(transitions.items(), key=lambda x: -len(x[1])):
+            print(f"\n  {sa} → {sb} ({len(entries)}):")
+            for n, info in sorted(entries):
+                print(f"    {n}{info}")
     else:
         print("No models changed status.")
 
