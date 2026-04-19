@@ -662,16 +662,57 @@ def build_sweep_report(explain_path, identify_path):
             "title_changed": current_title != title if current_title else True,
         })
 
+    # Build reverse map: model → [(issue_number, rule_key), ...]
+    model_to_issues = defaultdict(list)
+    for rule_key, data in classified.items():
+        issue_num = data["issue_number"]
+        if issue_num is None:
+            continue
+        for model_name in data["models"]:
+            model_to_issues[model_name].append((issue_num, rule_key))
+    for status_key, data in infra.items():
+        issue_num = None
+        for num, skey in CORPUS_INFRA_ISSUES.items():
+            if skey == status_key:
+                issue_num = num
+                break
+        if issue_num:
+            for model_name in data["models"]:
+                model_to_issues[model_name].append((issue_num, status_key))
+
+    # Build set of all models in current corpus and fullgraph models
+    all_corpus_models = {e["name"] for e in identify_entries}
+    fullgraph_models = set()
+    for e in explain_entries:
+        if e.get("graph_break_count", 1) == 0:
+            fullgraph_models.add(e["name"])
+
     # Lifecycle: issues with 0 models in current data
     tracked_issue_nums = {p["number"] for p in plan_issues}
     close_candidates = []
     for issue in open_issues:
         num = issue["number"]
         if num not in tracked_issue_nums and ISSUE_MARKER in (issue.get("body") or ""):
+            prev_models = parse_affected_models(issue.get("body", ""))
+            disposition = {}
+            for model_name in sorted(prev_models.keys()):
+                if model_name not in all_corpus_models:
+                    disposition[model_name] = "removed from corpus"
+                elif model_name in fullgraph_models:
+                    disposition[model_name] = "fullgraph on current sweep"
+                elif model_name in model_to_issues:
+                    targets = model_to_issues[model_name]
+                    refs = ", ".join(f"#{inum} ({rk})" for inum, rk in targets)
+                    disposition[model_name] = f"reclassified → {refs}"
+                else:
+                    disposition[model_name] = "still breaking, pattern unclassified"
+
             close_candidates.append({
                 "number": num,
                 "title": issue["title"],
                 "reason": "No models matched in current sweep",
+                "previous_model_count": len(prev_models),
+                "model_disposition": disposition,
             })
 
     leverage_ranking = [
@@ -733,7 +774,14 @@ def print_sweep_report(plan):
         print(f"\n--- CLOSE CANDIDATES ({len(close)}) ---\n")
         for c in close:
             print(f"  #{c['number']}: {c['title']}")
-            print(f"    Reason: {c['reason']}")
+            disp = c.get("model_disposition", {})
+            if disp:
+                print(f"    Previously {c.get('previous_model_count', '?')} models, now:")
+                for model, fate in disp.items():
+                    print(f"      {model}: {fate}")
+            else:
+                print(f"    Reason: {c['reason']}")
+            print()
 
     unc = plan.get("unclassified_patterns", [])
     if unc:
