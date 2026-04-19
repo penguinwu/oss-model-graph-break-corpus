@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Scan corpus for errors and file GitHub issues.
+"""Scan corpus for errors and manage GitHub issues.
 
 Scans corpus.json for error categories, groups by root cause, and generates
 or files GitHub issues with the correct labels and templates.
 
 Subcommands:
-  scan    Scan corpus and show draft issues (no side effects)
-  file    Create issues on GitHub (requires token)
+  scan        Scan corpus and show draft issues (no side effects)
+  file        Create issues on GitHub (requires token)
+  reconcile   Compare sweep results against open issues: close fixed,
+              update changed, create new (dry-run by default)
 
 Usage:
   # See what issues would be filed
@@ -14,6 +16,12 @@ Usage:
 
   # File issues for real
   python tools/file_issues.py file
+
+  # Reconcile open issues against a sweep
+  python tools/file_issues.py reconcile --results sweep_results/nightly/2026-04-19/identify_results.json
+
+  # Apply the reconcile plan for real
+  python tools/file_issues.py reconcile --results path/to/results.json --execute
 
   # Only scan explain_errors
   python tools/file_issues.py scan --category explain_error
@@ -27,8 +35,11 @@ Usage:
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
+import time
+import urllib.request
 from collections import defaultdict
 from pathlib import Path
 
@@ -428,6 +439,57 @@ def _github_api(method, endpoint, data=None):
         return None
 
 
+PROXY_URL = "http://localhost:7824/fetch"
+
+
+def _proxy_api(endpoint, method="GET", body=None):
+    """Make a GitHub API call via the local web proxy.
+
+    Unlike _github_api (which uses sudo+fwdproxy), this works under
+    the agent:claude_code identity by routing through localhost:7824.
+    """
+    token = _get_github_token()
+    if not token:
+        print("ERROR: No GitHub token found in ~/.config/gh/hosts.yml")
+        sys.exit(1)
+
+    url = f"https://api.github.com{endpoint}"
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+
+    payload = {"url": url, "method": method, "headers": headers}
+    if body is not None:
+        payload["body"] = body  # must be dict, NOT json.dumps(dict)
+
+    req = urllib.request.Request(
+        PROXY_URL,
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        resp = json.loads(urllib.request.urlopen(req, timeout=30).read())
+    except Exception as e:
+        print(f"ERROR: Proxy request failed: {e}")
+        return None
+
+    if not resp.get("ok"):
+        status = resp.get("status", "?")
+        error = resp.get("error", "unknown")
+        print(f"ERROR: GitHub API {method} {endpoint} → {status}: {error}")
+        return None
+
+    content = resp.get("content", "")
+    if not content:
+        return {}
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        return content
+
+
 def fetch_existing_issues():
     """Fetch all open issues from the repo."""
     issues = []
@@ -478,6 +540,327 @@ def create_issue(title, body, labels):
         "labels": labels,
     }
     return _github_api("POST", f"/repos/{REPO_SLUG}/issues", data)
+
+
+# ── Reconcile helpers ────────────────────────────────────────────────────
+
+BROKEN_STATUSES = frozenset({
+    "create_error", "compile_error", "timeout", "eager_error", "worker_error",
+})
+FIXED_STATUSES = frozenset({"full_graph", "graph_break"})
+
+
+def load_sweep_results(results_path):
+    """Load identify_results.json → {(name, mode): result_dict}."""
+    with open(results_path) as f:
+        data = json.load(f)
+    results = data.get("results", data) if isinstance(data, dict) else data
+    by_key = {}
+    for r in results:
+        by_key[(r["name"], r.get("mode", "eval"))] = r
+    return by_key
+
+
+def parse_affected_models(body):
+    """Parse model names from markdown tables in an issue body.
+
+    Handles multiple table formats:
+    - | Model | Modes |           (file_issues.py format)
+    - | Model | Eval Breaks | ... (graph-break analysis format)
+    - | Model | Since |           (corpus-infra format)
+    - | Model | Previous status | (regression format)
+
+    Extracts the first column of any markdown table in the body after
+    a ## heading containing 'Model' or 'Affected'.
+    """
+    if not body:
+        return {}
+    models = {}
+    in_table = False
+    for line in body.split("\n"):
+        stripped = line.strip()
+        if stripped.startswith("##") and (
+                "model" in stripped.lower() or "affected" in stripped.lower()):
+            in_table = True
+            continue
+        if in_table:
+            if stripped.startswith("|") and "---" in stripped:
+                continue
+            if stripped.startswith("| Model"):
+                continue
+            if stripped.startswith("|"):
+                parts = [p.strip() for p in stripped.split("|")]
+                if len(parts) >= 3 and parts[1]:
+                    model = parts[1]
+                    col2 = parts[2] if len(parts) > 2 else ""
+                    modes_match = re.findall(r'\b(eval|train)\b', col2)
+                    if modes_match:
+                        models[model] = sorted(set(modes_match))
+                    elif model not in models:
+                        models[model] = ["eval", "train"]
+            elif stripped.startswith("##"):
+                in_table = False
+            elif stripped == "" and not models:
+                pass
+    return models
+
+
+def fetch_open_issues_proxy():
+    """Fetch all open issues via web proxy. Filters out pull requests."""
+    issues = []
+    page = 1
+    while True:
+        data = _proxy_api(
+            f"/repos/{REPO_SLUG}/issues?state=open&per_page=100&page={page}")
+        if not data or not isinstance(data, list) or len(data) == 0:
+            break
+        for issue in data:
+            if "pull_request" not in issue:
+                issues.append(issue)
+        if len(data) < 100:
+            break
+        page += 1
+    return issues
+
+
+def categorize_issue(issue, sweep_results):
+    """Determine action for an open issue: CLOSE, UPDATE, or KEEP."""
+    models = parse_affected_models(issue.get("body", ""))
+    if not models:
+        return {
+            "action": "KEEP",
+            "reason": "unparseable body",
+            "issue": issue,
+            "original_models": {},
+            "fixed": [],
+            "still_broken": [],
+            "not_found": [],
+        }
+
+    label_names = {l["name"] for l in issue.get("labels", [])}
+    is_infra_issue = "corpus-infra" in label_names
+    fixed_for_this = FIXED_STATUSES if is_infra_issue else frozenset({"full_graph"})
+    broken_for_this = BROKEN_STATUSES if is_infra_issue else (BROKEN_STATUSES | {"graph_break"})
+
+    fixed = []
+    still_broken = []
+    not_found = []
+
+    for model_name, modes in models.items():
+        for mode in modes:
+            key = (model_name, mode)
+            if key not in sweep_results:
+                not_found.append((model_name, mode))
+                continue
+            status = sweep_results[key].get("status", "")
+            if status in fixed_for_this:
+                fixed.append((model_name, mode))
+            elif status in broken_for_this:
+                still_broken.append((model_name, mode))
+            else:
+                not_found.append((model_name, mode))
+
+    old_count = len(models)
+    new_broken_models = sorted(set(m for m, _ in still_broken))
+    new_count = len(new_broken_models)
+
+    reason = ""
+    if not still_broken and fixed:
+        action = "CLOSE"
+    elif not still_broken and not fixed:
+        action = "KEEP"
+        reason = "all models absent from sweep"
+    elif new_count < old_count:
+        action = "UPDATE"
+    else:
+        action = "KEEP"
+
+    return {
+        "action": action,
+        "reason": reason,
+        "issue": issue,
+        "original_models": models,
+        "fixed": fixed,
+        "still_broken": still_broken,
+        "not_found": not_found,
+        "old_count": old_count,
+        "new_count": new_count,
+    }
+
+
+def scan_for_new_issues(sweep_results, open_issues):
+    """Find error patterns in sweep results not covered by any open issue."""
+    covered_models = set()
+    for issue in open_issues:
+        models = parse_affected_models(issue.get("body", ""))
+        for model_name, modes in models.items():
+            for mode in modes:
+                covered_models.add((model_name, mode))
+
+    entries_by_category = defaultdict(list)
+    for (name, mode), r in sweep_results.items():
+        status = r.get("status", "")
+        if status not in BROKEN_STATUSES:
+            continue
+        if (name, mode) in covered_models:
+            continue
+        err = r.get("error", "")
+        entries_by_category[status].append((name, mode, err))
+
+    if not entries_by_category:
+        return []
+
+    return group_by_cause(dict(entries_by_category))
+
+
+def build_reconcile_plan(sweep_results, open_issues):
+    """Build unified action plan: close, update, keep, create."""
+    plan = {"close": [], "update": [], "keep": [], "create": []}
+
+    for issue in open_issues:
+        result = categorize_issue(issue, sweep_results)
+        action = result["action"].lower()
+        plan[action].append(result)
+
+    plan["create"] = scan_for_new_issues(sweep_results, open_issues)
+    return plan
+
+
+def print_reconcile_plan(plan, verbose=False):
+    """Print the reconcile plan in human-readable format."""
+    total = (len(plan["close"]) + len(plan["update"]) +
+             len(plan["keep"]) + len(plan["create"]))
+
+    print(f"\n{'=' * 70}")
+    print(f"RECONCILE PLAN: {total} actions")
+    print(f"{'=' * 70}")
+
+    if plan["close"]:
+        print(f"\n--- CLOSE ({len(plan['close'])} issues) "
+              f"— all models fixed ---\n")
+        for r in sorted(plan["close"], key=lambda x: x["issue"]["number"]):
+            iss = r["issue"]
+            print(f"  #{iss['number']}: {iss['title']}")
+            print(f"       {len(r['fixed'])} model/mode pairs now fixed")
+            if r["not_found"]:
+                print(f"       {len(r['not_found'])} not in sweep (removed/skipped)")
+            if verbose and r["fixed"]:
+                names = sorted(set(m for m, _ in r["fixed"]))
+                print(f"       Fixed: {', '.join(names[:10])}"
+                      f"{'...' if len(names) > 10 else ''}")
+            print()
+
+    if plan["update"]:
+        print(f"\n--- UPDATE ({len(plan['update'])} issues) "
+              f"— model count changed ---\n")
+        for r in sorted(plan["update"], key=lambda x: x["issue"]["number"]):
+            iss = r["issue"]
+            print(f"  #{iss['number']}: {iss['title']}")
+            print(f"       {r['old_count']} models → {r['new_count']} models")
+            fixed_names = sorted(set(m for m, _ in r["fixed"]))
+            if fixed_names:
+                print(f"       Fixed: {', '.join(fixed_names[:8])}"
+                      f"{'...' if len(fixed_names) > 8 else ''}")
+            broken_names = sorted(set(m for m, _ in r["still_broken"]))
+            if broken_names:
+                print(f"       Still broken: {', '.join(broken_names[:8])}"
+                      f"{'...' if len(broken_names) > 8 else ''}")
+            print()
+
+    if plan["keep"]:
+        print(f"\n--- KEEP ({len(plan['keep'])} issues) — unchanged ---\n")
+        for r in sorted(plan["keep"], key=lambda x: x["issue"]["number"]):
+            iss = r["issue"]
+            reason = r.get("reason", "")
+            extra = f" ({reason})" if reason else ""
+            print(f"  #{iss['number']}: {iss['title']}{extra}")
+        print()
+
+    if plan["create"]:
+        print(f"\n--- CREATE ({len(plan['create'])} new issues) "
+              f"— errors not in any open issue ---\n")
+        for draft in plan["create"]:
+            title = format_issue_title(draft)
+            models = list(draft["models"].keys())
+            print(f"  {title}")
+            print(f"       Models: {', '.join(models[:8])}"
+                  f"{'...' if len(models) > 8 else ''}")
+            print()
+
+    print(f"{'=' * 70}")
+    print(f"SUMMARY: {len(plan['close'])} close, {len(plan['update'])} update, "
+          f"{len(plan['keep'])} keep, {len(plan['create'])} create")
+    if any(plan[k] for k in ("close", "update", "create")):
+        print(f"         Use --execute to apply all actions.")
+    else:
+        print(f"         Nothing to do.")
+    print(f"{'=' * 70}\n")
+
+
+def execute_reconcile_plan(plan, sweep_results):
+    """Execute reconcile actions via web proxy."""
+    actions_taken = 0
+
+    for r in plan["close"]:
+        iss = r["issue"]
+        num = iss["number"]
+        fixed_names = sorted(set(m for m, _ in r["fixed"]))
+        comment = (
+            f"Reconcile: all {len(fixed_names)} tracked models now pass "
+            f"(full_graph or graph_break). "
+            f"Fixed: {', '.join(fixed_names)}. Closing."
+        )
+        print(f"  Closing #{num}...")
+        _proxy_api(f"/repos/{REPO_SLUG}/issues/{num}/comments",
+                   method="POST", body={"body": comment})
+        _proxy_api(f"/repos/{REPO_SLUG}/issues/{num}",
+                   method="PATCH",
+                   body={"state": "closed", "state_reason": "completed"})
+        actions_taken += 1
+        time.sleep(1)
+
+    for r in plan["update"]:
+        iss = r["issue"]
+        num = iss["number"]
+        fixed_names = sorted(set(m for m, _ in r["fixed"]))
+        broken_names = sorted(set(m for m, _ in r["still_broken"]))
+        comment = (
+            f"Reconcile update: {r['old_count']} → {r['new_count']} models.\n\n"
+            f"**Fixed ({len(fixed_names)}):** {', '.join(fixed_names)}\n\n"
+            f"**Still broken ({len(broken_names)}):** {', '.join(broken_names)}"
+        )
+        print(f"  Updating #{num}...")
+        _proxy_api(f"/repos/{REPO_SLUG}/issues/{num}/comments",
+                   method="POST", body={"body": comment})
+        actions_taken += 1
+        time.sleep(1)
+
+    if plan["create"]:
+        # Load corpus metadata for body generation
+        corpus_meta = {}
+        if CORPUS_PATH.exists():
+            with open(CORPUS_PATH) as f:
+                corpus_meta = json.load(f).get("metadata", {})
+        # Override with sweep version info if available
+        results_dir = None
+        for draft in plan["create"]:
+            title = format_issue_title(draft)
+            body = format_issue_body(draft, corpus_meta)
+            labels = draft["labels"]
+            print(f"  Creating: {title}...")
+            result = _proxy_api(
+                f"/repos/{REPO_SLUG}/issues",
+                method="POST",
+                body={"title": title, "body": body, "labels": labels},
+            )
+            if result and isinstance(result, dict) and "number" in result:
+                print(f"    → #{result['number']}")
+            else:
+                print(f"    → FAILED: {result}")
+            actions_taken += 1
+            time.sleep(1)
+
+    print(f"\n  Done: {actions_taken} actions executed.")
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────
@@ -642,9 +1025,34 @@ def cmd_file(args):
         print(f"\n--- DRY RUN — {len(to_file)} issues would be filed ---")
 
 
+def cmd_reconcile(args):
+    """Reconcile open issues against sweep results."""
+    results_path = Path(args.results)
+    if not results_path.exists():
+        print(f"ERROR: Results file not found: {results_path}")
+        sys.exit(1)
+
+    print(f"Loading sweep results from {results_path}...")
+    sweep_results = load_sweep_results(results_path)
+    print(f"  {len(sweep_results)} model/mode pairs loaded")
+
+    print("Fetching open issues...")
+    open_issues = fetch_open_issues_proxy()
+    print(f"  {len(open_issues)} open issues found")
+
+    plan = build_reconcile_plan(sweep_results, open_issues)
+    print_reconcile_plan(plan, verbose=args.verbose)
+
+    if args.execute:
+        print("Executing reconcile plan...\n")
+        execute_reconcile_plan(plan, sweep_results)
+    elif any(plan[k] for k in ("close", "update", "create")):
+        print("Dry run — no actions taken. Use --execute to apply.\n")
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Scan corpus for errors and file GitHub issues",
+        description="Scan corpus for errors and manage GitHub issues",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -673,6 +1081,20 @@ def main():
     sub_file.add_argument("--force", action="store_true",
                           help="File even if potential duplicates exist")
 
+    # ── reconcile ──
+    sub_recon = subparsers.add_parser(
+        "reconcile",
+        help="Reconcile open issues against sweep results")
+    sub_recon.add_argument(
+        "--results", required=True, metavar="RESULTS_JSON",
+        help="Path to identify_results.json from a sweep")
+    sub_recon.add_argument(
+        "--execute", action="store_true",
+        help="Apply actions (close/comment/create). Default is dry-run.")
+    sub_recon.add_argument(
+        "--verbose", "-v", action="store_true",
+        help="Show per-model details")
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -683,6 +1105,8 @@ def main():
         cmd_scan(args)
     elif args.command == "file":
         cmd_file(args)
+    elif args.command == "reconcile":
+        cmd_reconcile(args)
 
 
 if __name__ == "__main__":
