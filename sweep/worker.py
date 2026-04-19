@@ -2996,8 +2996,13 @@ def _mark_dynamic_dims(inputs_dict, inputs_tuple, source, input_type):
                 torch._dynamo.mark_dynamic(t, 1)  # seq_len / time
 
 
-def run_identify(spec, device, mode, dynamic=False):
-    """Try fullgraph=True compile. Returns JSON-serializable result."""
+def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
+    """Compile a model and check for errors. Returns JSON-serializable result.
+
+    With default compile_kwargs (fullgraph=True, backend="eager"), this is the
+    original graph break identification pass. With custom compile_kwargs, it
+    tests arbitrary torch.compile configurations.
+    """
     t_start = time.perf_counter()
     result = {
         "name": spec["name"],
@@ -3101,56 +3106,71 @@ def run_identify(spec, device, mode, dynamic=False):
             return result
     result["eager_time_s"] = round(time.perf_counter() - t_eager, 3)
 
-    # Step 2: fullgraph=True
+    # Step 2: torch.compile
     result["phase"] = "compile"
     print("PHASE:compile", file=sys.stderr, flush=True)
     torch._dynamo.reset()
     t_compile = time.perf_counter()
+
+    # Build compile kwargs: default to fullgraph=True + eager (graph break detection)
+    effective_kwargs = {"fullgraph": True, "backend": "eager"}
+    if compile_kwargs:
+        effective_kwargs.update(compile_kwargs)
+    result["compile_kwargs"] = effective_kwargs
+    uses_fullgraph = effective_kwargs.get("fullgraph", False)
+
     try:
         # dynamic modes: True = all dims symbolic, "mark" = realistic dims only, False = static
         compile_dynamic = True if dynamic is True else None
         if dynamic == "mark":
             input_type = spec.get("input_type", "auto")
             _mark_dynamic_dims(inputs_dict, inputs_tuple, spec["source"], input_type)
-        compiled = torch.compile(model, fullgraph=True, backend="eager", dynamic=compile_dynamic)
+        compiled = torch.compile(model, dynamic=compile_dynamic, **effective_kwargs)
         with ctx:
             if inputs_tuple:
                 compiled(*inputs_tuple)
             else:
                 compiled(**inputs_dict)
-        result["status"] = "full_graph"
-        result["fullgraph_ok"] = True
+        result["status"] = "full_graph" if uses_fullgraph else "success"
+        if uses_fullgraph:
+            result["fullgraph_ok"] = True
     except Exception as e:
         err_str = str(e)[:500]
         err_type = type(e).__name__
 
-        # Distinguish real graph breaks from config/infrastructure errors.
-        # Graph breaks come from torch._dynamo internals; config errors are
-        # AttributeError, TypeError, or errors with telltale patterns that
-        # indicate the model itself failed, not that Dynamo hit a graph break.
-        NON_GRAPH_BREAK_TYPES = (AttributeError, TypeError, ImportError)
-        NON_GRAPH_BREAK_PATTERNS = [
-            "object has no attribute",
-            "missing 1 required positional argument",
-            "Image features and image tokens do not match",
-            "CUDA out of memory",
-            "cannot be instantiated",
-            "prediction_length",
-        ]
-        is_infra_error = (
-            isinstance(e, NON_GRAPH_BREAK_TYPES)
-            or any(p in err_str for p in NON_GRAPH_BREAK_PATTERNS)
-        )
+        if uses_fullgraph:
+            # Distinguish real graph breaks from config/infrastructure errors.
+            # Graph breaks come from torch._dynamo internals; config errors are
+            # AttributeError, TypeError, or errors with telltale patterns that
+            # indicate the model itself failed, not that Dynamo hit a graph break.
+            NON_GRAPH_BREAK_TYPES = (AttributeError, TypeError, ImportError)
+            NON_GRAPH_BREAK_PATTERNS = [
+                "object has no attribute",
+                "missing 1 required positional argument",
+                "Image features and image tokens do not match",
+                "CUDA out of memory",
+                "cannot be instantiated",
+                "prediction_length",
+            ]
+            is_infra_error = (
+                isinstance(e, NON_GRAPH_BREAK_TYPES)
+                or any(p in err_str for p in NON_GRAPH_BREAK_PATTERNS)
+            )
 
-        if is_infra_error:
-            result["status"] = "compile_error"
-            result["fullgraph_ok"] = False
+            if is_infra_error:
+                result["status"] = "compile_error"
+                result["fullgraph_ok"] = False
+                result["error"] = err_str
+                result["error_type"] = err_type
+            else:
+                result["status"] = "graph_break"
+                result["fullgraph_ok"] = False
+                result["fullgraph_error"] = err_str
+        else:
+            # Non-fullgraph mode: any exception is an error
+            result["status"] = "error"
             result["error"] = err_str
             result["error_type"] = err_type
-        else:
-            result["status"] = "graph_break"
-            result["fullgraph_ok"] = False
-            result["fullgraph_error"] = err_str
     result["compile_time_s"] = round(time.perf_counter() - t_compile, 3)
     result["phase"] = "done"
 
@@ -3434,6 +3454,8 @@ def main():
                         help="Dynamic shapes: 'true' = all dims symbolic, 'mark' = realistic dims only")
     parser.add_argument("--dynamo-flags", default=None,
                         help="JSON dict of torch._dynamo.config flags to set before compilation")
+    parser.add_argument("--compile-kwargs", default=None,
+                        help="JSON dict of torch.compile() kwargs (backend, fullgraph, etc.)")
     args = parser.parse_args()
 
     spec = json.loads(args.model_json)
@@ -3451,8 +3473,12 @@ def main():
     # Convert dynamic arg: None→False, "true"→True, "mark"→"mark"
     dynamic_val = {"true": True, "mark": "mark"}.get(args.dynamic, False)
 
+    # Parse compile kwargs (backend, fullgraph, etc.)
+    compile_kwargs = json.loads(args.compile_kwargs) if args.compile_kwargs else None
+
     if args.pass_num == 1:
-        result = run_identify(spec, args.device, args.mode, dynamic=dynamic_val)
+        result = run_identify(spec, args.device, args.mode, dynamic=dynamic_val,
+                              compile_kwargs=compile_kwargs)
     elif args.pass_num == 3:
         result = run_validate(spec, args.device, args.mode, dynamic=dynamic_val)
     else:

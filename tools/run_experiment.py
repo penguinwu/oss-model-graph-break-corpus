@@ -91,10 +91,13 @@ def generate_template():
         "configs": [
             {
                 "name": "baseline",
+                "compile_kwargs": {},
                 "dynamo_flags": {},
+                "_comment_compile_kwargs": "torch.compile() args: backend, fullgraph, mode, etc. Default: {backend: 'eager', fullgraph: true}",
             },
             {
                 "name": "my_flag",
+                "compile_kwargs": {},
                 "dynamo_flags": {
                     "capture_scalar_outputs": True,
                 },
@@ -509,7 +512,7 @@ def run_experiment(config, args):
     experiment_start = time.perf_counter()
     all_results = list(resume_from.values())
 
-    def _make_experiment_result(r, cfg_name, dynamo_flags, retry=False):
+    def _make_experiment_result(r, cfg_name, dynamo_flags, compile_kwargs=None, retry=False):
         """Transform raw orchestrator result into experiment result."""
         experiment_result = {
             "name": r["name"],
@@ -522,11 +525,14 @@ def run_experiment(config, args):
         for key in ("graph_count", "graph_break_count", "error",
                      "break_reasons", "ops_per_graph", "compile_times",
                      "create_time_s", "eager_time_s", "compile_time_s",
-                     "gpu_mem_mb", "fullgraph_ok"):
+                     "gpu_mem_mb", "fullgraph_ok", "compile_kwargs",
+                     "error_type"):
             if key in r:
                 experiment_result[key] = r[key]
         if dynamo_flags:
             experiment_result["dynamo_flags"] = dynamo_flags
+        if compile_kwargs:
+            experiment_result.setdefault("compile_kwargs", compile_kwargs)
         if retry:
             experiment_result["retry"] = True
         return experiment_result
@@ -541,17 +547,22 @@ def run_experiment(config, args):
         for cfg in configs:
             cfg_name = cfg["name"]
             dynamo_flags = cfg.get("dynamo_flags", {})
+            compile_kwargs = cfg.get("compile_kwargs", {})
 
             print(f"\n{'─' * 70}")
             print(f"CONFIG: {cfg_name}")
+            if compile_kwargs:
+                print(f"  Compile: {json.dumps(compile_kwargs)}")
             if dynamo_flags:
                 print(f"  Flags: {json.dumps(dynamo_flags)}")
             print(f"{'─' * 70}")
 
-            # Build extra worker args for dynamo flags
+            # Build extra worker args for dynamo flags and compile kwargs
             extra_args = []
             if dynamo_flags:
-                extra_args = ["--dynamo-flags", json.dumps(dynamo_flags)]
+                extra_args.extend(["--dynamo-flags", json.dumps(dynamo_flags)])
+            if compile_kwargs:
+                extra_args.extend(["--compile-kwargs", json.dumps(compile_kwargs)])
 
             # Filter out already-completed models for this config
             pending_specs = []
@@ -570,8 +581,8 @@ def run_experiment(config, args):
             # Streaming callback: write each result as it arrives
             timed_out_specs = []
 
-            def _on_result(r, _cfg=cfg_name, _flags=dynamo_flags):
-                exp_result = _make_experiment_result(r, _cfg, _flags)
+            def _on_result(r, _cfg=cfg_name, _flags=dynamo_flags, _ckw=compile_kwargs):
+                exp_result = _make_experiment_result(r, _cfg, _flags, compile_kwargs=_ckw)
                 _write_result(exp_result)
                 all_results.append(exp_result)
                 if r["status"] == "timeout":
@@ -594,8 +605,8 @@ def run_experiment(config, args):
                 print(f"\n  Retrying {len(timed_out_specs)} timed-out models "
                       f"with {timeout_retry_s}s timeout...")
 
-                def _on_retry_result(r, _cfg=cfg_name, _flags=dynamo_flags):
-                    exp_result = _make_experiment_result(r, _cfg, _flags, retry=True)
+                def _on_retry_result(r, _cfg=cfg_name, _flags=dynamo_flags, _ckw=compile_kwargs):
+                    exp_result = _make_experiment_result(r, _cfg, _flags, compile_kwargs=_ckw, retry=True)
                     _write_result(exp_result)
                     for i, prev in enumerate(all_results):
                         prev_name = prev.get("name", prev.get("model"))
