@@ -1385,10 +1385,16 @@ def _run_post_sweep(python, script, repo_root, results_dir, label, steps_done):
         print("  No changes to corpus.")
     steps_done.append("Corpus diff")
 
-    # Step 5: issue scan
+    # Step 5: issue report (sweep-report generates a reviewable plan)
     file_issues = str(tools_dir / "file_issues.py")
     if Path(file_issues).exists():
-        _run([python, file_issues, "scan", "-v"], "Issue scan", allow_fail=True)
+        explain_file = str(Path(results_dir) / "explain_results.json")
+        identify_file = str(Path(results_dir) / "identify_results.json")
+        if Path(explain_file).exists() and Path(identify_file).exists():
+            _run([python, file_issues, "sweep-report",
+                  "--explain", explain_file,
+                  "--identify", identify_file],
+                 "Issue report", allow_fail=True)
 
     # Step 6: summary
     print(f"\n{'='*70}")
