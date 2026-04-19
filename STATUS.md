@@ -9,7 +9,8 @@
 - **Baseline:** pt2.11 (PyTorch 2.11.0+cu128, Transformers 5.5.3)
 - **Nightly venv:** PyTorch 2.13.0a0+git96c92e0 (source build)
 - **Nightly cron:** Sundays 3 AM ET (`nightly-sweep` job), auto-falls back to source build when pip is stale
-- **Unpushed commits:** ~10+ (Peng pushes manually due to BPF jailer)
+- **Unpushed commits:** 2 (Peng pushes manually due to BPF jailer)
+- **Issue reconcile tool:** `python tools/file_issues.py reconcile --results <path>` — close/update/create issues from sweep results
 
 ## Version Trend (original 468 models, eval fullgraph)
 
@@ -41,14 +42,23 @@ Zero regressions across released versions. 1 regression on HEAD (BltModel compil
 - Issue filing tool with nightly validation and dedup
 - pt2.8 through pt2.11 results published, HEAD sweep complete
 
+## What's Done (April 19)
+
+- Issues #42, #47 closed on GitHub (verified fixed on HEAD)
+- Issues #1, #4, #43 closed (verified fixed on HEAD)
+- Issues #45, #46, #52 updated with HEAD model counts
+- pt2.11 directory renamed from pt2.11-fresh for canonical naming hygiene
+- Phase-aware timeout classification (compare.py + orchestrator.py)
+- Gemma4-text phase validation fix (orchestrator.py)
+- Issue reconcile tool (`tools/file_issues.py reconcile`) — full lifecycle management
+- Web proxy GitHub writes working (body-as-dict pattern)
+
 ## What's Next
 
-- **Close fixed issues** — #42 (PendingUnbackedSymbol) and #47 (compile_error) confirmed fixed on HEAD; Peng to close on GitHub
-- **File BltModel regression** — compile-time blowup (18s → 540s+), new issue needed
 - **CLI design review** — Peng to decide if `nightly` should become `sweep` (deferred)
 - **Hardcoded backend/fullgraph** — design input needed from Peng
-- **Animesh update** — draft ready, send Monday
-- **Git push** — ~10+ unpushed commits + nightly results
+- **Animesh update** — draft ready, send Monday via feedback space
+- **Git push** — ~15+ unpushed commits + nightly results
 
 ## Known Issues
 

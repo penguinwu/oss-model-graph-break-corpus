@@ -132,6 +132,123 @@ CLASSIFIERS = {
     "eager_error": _classify_eager_errors,
 }
 
+
+# ── Graph-break classifier ──────────────────────────────────────────────
+# Maps break_reasons from explain_results.json to issue-level categories.
+# Each rule: (key, issue_number, match_fn(explanation, location) → bool)
+# A model can match multiple rules (appears in multiple issues).
+
+GRAPH_BREAK_RULES = [
+    ("data_dep_shape_ops", 18, lambda exp, loc:
+        "aten.nonzero" in exp or "repeat_interleave.Tensor" in exp
+        or "masked_select" in exp or "unique_consecutive" in exp
+        or "_unique2" in exp),
+    ("non_tensor_output", 28, lambda exp, loc:
+        "return a non-Tensor" in exp),
+    ("local_scalar_dense", 55, lambda exp, loc:
+        "_local_scalar_dense" in exp),
+    ("logging_logger", 10, lambda exp, loc:
+        "logging.Logger" in exp),
+    ("proxy_conversion", 8, lambda exp, loc:
+        "as_proxy()" in exp),
+    ("exception_handler", 12, lambda exp, loc:
+        "no exception handler" in exp),
+    ("lock_context_mgr", 11, lambda exp, loc:
+        "lock" in exp and "context manager" in exp),
+    ("contextvar", 23, lambda exp, loc:
+        "ContextVar" in exp),
+    ("callable_builtin", 20, lambda exp, loc:
+        "callable" in exp and "argument types" in exp),
+    ("setattr_class", 24, lambda exp, loc:
+        "setattr" in exp and "requires_grad" not in exp),
+    ("requires_grad", 19, lambda exp, loc:
+        "requires_grad" in exp),
+    ("function_get", 25, lambda exp, loc:
+        "function.__get__" in exp),
+    ("builtin_lt", 21, lambda exp, loc:
+        "<built-in function lt>" in exp),
+    ("rng_seed", 26, lambda exp, loc:
+        "Generator.seed()" in exp or "manual_seed" in exp),
+    ("uninit_module", 27, lambda exp, loc:
+        "uninitialized nn.Module" in exp),
+    ("import_config_skip", 5, lambda exp, loc:
+        "import_utils.py" in loc or "configuration_utils.py" in loc),
+    ("frame_skip", 2, lambda exp, loc:
+        "output_capturing.py" in loc or "generic.py" in loc),
+    ("find_spec_skip", 7, lambda exp, loc:
+        "find_spec" in exp),
+    ("tensor_item", 56, lambda exp, loc:
+        "Tensor.item()" in exp),
+    ("data_dep_branch", 54, lambda exp, loc:
+        "data-dependent branching" in exp),
+]
+
+MODEL_SPECIFIC_ISSUES = {
+    14: lambda name: "OpenVoice" in name,
+    15: lambda name: "GPTSoVITS" in name,
+    16: lambda name: "MiniCPM" in name,
+    17: lambda name: "Gemma4" in name or "Gemma4Text" in name,
+}
+
+
+def classify_break_reasons(explain_path):
+    """Classify break_reasons from explain_results.json into issue categories.
+
+    Returns:
+        {issue_key: {"issue_number": N|None, "models": {name: [modes]},
+                     "break_count": int, "sample_explanation": str}}
+    """
+    with open(explain_path) as f:
+        data = json.load(f)
+
+    results = defaultdict(lambda: {
+        "issue_number": None, "models": defaultdict(set),
+        "break_count": 0, "sample_explanations": [],
+    })
+
+    for entry in data.get("results", []):
+        if not entry.get("break_reasons"):
+            continue
+        model = entry["name"]
+        mode = entry.get("mode", "eval")
+
+        for br in entry["break_reasons"]:
+            reason_text = br.get("reason", "")
+
+            exp_match = re.search(r'Explanation:\s*(.+?)(?:\n|$)', reason_text)
+            loc_match = re.search(r'at\s+(\S+\.py):\d+', reason_text)
+            explanation = exp_match.group(1).strip() if exp_match else reason_text
+            location = loc_match.group(1) if loc_match else ""
+
+            for key, issue_num, match_fn in GRAPH_BREAK_RULES:
+                if match_fn(explanation, location):
+                    bucket = results[key]
+                    bucket["issue_number"] = issue_num
+                    bucket["models"][model].add(mode)
+                    bucket["break_count"] += 1
+                    if len(bucket["sample_explanations"]) < 2:
+                        bucket["sample_explanations"].append(
+                            {"model": model, "explanation": explanation[:200]})
+
+        for issue_num, name_fn in MODEL_SPECIFIC_ISSUES.items():
+            if name_fn(model):
+                key = f"model_specific_{issue_num}"
+                results[key]["issue_number"] = issue_num
+                results[key]["models"][model].add(mode)
+
+    output = {}
+    for key, bucket in results.items():
+        output[key] = {
+            "issue_number": bucket["issue_number"],
+            "models": {name: sorted(modes)
+                       for name, modes in sorted(bucket["models"].items())},
+            "model_count": len(bucket["models"]),
+            "break_count": bucket["break_count"],
+            "sample_explanations": bucket.get("sample_explanations", []),
+        }
+
+    return output
+
 # ── Label assignment ──────────────────────────────────────────────────────
 
 # Causes that are Dynamo team issues (compiler bugs)
@@ -717,8 +834,8 @@ def build_reconcile_plan(results_path, sweep_results, open_issues):
         "sweep": sweep_meta,
         "results_path": str(results_path),
         "our_issues": len(our_issues),
-        "skipped_issues": len(skipped),
-        "skipped_issue_numbers": [i["number"] for i in skipped],
+        "untagged_issues": len(skipped),
+        "untagged_issue_numbers": [i["number"] for i in skipped],
         "actions": actions,
     }
     return plan
@@ -735,8 +852,8 @@ def print_reconcile_plan(plan):
     print(f"\n{'=' * 70}")
     print(f"RECONCILE PLAN")
     print(f"  Sweep: PyTorch {sweep['pytorch_version']} ({sweep['timestamp']})")
-    print(f"  Scope: {plan['our_issues']} machine-filed issues "
-          f"({plan['skipped_issues']} manually-filed skipped)")
+    print(f"  Scope: {plan['our_issues']} tagged issues "
+          f"({plan['untagged_issues']} untagged — skipped)")
     print(f"{'=' * 70}")
 
     if closes:
@@ -782,9 +899,9 @@ def print_reconcile_plan(plan):
             print(f"  #{iss['number']}: {iss['title']}")
         print()
 
-    if plan["skipped_issues"] > 0:
-        nums = plan["skipped_issue_numbers"]
-        print(f"--- SKIPPED ({plan['skipped_issues']} manually-filed) ---")
+    if plan["untagged_issues"] > 0:
+        nums = plan["untagged_issue_numbers"]
+        print(f"--- SKIPPED ({plan['untagged_issues']} untagged — no marker) ---")
         print(f"  Issues: {', '.join(f'#{n}' for n in sorted(nums))}")
         print()
 
@@ -1049,6 +1166,60 @@ def cmd_reconcile(args):
     print(f"Review, then run: python tools/file_issues.py reconcile --apply {plan_out}\n")
 
 
+def cmd_classify(args):
+    """Classify graph break patterns from explain results."""
+    explain_path = Path(args.explain)
+    if not explain_path.exists():
+        print(f"ERROR: Explain file not found: {explain_path}")
+        sys.exit(1)
+
+    results = classify_break_reasons(explain_path)
+
+    if args.output_json:
+        json.dump(results, sys.stdout, indent=2)
+        print()
+        return
+
+    sorted_results = sorted(results.items(),
+                            key=lambda x: -x[1]["break_count"])
+
+    print(f"\n{'=' * 70}")
+    print(f"GRAPH BREAK CLASSIFICATION")
+    print(f"{'=' * 70}\n")
+
+    total_models = set()
+    for key, info in sorted_results:
+        issue = info["issue_number"]
+        issue_str = f"#{issue}" if issue else "NEW"
+        models = info["models"]
+        total_models.update(models.keys())
+
+        print(f"  [{issue_str:>4s}] {key}")
+        print(f"        {info['model_count']} models, "
+              f"{info['break_count']} breaks")
+        names = list(models.keys())
+        if len(names) <= 6:
+            print(f"        Models: {', '.join(names)}")
+        else:
+            print(f"        Models: {', '.join(names[:5])}... "
+                  f"(+{len(names) - 5} more)")
+        print()
+
+    mapped = [r for r in sorted_results if r[1]["issue_number"] is not None]
+    unmapped = [r for r in sorted_results if r[1]["issue_number"] is None]
+
+    print(f"{'=' * 70}")
+    print(f"SUMMARY: {len(sorted_results)} categories, "
+          f"{len(total_models)} unique models")
+    print(f"  {len(mapped)} mapped to existing issues, "
+          f"{len(unmapped)} need new issues")
+    if unmapped:
+        for key, info in unmapped:
+            print(f"    NEW: {key} ({info['model_count']} models, "
+                  f"{info['break_count']} breaks)")
+    print(f"{'=' * 70}\n")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Scan corpus for errors and manage GitHub issues",
@@ -1091,6 +1262,17 @@ def main():
         "--apply", metavar="PLAN_JSON",
         help="Apply a previously-generated reconcile plan")
 
+    # ── classify ──
+    sub_classify = subparsers.add_parser(
+        "classify",
+        help="Classify graph break patterns from explain results")
+    sub_classify.add_argument(
+        "--explain", required=True, metavar="EXPLAIN_JSON",
+        help="Path to explain_results.json")
+    sub_classify.add_argument(
+        "--json", action="store_true", dest="output_json",
+        help="Output as JSON instead of table")
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -1103,6 +1285,8 @@ def main():
         cmd_file(args)
     elif args.command == "reconcile":
         cmd_reconcile(args)
+    elif args.command == "classify":
+        cmd_classify(args)
 
 
 if __name__ == "__main__":
