@@ -28,7 +28,7 @@ Zero regressions across released versions. 1 regression on HEAD (BltModel compil
 - **56 fixes** (44 eval + 12 train across 39 models), **1 regression** (BltModel) vs pt2.11
 - Fixes: mostly encoder-decoder architectures (Bart, T5, Whisper, Pegasus, etc.)
 - Root cause verified: `copy.deepcopy()` graph break, fixed by PR #179611 (landed April 11 via ghstack)
-- Regression: BltModel compile time 18s → 540s+ timeout (eval + train)
+- Regression: BltModel times out during model creation (135s on tf 5.5.3 → 473s on tf 5.5.4). Compile time itself is unchanged (17s). Transformers issue, not torch.compile.
 - Eval fullgraph: 577/734 (79%), Train: 503/734 (69%)
 - Pip nightly stale since April 7 (CI broken) — sweep used source build from HEAD
 

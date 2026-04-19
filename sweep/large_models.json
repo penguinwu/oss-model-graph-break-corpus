@@ -21,10 +21,11 @@
   },
   "BltModel": {
     "discovered": "2026-04-01",
+    "notes": "Creation time 473s on tf 5.5.4 (was 135s on tf 5.5.3). Compile time unchanged (17s).",
     "resolved_status": "full_graph",
     "source": "hf",
-    "timeout_tier": "large",
-    "wall_time_s": 190.07
+    "timeout_tier": "very_large",
+    "wall_time_s": 493.0
   },
   "ConvNextV2Model": {
     "discovered": "2026-04-02",
