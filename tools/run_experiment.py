@@ -56,6 +56,16 @@ sys.path.insert(0, str(SWEEP_DIR))
 from orchestrator import run_pass, load_checkpoint, log_versions
 
 
+# ── Known torch.compile() kwargs (for validation) ────────────────────────────
+KNOWN_COMPILE_KWARGS = {
+    "fullgraph",
+    "dynamic",
+    "backend",
+    "mode",
+    "options",
+    "disable",
+}
+
 # ── Known dynamo config flags (for validation) ──────────────────────────────
 KNOWN_DYNAMO_FLAGS = {
     "capture_scalar_outputs",
@@ -171,12 +181,22 @@ def validate_config(config, strict=True):
                     errors.append(f"Duplicate config name: '{cfg['name']}'")
                 config_names.add(cfg["name"])
 
+            # Validate compile_kwargs
+            ckw = cfg.get("compile_kwargs", {})
+            if strict:
+                for key in ckw:
+                    if key not in KNOWN_COMPILE_KWARGS:
+                        import difflib
+                        close = difflib.get_close_matches(key, KNOWN_COMPILE_KWARGS, n=1)
+                        suggestion = f" — did you mean '{close[0]}'?" if close else ""
+                        errors.append(f"Unknown compile kwarg '{key}' in "
+                                     f"configs[{i}]{suggestion}")
+
             # Validate dynamo flags
             flags = cfg.get("dynamo_flags", {})
             if strict:
                 for flag_name in flags:
                     if flag_name not in KNOWN_DYNAMO_FLAGS:
-                        # Fuzzy match for common typos
                         import difflib
                         close = difflib.get_close_matches(flag_name, KNOWN_DYNAMO_FLAGS, n=1)
                         suggestion = f" — did you mean '{close[0]}'?" if close else ""
