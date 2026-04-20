@@ -355,7 +355,7 @@ def get_inputs(spec):
         raise ValueError(f"No input specification for {spec['name']}")
 
 
-def run_test(spec, proxy_url=None, mode="eval"):
+def run_test(spec, proxy_url=None, mode="eval", compile_kwargs=None):
     """Full test pipeline for one model."""
     name = spec["name"]
     result = {"name": name, "source": "custom", "category": spec.get("category", "unknown"),
@@ -418,27 +418,53 @@ def run_test(spec, proxy_url=None, mode="eval"):
         result["traceback"] = traceback.format_exc()
         return result
 
-    # Phase 4: graph break analysis (shared methodology with HF/diffusers/timm suites)
-    print(f"PHASE:explain {name}", file=sys.stderr)
-    try:
-        analysis = run_graph_break_analysis(target_fn, inputs, mode=mode)
+    # Phase 4: compile test
+    effective_kwargs = {"fullgraph": True, "backend": "eager"}
+    if compile_kwargs:
+        effective_kwargs.update(compile_kwargs)
+    result["compile_kwargs"] = effective_kwargs
+    uses_fullgraph = effective_kwargs.get("fullgraph", False)
 
-        if analysis["status"] == "ok":
-            result["status"] = "full_graph" if analysis["graph_break_count"] == 0 else "graph_break"
-            result["graph_break_count"] = analysis["graph_break_count"]
-            result["graph_count"] = analysis["graph_count"]
-            result["break_reasons"] = analysis["break_reasons"]
-            result["ops_per_graph"] = analysis["ops_per_graph"]
-            result["compile_times"] = analysis["compile_times"]
-            result["explain_time_s"] = analysis["explain_time_s"]
-        else:
+    if uses_fullgraph:
+        # Graph break analysis (shared methodology with HF/diffusers/timm suites)
+        print(f"PHASE:explain {name}", file=sys.stderr)
+        try:
+            analysis = run_graph_break_analysis(target_fn, inputs, mode=mode)
+
+            if analysis["status"] == "ok":
+                result["status"] = "full_graph" if analysis["graph_break_count"] == 0 else "graph_break"
+                result["graph_break_count"] = analysis["graph_break_count"]
+                result["graph_count"] = analysis["graph_count"]
+                result["break_reasons"] = analysis["break_reasons"]
+                result["ops_per_graph"] = analysis["ops_per_graph"]
+                result["compile_times"] = analysis["compile_times"]
+                result["explain_time_s"] = analysis["explain_time_s"]
+            else:
+                result["status"] = "explain_error"
+                result["error"] = analysis.get("error", "unknown")
+
+        except Exception as e:
             result["status"] = "explain_error"
-            result["error"] = analysis.get("error", "unknown")
-
-    except Exception as e:
-        result["status"] = "explain_error"
-        result["error"] = str(e)
-        result["traceback"] = traceback.format_exc()
+            result["error"] = str(e)
+            result["traceback"] = traceback.format_exc()
+    else:
+        # Non-fullgraph: compile with specified kwargs and run
+        print(f"PHASE:compile {name}", file=sys.stderr)
+        torch._dynamo.reset()
+        try:
+            compiled = torch.compile(target_fn, **effective_kwargs)
+            with ctx:
+                if isinstance(inputs, dict):
+                    compiled(**inputs)
+                elif isinstance(inputs, tuple):
+                    compiled(*inputs)
+                else:
+                    compiled(inputs)
+            result["status"] = "success"
+        except Exception as e:
+            result["status"] = "error"
+            result["error"] = str(e)[:500]
+            result["error_type"] = type(e).__name__
 
     result["wall_time_s"] = round(time.time() - t0, 1)
     return result
@@ -458,9 +484,14 @@ def main():
     # Compatibility args for sweep runner integration
     parser.add_argument("--pass-num", type=int, default=1, help="Sweep pass number (ignored, for compatibility)")
     parser.add_argument("--device", type=str, default="cpu", help="Device (ignored, for compatibility)")
+    parser.add_argument("--compile-kwargs", default=None,
+                        help="JSON dict of torch.compile() kwargs (backend, fullgraph, etc.)")
+    parser.add_argument("--dynamo-flags", default=None,
+                        help="JSON dict of torch._dynamo.config flags (ignored, for compatibility)")
     args = parser.parse_args()
 
     proxy_url = None if args.no_proxy else args.proxy
+    compile_kwargs = json.loads(args.compile_kwargs) if args.compile_kwargs else None
 
     # Add this directory to path so models.py is importable
     sys.path.insert(0, str(Path(__file__).parent))
@@ -499,7 +530,7 @@ def main():
             print(f"Testing: {spec['name']} [{mode}]", file=sys.stderr)
             print(f"{'='*60}", file=sys.stderr)
 
-            result = run_test(spec, proxy_url, mode=mode)
+            result = run_test(spec, proxy_url, mode=mode, compile_kwargs=compile_kwargs)
             results.append(result)
 
             status = result.get("status", "unknown")
