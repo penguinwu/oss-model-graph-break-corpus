@@ -4,19 +4,32 @@ How to interpret sweep output, model variants, the corpus format, and the browsa
 
 ## Status values
 
-Every model-mode combination gets one of these statuses:
+Status values depend on the compile configuration used.
+
+### Default mode (`fullgraph=True`, `backend="eager"`)
 
 | Status | Meaning |
 |--------|---------|
 | `full_graph` | Compiled successfully with `fullgraph=True` — no graph breaks |
 | `graph_break` | Compiled but with graph breaks (Dynamo falls back to eager for some subgraphs) |
-| `error` | Compilation failed (Dynamo internal error, unsupported op, etc.) |
+| `compile_error` | Compilation failed due to an infrastructure error (not a graph break) |
+
+### Generalized mode (custom `compile_kwargs`)
+
+| Status | Meaning |
+|--------|---------|
+| `success` | Compiled and ran without errors |
+| `error` | Compilation or execution raised an exception |
+
+### Common to all modes
+
+| Status | Meaning |
+|--------|---------|
 | `timeout` | Exceeded the per-model time limit (default 180s) |
 | `create_error` | Model failed to instantiate before compilation |
 | `eager_error` | Model failed during eager (non-compiled) execution |
-| `cuda_error` | CUDA error during eager execution |
 
-The first three are compiler quality signals. The last three are infrastructure issues (the model itself is broken, not the compiler).
+Compiler quality signals are `full_graph`/`graph_break`/`success`/`error`. Infrastructure statuses (`timeout`, `create_error`, `eager_error`) indicate the model itself has issues, not the compiler.
 
 ## Model variants
 

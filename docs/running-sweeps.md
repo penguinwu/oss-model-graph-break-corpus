@@ -125,7 +125,7 @@ python3 tools/validate.py
 ## Conventions
 
 - Batch size must be >= 2 (PyTorch specializes on 0 and 1)
-- Backend is always `eager` (tests Dynamo tracing, not Inductor codegen)
+- Default backend is `eager` with `fullgraph=True` (tests Dynamo tracing). Other backends (e.g., `aot_eager`, `inductor`) can be tested via [experiments](running-experiments.md) with custom `compile_kwargs`
 - Never use 0 or 1 as input dimensions for dynamic shape testing
 - Default sources: `hf diffusers custom` (TIMM/dynamic require explicit request)
 

@@ -42,7 +42,7 @@ Prints a commented JSON config to stdout. No arguments.
 python3 tools/run_experiment.py validate my-config.json
 ```
 
-Validates against the schema. Catches missing fields, invalid sources, and unknown dynamo flags (with typo suggestions — e.g., `"capture_scaler_outputs"` suggests `"capture_scalar_outputs"`).
+Validates against the schema. Catches missing fields, invalid sources, unknown dynamo flags, and unknown `compile_kwargs` keys (with typo suggestions — e.g., `"bakend"` suggests `"backend"`).
 
 ### `run <config>` — run an experiment
 
@@ -104,18 +104,30 @@ Each config is an A/B variant. The first config is treated as baseline in the su
 "configs": [
   {
     "name": "baseline",
+    "compile_kwargs": {},
     "dynamo_flags": {}
   },
   {
-    "name": "capture_scalar_outputs",
-    "dynamo_flags": {
-      "capture_scalar_outputs": true
-    }
+    "name": "aot-eager",
+    "compile_kwargs": {"backend": "aot_eager", "fullgraph": false},
+    "dynamo_flags": {}
   }
 ]
 ```
 
-`dynamo_flags` are applied via `torch._dynamo.config` before compilation. Empty `{}` means default settings.
+**`compile_kwargs`** are passed directly to `torch.compile()`. When omitted or empty, defaults to `{"fullgraph": true, "backend": "eager"}` (the standard graph break detection mode).
+
+**Known compile kwargs:** `backend`, `fullgraph`, `dynamic`, `mode`, `options`, `disable`.
+
+Common configurations:
+
+| Use case | `compile_kwargs` |
+|----------|-----------------|
+| Graph break detection (default) | `{}` or `{"fullgraph": true, "backend": "eager"}` |
+| Backend error detection | `{"backend": "aot_eager", "fullgraph": false}` |
+| Inductor crash detection | `{"backend": "inductor", "fullgraph": false}` |
+
+**`dynamo_flags`** are applied via `torch._dynamo.config` before compilation. Empty `{}` means default settings.
 
 **Known dynamo flags:** `capture_scalar_outputs`, `capture_dynamic_output_shape_ops`, `automatic_dynamic_shapes`, `assume_static_by_default`, `specialize_int`, `suppress_errors`, `verbose`, `cache_size_limit`, `guard_nn_modules`, `inline_inbuilt_nn_modules`, `optimize_ddp`.
 
@@ -144,11 +156,21 @@ experiments/results/my-test-20260416-193000/
 ### `results.jsonl`
 
 ```json
-{"model": "GPT2Model", "config": "baseline", "mode": "eval", "status": "full_graph", "wall_time_s": 12.3}
-{"model": "GPT2Model", "config": "cso", "mode": "eval", "status": "full_graph", "wall_time_s": 11.8, "dynamo_flags": {"capture_scalar_outputs": true}}
+{"model": "GPT2Model", "config": "baseline", "mode": "eval", "status": "full_graph", "wall_time_s": 12.3, "compile_kwargs": {"fullgraph": true, "backend": "eager"}}
+{"model": "GPT2Model", "config": "aot-eager", "mode": "eval", "status": "success", "wall_time_s": 11.8, "compile_kwargs": {"fullgraph": false, "backend": "aot_eager"}}
 ```
 
-Status values: `full_graph`, `graph_break`, `error`, `timeout`.
+Status values depend on the compile configuration:
+
+| Status | When | Meaning |
+|--------|------|---------|
+| `full_graph` | `fullgraph=True` | Compiled successfully — no graph breaks |
+| `graph_break` | `fullgraph=True` | Compiled but with graph breaks |
+| `success` | `fullgraph=False` | Compiled and ran without errors |
+| `error` | `fullgraph=False` | Compilation or execution raised an exception |
+| `timeout` | any | Exceeded per-model time limit |
+| `create_error` | any | Model failed to instantiate |
+| `eager_error` | any | Model failed during eager execution |
 
 ## Recipes
 
@@ -187,6 +209,21 @@ python3 tools/run_experiment.py merge \
     --into sweep_results/pt2.11/
 ```
 
+### Test a backend on a random sample
+
+```json
+{
+  "name": "aot-eager-sample",
+  "description": "Does aot_eager surface errors beyond graph breaks?",
+  "models": {"source": "sample", "size": 50, "seed": 42},
+  "configs": [
+    {"name": "default", "compile_kwargs": {}, "dynamo_flags": {}},
+    {"name": "aot-eager", "compile_kwargs": {"backend": "aot_eager", "fullgraph": false}, "dynamo_flags": {}}
+  ],
+  "settings": {"device": "cuda", "modes": ["eval"], "workers": 4, "timeout_s": 180}
+}
+```
+
 ### Quick random sample for smoke testing
 
 ```json
@@ -203,7 +240,7 @@ python3 tools/run_experiment.py merge \
 
 Each model is instantiated from its HuggingFace config class (e.g., `GPT2Config()`) with **random weights** — no pretrained weights are downloaded. The model architecture is identical to the real thing.
 
-The model is compiled with `torch.compile(model, fullgraph=True)` and run with a small input (batch_size=2, short sequence lengths). Graph break detection, guard analysis, and Dynamo tracing are all real — only the weights are random, which does not affect compilation behavior.
+By default, the model is compiled with `torch.compile(model, fullgraph=True, backend="eager")` for graph break detection. With custom `compile_kwargs`, any `torch.compile()` configuration can be tested (e.g., `backend="aot_eager"` or `backend="inductor"`). Models are run with a small input (batch_size=2, short sequence lengths). Graph break detection, guard analysis, and Dynamo tracing are all real — only the weights are random, which does not affect compilation behavior.
 
 Each model runs in an isolated subprocess with its own process group, so crashes and timeouts don't affect other models.
 
