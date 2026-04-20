@@ -23,8 +23,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
 CORPUS_PATH = os.path.join(REPO_ROOT, "corpus", "corpus.json")
 
 
-def load_corpus():
-    with open(CORPUS_PATH) as f:
+def load_corpus(path=None):
+    with open(path or CORPUS_PATH) as f:
         return json.load(f)
 
 
@@ -216,9 +216,10 @@ def main():
     parser.add_argument("--mode-diff", action="store_true", help="Show models that differ between eval and train")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument("--output", "-o", help="Write matching models to JSON file (for targeted sweeps)")
+    parser.add_argument("--corpus", help=f"Path to corpus.json (default: {CORPUS_PATH})")
     args = parser.parse_args()
 
-    corpus = load_corpus()
+    corpus = load_corpus(args.corpus)
 
     if args.compare_dynamic:
         compare_dynamic(corpus, mode=args.mode)
