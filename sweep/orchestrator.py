@@ -339,6 +339,7 @@ def run_pass(python_bin, specs, pass_num, device, modes, workers, timeout_s,
     max_workers = workers
     current_max = max_workers
     gpu_degraded = False
+    pass_start_time = time.time()
 
     try:
         while pending or active:
@@ -361,7 +362,7 @@ def run_pass(python_bin, specs, pass_num, device, modes, workers, timeout_s,
                     if ckpt_fh:
                         ckpt_fh.write(json.dumps(result) + "\n")
                         ckpt_fh.flush()
-                    _print_progress(completed, total, result)
+                    _print_progress(completed, total, result, pass_start_time)
                     del active[pid]
 
             # ── 2. Handle timed-out workers with escalating kill ──
@@ -389,7 +390,7 @@ def run_pass(python_bin, specs, pass_num, device, modes, workers, timeout_s,
                         if ckpt_fh:
                             ckpt_fh.write(json.dumps(result) + "\n")
                             ckpt_fh.flush()
-                        _print_progress(completed, total, result)
+                        _print_progress(completed, total, result, pass_start_time)
                         del active[pid]
                     elif elapsed > handle.timeout_s + TERM_GRACE + KILL_GRACE + ABANDON_GRACE:
                         # Truly stuck — abandon and move on
@@ -402,7 +403,7 @@ def run_pass(python_bin, specs, pass_num, device, modes, workers, timeout_s,
                         if ckpt_fh:
                             ckpt_fh.write(json.dumps(result) + "\n")
                             ckpt_fh.flush()
-                        _print_progress(completed, total, result)
+                        _print_progress(completed, total, result, pass_start_time)
                         del active[pid]
                         print(f"  ✗ Abandoned zombie: {handle.spec['name']} "
                               f"({handle.mode})", flush=True)
@@ -466,7 +467,7 @@ def run_pass(python_bin, specs, pass_num, device, modes, workers, timeout_s,
                     if ckpt_fh:
                         ckpt_fh.write(json.dumps(result) + "\n")
                         ckpt_fh.flush()
-                    _print_progress(completed, total, result)
+                    _print_progress(completed, total, result, pass_start_time)
 
             # ── 6. Poll interval ──
             if active:
@@ -496,7 +497,19 @@ def run_pass(python_bin, specs, pass_num, device, modes, workers, timeout_s,
     return results
 
 
-def _print_progress(completed, total, result):
+def _format_duration(seconds):
+    """Format seconds as human-readable duration."""
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    elif seconds < 3600:
+        return f"{seconds / 60:.0f}m{seconds % 60:02.0f}s"
+    else:
+        h = int(seconds // 3600)
+        m = int((seconds % 3600) // 60)
+        return f"{h}h{m:02d}m"
+
+
+def _print_progress(completed, total, result, start_time=None):
     """Print progress line for each completed model."""
     name = result.get("name", "?")
     source = result.get("source", "?")
@@ -507,6 +520,8 @@ def _print_progress(completed, total, result):
     status_str = {
         "full_graph": "FULL_GRAPH",
         "graph_break": "BREAK",
+        "success": "SUCCESS",
+        "error": "ERROR",
         "ok": "OK",
         "pass": "PASS",
         "mismatch": "MISMATCH",
@@ -525,8 +540,16 @@ def _print_progress(completed, total, result):
     if result.get("phase_at_timeout"):
         extra = f" (in {result['phase_at_timeout']})"
 
-    print(f"  [{completed:>4}/{total:>4}] {source}/{name:<30} {mode:<6} "
-          f"{status_str:<12} {wall:>5.1f}s{extra}", flush=True)
+    pct = 100 * completed / total if total else 0
+    timing = ""
+    if start_time:
+        elapsed = time.time() - start_time
+        if completed > 0:
+            remaining = (elapsed / completed) * (total - completed)
+            timing = f"  [{_format_duration(elapsed)} elapsed, ~{_format_duration(remaining)} remaining]"
+
+    print(f"  [{completed:>4}/{total:>4} {pct:>3.0f}%] {source}/{name:<30} {mode:<6} "
+          f"{status_str:<12} {wall:>5.1f}s{extra}{timing}", flush=True)
 
 
 def log_versions(python_bin):
