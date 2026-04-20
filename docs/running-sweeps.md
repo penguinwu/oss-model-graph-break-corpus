@@ -24,6 +24,28 @@ python3 tools/run_experiment.py sweep \
     --source hf diffusers custom
 ```
 
+## Smoke test on a random subset
+
+Don't want to run the full corpus? Use the experiment config with a `sample` source — pick N random models with a deterministic seed, so the same N models are sampled every time. Useful for fast validation of a PyTorch build, a custom backend, or compiler flags before committing to a full sweep.
+
+```bash
+# 1) Write a one-off config file
+cat > /tmp/quick-sample.json <<'EOF'
+{
+  "name": "quick-sample",
+  "description": "Random 20-model sample to validate a build",
+  "models": {"source": "sample", "size": 20, "seed": 42},
+  "configs": [{"name": "baseline", "compile_kwargs": {"fullgraph": true}}]
+}
+EOF
+
+# 2) Run it
+python3 tools/run_experiment.py experiment /tmp/quick-sample.json \
+    --python ~/envs/torch-test/bin/python
+```
+
+Same `seed` → same 20 models, every time. Bump `size` (e.g. `50`, `100`) for tighter signal, drop it for a faster smoke. See [Running Experiments](running-experiments.md) for the full config schema and other model sources (`list`, `corpus_filter`, `new_since`).
+
 ## Two-pass architecture
 
 Sweeps run in two passes:

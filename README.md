@@ -43,7 +43,7 @@ python3 tools/reproduce.py BartModel --explain
 |-------|-------------|
 | [Getting Started](docs/getting-started.md) | Install, browse, reproduce your first graph break |
 | [Running Sweeps](docs/running-sweeps.md) | Test your own PyTorch version against the full corpus |
-| [Running Experiments](docs/running-experiments.md) | Config-driven flag testing, ablations, model subsets |
+| [Running Experiments](docs/running-experiments.md) | Config-driven flag testing, ablations, **reproducible random samples** |
 | [Understanding Results](docs/understanding-results.md) | Interpret statuses, model variants, corpus format, dashboard |
 | [Issue Management](docs/issue-management.md) | Post-sweep graph break classification and GitHub issue tracking |
 | [Contributing](docs/contributing.md) | Add models, fix graph breaks, architecture reference |
