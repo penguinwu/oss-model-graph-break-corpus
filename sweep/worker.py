@@ -950,6 +950,13 @@ def _reduce_model_size(config):
 
     Graph break behavior is determined by the model architecture (ops used),
     not the model depth/width. 2 layers is sufficient for detection.
+
+    NOTE: Some configs encode the layer block layout in *multiple* parallel
+    fields (e.g. Zamba2 has both `layers_block_type` and `hybrid_layer_ids`,
+    Jamba has `layers_block_type` + `attn_layer_period` + `expert_layer_period`).
+    Reducing num_hidden_layers + truncating layers_block_type here will leave
+    those parallel fields stale and out of sync. Sync them in `_fix_config`
+    AFTER this function runs (search "hybrid_layer_ids" for the Zamba2 example).
     """
     # Reduce layers (skip non-int values like tuples)
     for attr in ("num_hidden_layers", "num_layers", "n_layer", "n_layers",
@@ -3028,6 +3035,7 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
     except Exception as e:
         result["status"] = "create_error"
         result["error"] = str(e)[:500]
+        result["error_type"] = type(e).__name__
         result["create_time_s"] = round(time.perf_counter() - t_start, 3)
         return result
     result["create_time_s"] = round(time.perf_counter() - t_start, 3)
@@ -3266,6 +3274,7 @@ def run_validate(spec, device, mode, dynamic=False):
     except Exception as e:
         result["status"] = "create_error"
         result["error"] = str(e)[:500]
+        result["error_type"] = type(e).__name__
         return result
     result["create_time_s"] = round(time.perf_counter() - t_start, 3)
 
@@ -3287,6 +3296,7 @@ def run_validate(spec, device, mode, dynamic=False):
     except Exception as e:
         result["status"] = "eager_error"
         result["error"] = f"shape_a eager: {str(e)[:400]}"
+        result["error_type"] = type(e).__name__
         _cleanup(model, device)
         return result
 
@@ -3307,6 +3317,7 @@ def run_validate(spec, device, mode, dynamic=False):
     except Exception as e:
         result["status"] = "compile_error"
         result["error"] = str(e)[:500]
+        result["error_type"] = type(e).__name__
         _cleanup(model, device)
         return result
 
@@ -3317,6 +3328,7 @@ def run_validate(spec, device, mode, dynamic=False):
     except Exception as e:
         result["status"] = "create_error_b"
         result["error"] = f"shape_b create: {str(e)[:400]}"
+        result["error_type"] = type(e).__name__
         _cleanup(model, device)
         return result
 
@@ -3331,6 +3343,7 @@ def run_validate(spec, device, mode, dynamic=False):
     except Exception as e:
         result["status"] = "compiled_shape_b_error"
         result["error"] = str(e)[:500]
+        result["error_type"] = type(e).__name__
         _cleanup(model, device)
         return result
 
@@ -3347,6 +3360,7 @@ def run_validate(spec, device, mode, dynamic=False):
     except Exception as e:
         result["status"] = "eager_shape_b_error"
         result["error"] = str(e)[:500]
+        result["error_type"] = type(e).__name__
         _cleanup(model, device)
         return result
 
@@ -3386,6 +3400,7 @@ def run_explain(spec, device, mode):
     except Exception as e:
         result["status"] = "create_error"
         result["error"] = str(e)[:500]
+        result["error_type"] = type(e).__name__
         return result
 
     if mode == "train":
