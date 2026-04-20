@@ -896,6 +896,9 @@ def _fix_config(model_name, config):
     # Zamba2's HybridMambaAttentionDynamicCache.get_seq_length accesses
     # self.transformer_layers[0] which is empty if no hybrid layers exist.
     # Default has 54 layers with first hybrid at index 6 — need at least 7 layers.
+    # Also: hybrid_layer_ids is a separate config field that Zamba2MLP uses to build
+    # layer_dic — after reducing num_hidden_layers we must keep it consistent with
+    # layers_block_type or forward() raises KeyError on the new hybrid index.
     if "zamba2" in name_lower:
         lbt = getattr(config, "layers_block_type", None)
         if lbt:
@@ -908,6 +911,9 @@ def _fix_config(model_name, config):
                     needed = full_hybrid_idxs[0] + 1  # include first hybrid
                     config.num_hidden_layers = needed
                     config.layers_block_type = list(full_lbt[:needed])
+                    hybrid_idxs = [full_hybrid_idxs[0]]
+            if hasattr(config, "hybrid_layer_ids"):
+                config.hybrid_layer_ids = hybrid_idxs
 
     # --- xLSTM: num_blocks must match num_hidden_layers after reduction ---
     if "xlstm" in name_lower:
@@ -3045,6 +3051,7 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
                 model(**inputs_dict)
     except Exception as e:
         err_str = str(e)
+        err_type = type(e).__name__
         # Image token mismatch: retry with correct token count
         retried = False
         if "Image features and image tokens do not match" in err_str and inputs_dict:
@@ -3094,6 +3101,7 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
                     except Exception as e2:
                         result["status"] = "eager_error"
                         result["error"] = str(e2)[:500]
+                        result["error_type"] = type(e2).__name__
                         result["eager_time_s"] = round(time.perf_counter() - t_eager, 3)
                         result["image_token_retry_failed"] = need_features
                         _cleanup(model, device)
@@ -3101,6 +3109,7 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
         if not retried:
             result["status"] = "eager_error"
             result["error"] = err_str[:500]
+            result["error_type"] = err_type
             result["eager_time_s"] = round(time.perf_counter() - t_eager, 3)
             _cleanup(model, device)
             return result
