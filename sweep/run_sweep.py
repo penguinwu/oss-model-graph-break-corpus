@@ -863,6 +863,136 @@ def run_validation(args):
                   f"max_diff={r.get('max_diff','?')} — {r.get('compare_details','')}")
 
 
+def run_correctness(args):
+    """Run Phase 3 correctness sweep (pass 4): eager vs compiled forward output comparison.
+
+    Default source is corpus.json filtered to source=hf with eval.fullgraph_ok=True.
+    Eval mode only (train is V2 per design Section 8).
+    """
+    python_bin = _resolve_python(args)
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Load specs
+    if args.from_file:
+        with open(args.from_file) as f:
+            data = json.load(f)
+        # Two formats supported: corpus.json (under "models") or identify_results.json (list/results)
+        if isinstance(data, dict) and "models" in data:
+            entries = data["models"]
+        else:
+            entries = data if isinstance(data, list) else data.get("results", [])
+        specs = []
+        seen = set()
+        for e in entries:
+            if e.get("source") != "hf":
+                continue
+            eval_block = e.get("eval", {})
+            # corpus.json uses status="full_graph"; identify results use the same
+            status = eval_block.get("status") if isinstance(eval_block, dict) else None
+            if status != "full_graph":
+                continue
+            if e["name"] in seen:
+                continue
+            seen.add(e["name"])
+            spec = {"name": e["name"], "source": e["source"]}
+            for k in ["hf_class", "hf_config", "input_type", "constructor_args", "inputs"]:
+                if k in e:
+                    spec[k] = e[k]
+            specs.append(spec)
+        print(f"Loaded {len(specs)} HF clean models from {args.from_file}")
+    elif args.models:
+        with open(args.models) as f:
+            specs = json.load(f)
+        print(f"Loaded {len(specs)} models from {args.models}")
+    else:
+        # Default: read corpus.json
+        with open(CORPUS_FILE) as f:
+            data = json.load(f)
+        specs = []
+        seen = set()
+        for e in data.get("models", []):
+            if e.get("source") != "hf":
+                continue
+            if e.get("eval", {}).get("status") != "full_graph":
+                continue
+            if e["name"] in seen:
+                continue
+            seen.add(e["name"])
+            specs.append({"name": e["name"], "source": e["source"]})
+        print(f"Loaded {len(specs)} HF clean models from {CORPUS_FILE}")
+
+    if args.limit:
+        specs = specs[:args.limit]
+        print(f"Limited to {len(specs)} models")
+
+    correctness_modes = ["eval"]  # MVP: eval-only (train is V2)
+    print(f"Device: {args.device}, Workers: {args.workers}, "
+          f"Modes: {correctness_modes}, Timeout: {args.timeout}s")
+    print()
+
+    # Checkpoint for resume
+    ckpt_file = str(output_dir / "correctness_checkpoint.jsonl")
+    resume_from = {}
+    if args.resume and os.path.exists(ckpt_file):
+        resume_from = load_checkpoint(ckpt_file)
+        print(f"Loaded {len(resume_from)} completed results from checkpoint")
+
+    print(f"{'=' * 70}")
+    print(f"CORRECTNESS: Eager vs compiled forward — {len(specs)} models × {len(correctness_modes)} modes")
+    print(f"{'=' * 70}")
+
+    t_start = time.perf_counter()
+    results = run_pass(
+        python_bin, specs, pass_num=4, device=args.device, modes=correctness_modes,
+        workers=args.workers, timeout_s=args.timeout,
+        checkpoint_file=ckpt_file, resume_from=resume_from,
+    )
+    elapsed = time.perf_counter() - t_start
+
+    # Save results
+    output = {
+        "metadata": {
+            "pass": "correctness",
+            "device": args.device,
+            "modes": correctness_modes,
+            "workers": args.workers,
+            "timeout_s": args.timeout,
+            "total_time_s": round(elapsed, 1),
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "python": python_bin,
+            "tolerance": {"atol": 1e-6, "rtol": 1e-4, "dtype": "fp32"},
+        },
+        "results": results,
+    }
+    out_file = output_dir / "correctness_results.json"
+    with open(out_file, "w") as f:
+        json.dump(output, f, indent=2)
+
+    # Summarize
+    by_status = {}
+    for r in results:
+        s = r.get("status", "unknown")
+        by_status[s] = by_status.get(s, 0) + 1
+
+    print(f"\nCorrectness complete: {elapsed:.1f}s")
+    for status, count in sorted(by_status.items()):
+        print(f"  {status}: {count}")
+    print(f"Saved to {out_file}")
+
+    # Print divergences sorted by severity_ratio (highest first)
+    divergent = [r for r in results if r.get("status") in (
+        "divergence", "nan_inf_introduced", "shape_mismatch", "dtype_mismatch")]
+    if divergent:
+        divergent.sort(key=lambda r: r.get("severity_ratio", 0), reverse=True)
+        print(f"\nDIVERGENCES ({len(divergent)}, sorted by severity):")
+        for r in divergent[:50]:
+            print(f"  [{r.get('status')}] {r['source']}/{r['name']}: "
+                  f"max_diff={r.get('max_diff','?')}, "
+                  f"severity={r.get('severity_ratio','?')} — "
+                  f"{r.get('first_divergence', '')}")
+
+
 def check_env(args):
     """Pre-sweep environment validation: check installed versions against corpus."""
     python_bin = _resolve_python(args)
@@ -1203,6 +1333,21 @@ def main():
     validate_parser.add_argument("--limit", type=int,
                                  help="Max models to validate")
 
+    # ── correctness subcommand (Phase 3) ──
+    correctness_parser = subparsers.add_parser(
+        "correctness", parents=[global_parent, run_parent],
+        help="Eager vs compiled forward output comparison",
+        description="Phase 3: compare eager and compiled forward outputs on clean models. "
+                    "Defaults to corpus.json HF eval fullgraph_ok subset.",
+    )
+    correctness_input = correctness_parser.add_mutually_exclusive_group()
+    correctness_input.add_argument("--from", dest="from_file",
+                                   help="Source JSON (corpus.json or identify_results.json)")
+    correctness_input.add_argument("--models",
+                                   help="JSON file with explicit model list")
+    correctness_parser.add_argument("--limit", type=int,
+                                    help="Max models to test")
+
     args = parser.parse_args()
 
     # Default to 'sweep' if no subcommand given
@@ -1221,6 +1366,8 @@ def main():
         run_explain(args)
     elif args.command == "validate":
         run_validation(args)
+    elif args.command == "correctness":
+        run_correctness(args)
 
 
 if __name__ == "__main__":

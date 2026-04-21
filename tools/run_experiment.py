@@ -813,6 +813,12 @@ def run_validate_shapes_command(args):
     sweep_mod.run_validation(args)
 
 
+def run_correctness_command(args):
+    """Run Phase 3 correctness sweep (eager vs compiled forward output comparison)."""
+    sweep_mod = _import_sweep_module()
+    sweep_mod.run_correctness(args)
+
+
 def run_selftest_command(args):
     """Run integration smoke test on a few models."""
     sweep_mod = _import_sweep_module()
@@ -1841,6 +1847,26 @@ def main():
                                help="Dynamic shapes (default: all)")
     sub_valshapes.add_argument("--limit", type=int)
 
+    # ── correctness (Phase 3) ─────────────────────────────────────────────
+    sub_correct = subparsers.add_parser(
+        "correctness",
+        help="Eager vs compiled forward output comparison (Phase 3)",
+        description="Phase 3: compare eager and compiled forward outputs on clean models. "
+                    "Defaults to corpus.json HF eval fullgraph_ok subset. "
+                    "Surfaces compiler-introduced numerical errors — every divergence is signal.",
+    )
+    correct_input = sub_correct.add_mutually_exclusive_group()
+    correct_input.add_argument("--from", dest="from_file",
+                               help="Source JSON (corpus.json or identify_results.json)")
+    correct_input.add_argument("--models",
+                               help="JSON file with explicit model list")
+    sub_correct.add_argument("--device", default="cuda", choices=["cpu", "cuda"])
+    sub_correct.add_argument("--workers", type=int, default=4)
+    sub_correct.add_argument("--timeout", type=int, default=180)
+    sub_correct.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
+    sub_correct.add_argument("--resume", action="store_true")
+    sub_correct.add_argument("--limit", type=int)
+
     # ── nightly ───────────────────────────────────────────────────────────
     sub_nightly = subparsers.add_parser(
         "nightly",
@@ -1954,6 +1980,10 @@ def main():
 
     if args.command == "validate-shapes":
         run_validate_shapes_command(args)
+        return
+
+    if args.command == "correctness":
+        run_correctness_command(args)
         return
 
     if args.command == "selftest":
