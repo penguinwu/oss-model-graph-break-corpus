@@ -1,8 +1,8 @@
 # Design Doc: OSS Model Compiler Quality Corpus
 
-**Revision:** 34
+**Revision:** 35
 **Owner:** Peng Wu
-**Date:** 2026-04-05
+**Date:** 2026-04-20
 **Status:** Design Review
 **Google Drive:** [OSS Model Compiler Quality Corpus](https://drive.google.com/drive/folders/1r74REnQBKK6ssoF6dS9mcbBrIZ8hrtBd)
 
@@ -518,13 +518,85 @@ This enables a feedback loop: Dynamo engineers or users can file issues against 
 
 **Priority:** After initial corpus + version trend data is complete.
 
-## 8. Open Questions
+## 8. Phase 3: Correctness Testing
+
+**Goal.** Surface compiler-introduced numerical errors by comparing eager vs compiled forward outputs across the corpus. Every divergence is a signal worth filing — not a pass/fail certification.
+
+**Scope (MVP).** HF Transformers (~352 fullgraph_ok models from PT 2.10), eval mode, fp32, `backend="eager"`. Diffusers, train mode, `backend="inductor"`, dtype matrix → V2.
+
+### 8.1 Methodology
+
+For each model: run eager forward, reset Dynamo state, compile + run with the same input and seed. Compare outputs with HF's recursive walk over `ModelOutput`/dict/tuple/list, applying field-type rules:
+
+| Field type | Action |
+|------------|--------|
+| Floating-point tensor | `torch.testing.assert_close(rtol, atol)` |
+| Integer/bool tensor | Skip (argmax-derived; tiny upstream diffs flip results) |
+| 0-dim tensor (loss) | Skip in forward; compare in V2 backward-grad pass |
+| `None` | Skip |
+| `Cache` objects (`DynamicCache`, `HybridCache`) | Skip |
+| `tuple`/`list`/`dict`/`ModelOutput` | Recurse |
+
+NaN handling: skip if both `nan`; strip `nan`/`-inf` before max-diff.
+
+**Tolerance table** (adopted verbatim from HF `test_modeling_common.py:194-222`):
+
+| dtype | atol | rtol |
+|-------|------|------|
+| fp32 (CUDA) | 1e-6 | 1e-4 |
+| fp16 (CUDA) | 5e-3 | 5e-3 |
+| bf16 (CUDA) | 1e-2 | 1e-2 (SDPA: 3e-2) |
+
+MVP runs fp32 only; dtype matrix is V2.
+
+**Determinism helpers** (from `transformers`): `set_seed(42)`, `set_config_for_less_flaky_test(config)`, `set_model_for_less_flaky_test(model)`.
+
+### 8.2 Failure Classification (for triage, not grading)
+
+| Class | Definition |
+|-------|------------|
+| `match` | Within `(atol, rtol)` |
+| `divergence` | Past `(atol, rtol)`. Severity = continuous `max_diff / atol` ratio — sort triage queue by ratio, do **not** pre-bucket into "small" vs "large." |
+| `nan_inf_introduced` | Compiled output has NaN/Inf, eager doesn't |
+| `shape_mismatch` | Compiled output shape ≠ eager |
+| `dtype_mismatch` | Compiled output dtype ≠ eager |
+
+**One `divergence` class, not two.** Splitting into `numerical_drift` vs `divergence` at an arbitrary threshold (e.g., 10× vs 100× tolerance) silently re-introduces grading — implying "drift" is acceptable. Continuous severity preserves the full distribution and lets bimodality (if it exists) emerge from the data, not from our prior. Every divergence is a signal worth filing; severity decides which to file first, never which to accept.
+
+### 8.3 Execution
+
+- **When:** After identify pass (need known-clean candidate set)
+- **Subset:** Models with `eval.fullgraph_ok=True` in corpus.json (~352 of 460 for HF v2.10)
+- **Worker:** `run_correctness(spec, device, mode)` in `worker.py`, dispatched via `--pass-num 4`
+- **Wall budget:** Same 180s default; large-model tier inherits from issue #57
+- **Storage:** New `correctness/` directory at repo root, schema mirrors `corpus.json`
+- **Diff dump:** Default off; opt-in via `--dump-diffs` flag (sizing: ~100 MB single-mode, accumulates across modes/backends/PT versions)
+
+### 8.4 Why Not Pre-existing `run_validate`?
+
+`run_validate` does a different test: dynamic-shape correctness (eager at shape A vs compiled-dynamic at shape B). Phase 3 is the simpler base case: same shape, eager vs compiled, does the answer match? Both are needed.
+
+### 8.5 Smoke Validation (2026-04-20)
+
+5/5 known-clean models matched on PT 2.11.0:
+
+| Model | Status | max_diff | Compared fields | Skipped |
+|-------|--------|---------:|-----------------|---------|
+| BertModel | match | 0.0 | last_hidden_state, pooler_output | — |
+| GPT2Model | match | 0.0 | last_hidden_state | Cache |
+| ViTModel | match | 0.0 | pooler_output, last_hidden_state | — |
+| ResNetModel | match | 0.0 | last_hidden_state, pooler_output | — |
+| T5GemmaModel | match | 1.43e-6 | encoder_last_hidden_state, last_hidden_state, decoder_hidden_states[0] | Cache |
+
+Full design lives in `design/phase3-correctness.md`.
+
+## 9. Open Questions
 
 1. **Diffusers constructor args:** Can we auto-discover minimal constructor args, or need per-model configs?
 2. **TorchBench overlap:** Does the team already have fullgraph pass/fail data from CI?
 3. **Multimodal models:** 44 HF composite models skipped — some (Llava, CLIP) are high-usage. Worth adding?
 
-## 9. Prior Art
+## 10. Prior Art
 
 - **Repo:** https://github.com/jansel/pytorch-jit-paritybench
 - **Dashboard:** [pytorch/pytorch#93667](https://github.com/pytorch/pytorch/issues/93667)
@@ -532,7 +604,7 @@ This enables a feedback loop: Dynamo engineers or users can file issues against 
 - **Core IR Opset Analysis:** [Google Doc](https://docs.google.com/document/d/1XR73gknq3gAh6nHuG-jDUjS1_vwjhY6zatn-Tx4zz2c)
 - **Op frequency spreadsheet:** [Google Sheet](https://docs.google.com/spreadsheets/d/1sEt0HD-0YAF5lfdOUPPZd2xIvwPL0emE7GaiqgMaTSM)
 
-## 10. Artifacts
+## 11. Artifacts
 
 | File | Location |
 |------|----------|
@@ -677,3 +749,4 @@ Benchmarked on PyTorch 2.8.0a0 (CPU, first-compile cost):
 | 32 | 2026-04-03 | **Clean re-run data.** Re-ran all 3 versions (identify + explain) with reverted worker.py to eliminate data contamination. Updated all trend tables with clean data. Key changes: v2.10 eval graph_break 92→90, 6 worker_error models (cuDNN infra). A2A comparison now shows slight break *increase* (419→438) from stricter soundness checks — more correct, not worse. Added `tools/update_corpus.py` for automated corpus merging with changelog generation. |
 | 33 | 2026-04-04–05 | **Explain methodology migration.** Replaced deprecated `torch._dynamo.explain()` with `TORCH_LOGS=+graph_breaks` + counting backend (explain API removed in PyTorch 2.10). Re-swept all 3 versions. Key changes: total breaks 1,247→1,254 (v2.10), AutoformerModel/InformerModel train now succeed (were explain_error), RwkvModel now times out. Added explain timeout tracking. Updated Section 3.1 methodology and Section 4.6 trend tables. |
 | 34 | 2026-04-05 | **GitHub issue tracking.** Created 4 issues for top graph break findings (deepcopy, frame skip, truncation, compile crashes). Added label taxonomy with `for:*` audience labels for Dynamo team, HF Transformers, and corpus tooling. Added `tools/github_issue_monitor.py` for automated new-issue/comment alerting. Expanded Section 4.4 remaining gaps (breaks without reasons, truncated sub-causes, explain errors, tlparse traces). Added Section 6. |
+| 35 | 2026-04-20 | **Phase 3 — correctness testing infra.** Added Section 8 (eager vs compiled forward output comparison). Adopted HF prior art: recursive `ModelOutput` walker with field-type taxonomy (skip int/bool/0-dim/Cache), HF tolerance table verbatim (fp32: atol=1e-6 rtol=1e-4), `set_seed` + less-flaky-test helpers. 5-class failure taxonomy: `match`, `divergence` (continuous severity = max_diff/atol — no arbitrary drift threshold), `nan_inf_introduced`, `shape_mismatch`, `dtype_mismatch`. MVP: HF eval fp32 backend=eager (~352 models). V2: train, dtype matrix, Diffusers, Inductor. Implemented `run_correctness` in `worker.py` (dispatch via `--pass-num 4`). Smoke validated on 5 known-clean models (Bert, GPT2, ViT, ResNet, T5Gemma — all match, max_diff ≤ 1.43e-6). Full Phase 3 spec at `design/phase3-correctness.md`. |

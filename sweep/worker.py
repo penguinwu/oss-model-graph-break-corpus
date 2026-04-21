@@ -3245,6 +3245,274 @@ def _compare_outputs(out_a, out_b, atol=1e-4, rtol=1e-4):
     return True, max_diff, "ok"
 
 
+# ─── Correctness: eager vs compiled output comparison (HF-style) ─────────────
+
+
+def _is_cache_like(obj):
+    """Detect HF Cache objects (DynamicCache, HybridCache, etc.) without hard import."""
+    cls_name = type(obj).__name__
+    return cls_name.endswith("Cache") and hasattr(obj, "__class__")
+
+
+def _compare_outputs_recursive(out_eager, out_compiled, atol=1e-6, rtol=1e-4):
+    """HF-style recursive walk over ModelOutput/dict/tuple/list structures.
+
+    Returns dict with:
+      - status: "match" | "divergence" | "nan_inf_introduced" | "shape_mismatch" | "dtype_mismatch"
+      - max_diff: float (worst max-diff across all compared fields)
+      - severity_ratio: max_diff / atol (continuous; sort triage by this)
+      - compared_fields: list of field paths that were compared
+      - skipped_fields: list of (path, reason) tuples
+      - first_divergence: path of first failing field (if any)
+    """
+    state = {
+        "status": "match",
+        "max_diff": 0.0,
+        "compared": [],
+        "skipped": [],
+        "first_divergence": None,
+    }
+
+    def _walk(a, b, path):
+        # None
+        if a is None and b is None:
+            state["skipped"].append((path, "both_none"))
+            return
+        if a is None or b is None:
+            state["skipped"].append((path, f"one_none: eager={a is None}, compiled={b is None}"))
+            return
+
+        # Cache objects — skip entirely
+        if _is_cache_like(a) or _is_cache_like(b):
+            state["skipped"].append((path, f"cache_object: {type(a).__name__}"))
+            return
+
+        # Tensors
+        if isinstance(a, torch.Tensor) or isinstance(b, torch.Tensor):
+            if not (isinstance(a, torch.Tensor) and isinstance(b, torch.Tensor)):
+                if state["status"] == "match":
+                    state["status"] = "shape_mismatch"
+                    state["first_divergence"] = path
+                return
+            # Shape check
+            if a.shape != b.shape:
+                if state["status"] == "match":
+                    state["status"] = "shape_mismatch"
+                    state["first_divergence"] = f"{path} (eager={tuple(a.shape)}, compiled={tuple(b.shape)})"
+                return
+            # Skip int/bool (HF rationale: argmax-derived, tiny upstream diffs flip results)
+            if a.dtype in (torch.bool, torch.int8, torch.int16, torch.int32, torch.int64, torch.uint8):
+                state["skipped"].append((path, f"int_or_bool: {a.dtype}"))
+                return
+            # Skip 0-dim (loss in forward; compared in V2 backward-grad pass)
+            if a.dim() == 0:
+                state["skipped"].append((path, "zero_dim_scalar"))
+                return
+            # Dtype must match for float comparison
+            if a.dtype != b.dtype:
+                if state["status"] == "match":
+                    state["status"] = "dtype_mismatch"
+                    state["first_divergence"] = f"{path} (eager={a.dtype}, compiled={b.dtype})"
+                return
+            # NaN/Inf handling
+            a_f = a.detach().float()
+            b_f = b.detach().float()
+            a_nan = torch.isnan(a_f)
+            b_nan = torch.isnan(b_f)
+            a_inf = torch.isinf(a_f)
+            b_inf = torch.isinf(b_f)
+            # NaN/Inf introduced by compile (eager clean, compiled dirty)
+            if (b_nan & ~a_nan).any() or (b_inf & ~a_inf).any():
+                if state["status"] == "match":
+                    state["status"] = "nan_inf_introduced"
+                    state["first_divergence"] = path
+                # Still compute max_diff on finite portion if possible
+                finite = ~(a_nan | b_nan | a_inf | b_inf)
+                if finite.any():
+                    diff = (a_f[finite] - b_f[finite]).abs().max().item()
+                    state["max_diff"] = max(state["max_diff"], diff)
+                state["compared"].append(path)
+                return
+            # Strip nan/-inf before max-diff
+            finite = ~(a_nan | b_nan | a_inf | b_inf)
+            if not finite.any():
+                state["skipped"].append((path, "all_nan_or_inf_in_both"))
+                return
+            diff = (a_f[finite] - b_f[finite]).abs().max().item()
+            state["max_diff"] = max(state["max_diff"], diff)
+            state["compared"].append(path)
+            # Per-field tolerance check (mark divergence but keep walking)
+            if not torch.allclose(a_f[finite], b_f[finite], atol=atol, rtol=rtol):
+                if state["status"] == "match":
+                    state["status"] = "divergence"
+                    state["first_divergence"] = f"{path} (max_diff={diff:.3e})"
+            return
+
+        # ModelOutput / dict-like (has .keys())
+        if hasattr(a, "keys") and hasattr(b, "keys"):
+            keys_a = set(a.keys())
+            keys_b = set(b.keys())
+            if keys_a != keys_b:
+                state["skipped"].append((path, f"key_mismatch: only_eager={keys_a - keys_b}, only_compiled={keys_b - keys_a}"))
+            for k in keys_a & keys_b:
+                _walk(a[k], b[k], f"{path}.{k}" if path else k)
+            return
+
+        # tuple / list
+        if isinstance(a, (tuple, list)) and isinstance(b, (tuple, list)):
+            if len(a) != len(b):
+                if state["status"] == "match":
+                    state["status"] = "shape_mismatch"
+                    state["first_divergence"] = f"{path} (len eager={len(a)}, compiled={len(b)})"
+                return
+            for i, (ai, bi) in enumerate(zip(a, b)):
+                _walk(ai, bi, f"{path}[{i}]")
+            return
+
+        # Scalar / unknown — skip with reason
+        state["skipped"].append((path, f"unhandled_type: {type(a).__name__}"))
+
+    _walk(out_eager, out_compiled, "")
+
+    return {
+        "status": state["status"],
+        "max_diff": state["max_diff"],
+        "severity_ratio": (state["max_diff"] / atol) if atol > 0 else float("inf"),
+        "compared_fields": state["compared"],
+        "skipped_fields": state["skipped"],
+        "first_divergence": state["first_divergence"],
+        "tolerance": {"atol": atol, "rtol": rtol},
+    }
+
+
+def run_correctness(spec, device, mode):
+    """Compare eager vs compiled forward outputs at the same shape.
+
+    Phase 3 base case: same input, same seed, same shape — only diff is torch.compile wrapper.
+    Surfaces every numerical divergence introduced by the compiler. No pass/fail target.
+    """
+    t_start = time.perf_counter()
+    result = {
+        "name": spec["name"],
+        "source": spec["source"],
+        "mode": mode,
+        "pass": "correctness",
+    }
+
+    # Lazy import HF helpers — fail soft if not available
+    try:
+        from transformers import set_seed
+    except ImportError:
+        set_seed = lambda s: torch.manual_seed(s)
+    try:
+        from transformers.testing_utils import (
+            set_config_for_less_flaky_test,
+            set_model_for_less_flaky_test,
+        )
+    except ImportError:
+        set_config_for_less_flaky_test = lambda c: None
+        set_model_for_less_flaky_test = lambda m: None
+
+    # Phase 1: Create model + apply less-flaky config
+    print("PHASE:create", file=sys.stderr, flush=True)
+    try:
+        if hasattr(spec, "get") and spec.get("source") == "hf":
+            # Apply less-flaky config tweaks before model construction if possible
+            pass  # set_config_for_less_flaky_test runs on the config; create_model owns config
+        model, inputs_dict, inputs_tuple = create_model(spec, device)
+    except Exception as e:
+        result["status"] = "create_error"
+        result["error"] = str(e)[:500]
+        result["error_type"] = type(e).__name__
+        return result
+    result["create_time_s"] = round(time.perf_counter() - t_start, 3)
+
+    # Apply less-flaky tweaks to instantiated model (disables dropout, fixed init)
+    try:
+        if hasattr(model, "config"):
+            set_config_for_less_flaky_test(model.config)
+        set_model_for_less_flaky_test(model)
+    except Exception as e:
+        # Helpers can fail on unusual model shapes — log but don't abort
+        result["less_flaky_warning"] = f"{type(e).__name__}: {str(e)[:200]}"
+
+    if mode == "train":
+        model.train()
+    else:
+        model.eval()
+    ctx = torch.no_grad() if mode == "eval" else torch.enable_grad()
+
+    # Phase 2: Eager forward
+    print("PHASE:eager", file=sys.stderr, flush=True)
+    torch._dynamo.reset()
+    set_seed(42)
+    try:
+        with ctx:
+            if inputs_tuple:
+                out_eager = model(*inputs_tuple)
+            else:
+                out_eager = model(**inputs_dict)
+    except Exception as e:
+        result["status"] = "eager_error"
+        result["error"] = str(e)[:500]
+        result["error_type"] = type(e).__name__
+        _cleanup(model, device)
+        return result
+
+    # Phase 3: Compile + forward
+    print("PHASE:compile", file=sys.stderr, flush=True)
+    torch._dynamo.reset()
+    try:
+        compiled = torch.compile(model, fullgraph=True, backend="eager")
+    except Exception as e:
+        result["status"] = "compile_error"
+        result["error"] = str(e)[:500]
+        result["error_type"] = type(e).__name__
+        _cleanup(model, device)
+        return result
+
+    print("PHASE:compiled_forward", file=sys.stderr, flush=True)
+    set_seed(42)
+    try:
+        with ctx:
+            if inputs_tuple:
+                out_compiled = compiled(*inputs_tuple)
+            else:
+                out_compiled = compiled(**inputs_dict)
+    except Exception as e:
+        result["status"] = "compile_error"
+        result["error"] = str(e)[:500]
+        result["error_type"] = type(e).__name__
+        _cleanup(model, device)
+        return result
+
+    # Phase 4: Compare (HF tolerance for fp32/CUDA)
+    print("PHASE:compare", file=sys.stderr, flush=True)
+    # MVP: fp32 only. Tolerance from HF test_modeling_common.py:194-222.
+    cmp = _compare_outputs_recursive(out_eager, out_compiled, atol=1e-6, rtol=1e-4)
+    result["status"] = cmp["status"]
+    result["max_diff"] = round(cmp["max_diff"], 8)
+    result["severity_ratio"] = round(cmp["severity_ratio"], 4)
+    result["tolerance"] = cmp["tolerance"]
+    result["compared_fields"] = cmp["compared_fields"]
+    # Compact skipped list — store reasons grouped
+    skipped_summary = {}
+    for path, reason in cmp["skipped_fields"]:
+        key = reason.split(":")[0]
+        skipped_summary[key] = skipped_summary.get(key, 0) + 1
+    result["skipped_fields_summary"] = skipped_summary
+    if cmp["first_divergence"]:
+        result["first_divergence"] = cmp["first_divergence"]
+
+    result["wall_time_s"] = round(time.perf_counter() - t_start, 3)
+
+    if device == "cuda":
+        result["gpu_mem_mb"] = round(torch.cuda.max_memory_allocated() / 1024**2, 1)
+
+    _cleanup(model, device)
+    return result
+
+
 def run_validate(spec, device, mode, dynamic=False):
     """Validate dynamic shape correctness by comparing outputs at two different shapes.
 
@@ -3469,8 +3737,8 @@ def _cleanup(model, device):
 def main():
     parser = argparse.ArgumentParser(description="Single-model worker for graph break sweep")
     parser.add_argument("--model-json", required=True, help="JSON string with model spec")
-    parser.add_argument("--pass-num", type=int, required=True, choices=[1, 2, 3],
-                        help="Pass 1 (identify), 2 (explain/analyze), or 3 (validate)")
+    parser.add_argument("--pass-num", type=int, required=True, choices=[1, 2, 3, 4],
+                        help="Pass 1 (identify), 2 (explain/analyze), 3 (validate), or 4 (correctness)")
     parser.add_argument("--device", default="cuda", choices=["cpu", "cuda"])
     parser.add_argument("--mode", default="eval", choices=["eval", "train"])
     parser.add_argument("--dynamic", nargs="?", const="true", default=None,
@@ -3505,6 +3773,8 @@ def main():
                               compile_kwargs=compile_kwargs)
     elif args.pass_num == 3:
         result = run_validate(spec, args.device, args.mode, dynamic=dynamic_val)
+    elif args.pass_num == 4:
+        result = run_correctness(spec, args.device, args.mode)
     else:
         result = run_explain(spec, args.device, args.mode)
 
