@@ -6,6 +6,20 @@ A corpus of 734 open-source models for measuring `torch.compile` quality. Tracks
 
 Models come from HuggingFace Transformers, Diffusers, and custom repos. Each model is tested in eval and train modes.
 
+## Project Philosophy
+
+The corpus surfaces compiler errors. It is not a pass/fail certification system.
+
+Every divergence, every graph break, every error is a data point to investigate or file. Never propose a "good enough rate" or an "acceptance threshold." Classification (`numerical_drift` / `divergence` / `nan_inf` / `shape_mismatch`) is for triage order, not for grading what we accept.
+
+If you catch yourself asking "what's the success target?" — you're in the wrong frame. Ask "what gets filed first?" instead.
+
+Methodology and design rationale live in `design/design-doc.md` (also at Google Doc `1paCL1R8xoN6OajND8c4M5WgA68Uw1iEij-katYFqneM`). This file (CLAUDE.md) is for *how to operate*; the design doc is for *why we built it this way*.
+
+## Closure Discipline
+
+Before marking an item closed in `OPEN-LOOPS.md`, in a status report, or in any "recently fixed" list: verify the artifact exists on disk and is committed. A claim of "shipped" with no commit, or "wrapper built" with no file, corrodes trust faster than the slip itself. If the work isn't on disk, it isn't closed — keep it open with a note about what's blocking.
+
 ## Script Map
 
 The codebase has two layers: **sweep/** runs the actual tests, **tools/** analyzes results and manages issues.
@@ -44,6 +58,7 @@ The codebase has two layers: **sweep/** runs the actual tests, **tools/** analyz
 |------------|---------|
 | `sweep` | Run a two-pass sweep (wraps sweep/run_sweep.py) |
 | `explain` | Explain-only pass from prior identify results |
+| `correctness` | Phase 3 — eager vs compiled forward output comparison on `fullgraph_ok` models (writes `correctness/correctness_results.json`) |
 | `nightly` | Full automated pipeline: refresh → staleness check → preflight → canary → sweep → explain → corpus update → summary |
 | `corpus` | Build/update corpus from sweep results |
 | `selftest` | 3-model smoke test |

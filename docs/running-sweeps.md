@@ -99,6 +99,21 @@ python3 sweep/run_sweep.py sweep --dynamic mark --source hf diffusers custom
 python3 sweep/run_sweep.py sweep --dynamic true --source hf diffusers custom
 ```
 
+## Correctness testing (Phase 3)
+
+A separate `correctness` pass compares eager-mode outputs against compiled outputs on the same inputs (same seed, same shape) and surfaces numerical divergences introduced by the compiler. Runs only on models marked `fullgraph_ok` in the corpus — there's no point comparing outputs if compilation already failed.
+
+```bash
+python3 tools/run_experiment.py correctness \
+    --workers 4
+```
+
+Output goes to `correctness/correctness_results.json`. Each entry records `status` (`match` / `divergence` / `nan_inf` / `shape_mismatch`), `max_diff`, `severity_ratio` (max_diff / atol), `compared_fields`, `skipped_fields`, and `first_divergence` (which output field diverged first).
+
+Tolerance: HF-style fp32 atol=1e-6, rtol=1e-4. Recursive walker over `ModelOutput` float fields; integer/boolean/0-dim/None/Cache fields are skipped. Each divergence is a data point to file or explain — there is no "acceptance threshold." Sort by `severity_ratio` descending to triage filing order.
+
+Methodology and design rationale: `design/design-doc.md` Section 8.
+
 ## Crash recovery
 
 Sweeps checkpoint after every model. To resume after a crash:

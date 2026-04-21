@@ -4,11 +4,12 @@ A reusable corpus of **734 open-source models** for measuring and improving `tor
 
 ## Who Is This For?
 
-Compiler developers working on `torch.compile`. Three workflows:
+Compiler developers working on `torch.compile`. Four workflows:
 
 1. **Find & fix graph breaks** — reproduce any break with one command, see root causes and fix hints, prioritize by impact across 734 models
 2. **Prioritize work** — see which break categories affect the most models, track version-over-version progress, identify high-ROI fixes
 3. **Validate changes** — test compiler changes, dynamo flags, or diagnostics against a known corpus of real-world breaks
+4. **Surface numerical divergences** — compare eager vs compiled forward outputs across the `fullgraph_ok` subset to surface compiler-introduced numerical errors (Phase 3 correctness pass)
 
 ## Results at a Glance (PyTorch 2.11)
 

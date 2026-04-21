@@ -31,6 +31,19 @@ Status values depend on the compile configuration used.
 
 Compiler quality signals are `full_graph`/`graph_break`/`success`/`error`. Infrastructure statuses (`timeout`, `create_error`, `eager_error`) indicate the model itself has issues, not the compiler.
 
+### Correctness pass (Phase 3)
+
+The `correctness` subcommand compares eager vs compiled forward outputs on the same inputs and emits a separate result schema:
+
+| Status | Meaning |
+|--------|---------|
+| `match` | All compared float fields within tolerance (fp32 atol=1e-6, rtol=1e-4) |
+| `divergence` | At least one field exceeded tolerance — compiler introduced numerical drift |
+| `nan_inf` | Compiled output contains NaN or Inf where eager did not |
+| `shape_mismatch` | Compiled output shape differs from eager (structural compiler bug) |
+
+Each divergence entry records `max_diff`, `severity_ratio` (`max_diff / atol`), `compared_fields`, `skipped_fields`, and `first_divergence`. Triage by `severity_ratio` descending. Every divergence is signal worth filing — there is no acceptance threshold. See `design/design-doc.md` Section 8 for the full methodology.
+
 ## Model variants
 
 The corpus tests three tiers of HuggingFace model classes:
