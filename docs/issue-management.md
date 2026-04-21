@@ -1,6 +1,6 @@
 # Issue Management
 
-After a sweep, graph breaks are classified into issue categories and tracked as GitHub issues. This page covers the classification workflow, issue structure, and how to update issues from sweep results.
+After a sweep, compiler quality signals — graph breaks, numerical divergences, infrastructure failures — are classified into issue categories and tracked as GitHub issues. This page covers the classification workflow, issue structure, and how to update issues from sweep results.
 
 ## Overview
 

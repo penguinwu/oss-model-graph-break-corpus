@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A corpus of 734 open-source models for measuring `torch.compile` quality. Tracks `fullgraph=True` success rates across PyTorch versions, with graph break classification, root cause analysis, and issue management.
+A corpus of 734 open-source models for surfacing `torch.compile` quality issues — graph breaks, numerical divergences, NaN/Inf, shape mismatches, infrastructure failures, and whatever else the compiler trips on. Tracks signals across PyTorch versions with classification, root cause analysis, and issue management. The corpus name still says "graph break" for historical reasons; the scope has grown.
 
 Models come from HuggingFace Transformers, Diffusers, and custom repos. Each model is tested in eval and train modes.
 

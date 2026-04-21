@@ -17,6 +17,7 @@ Use cases:
 2. **Fix validation** — validate graph break fix skills/tools against known breaks (e.g., Arsh's GraphBreak skill)
 3. **Compiler hardening** — regression testing as Dynamo improves
 4. **Extended diagnostics** — dynamic shape behavior, recompilation patterns, performance analysis
+5. **Numerical correctness surfacing** — compare eager vs compiled forward outputs to surface compiler-introduced numerical drift, NaN/Inf, and shape mismatches (Phase 3 correctness pass)
 
 ## 2. Scope
 

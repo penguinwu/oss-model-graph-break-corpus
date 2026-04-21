@@ -1,6 +1,6 @@
 # Getting Started
 
-Install the corpus tools, browse model data, and reproduce your first graph break in under 5 minutes.
+Install the corpus tools, browse model data, and reproduce your first compiler quality issue (graph break, numerical divergence, or other) in under 5 minutes.
 
 ## Install
 

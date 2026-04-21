@@ -1,4 +1,4 @@
-# OSS Model Graph Break Corpus — Status
+# OSS Model Compiler Quality Corpus — Status
 
 **Last updated:** 2026-04-19
 

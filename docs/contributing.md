@@ -1,6 +1,6 @@
 # Contributing
 
-How to add models, fix graph breaks, run sweeps, and extend the corpus.
+How to add models, fix compiler quality issues (graph breaks, numerical divergences, infra failures), run sweeps, and extend the corpus.
 
 ## Fix a model
 
