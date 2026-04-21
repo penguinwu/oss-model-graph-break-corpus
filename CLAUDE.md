@@ -20,6 +20,16 @@ Methodology and design rationale live in `design/design-doc.md` (also at Google 
 
 Before marking an item closed in `OPEN-LOOPS.md`, in a status report, or in any "recently fixed" list: verify the artifact exists on disk and is committed. A claim of "shipped" with no commit, or "wrapper built" with no file, corrodes trust faster than the slip itself. If the work isn't on disk, it isn't closed — keep it open with a note about what's blocking.
 
+## Validate Invariants Before Reporting New Experiments
+
+Every new sweep adds a *dimension* — correctness, dynamic shapes, a new compile flag, a new backend. Everything **upstream** of that dimension (model creation, eager execution, anything that doesn't depend on the new thing) must match a comparable prior sweep on the same PyTorch version and model set. Before reporting the headline result, identify what should be invariant and verify it against a baseline. If invariants don't match, report the violation **first** — it likely signals a methodology bug that invalidates the headline.
+
+**How to find what to check:** trace the experiment as a graph. The new dimension is the only thing that should produce new variation. Everything pre-new-dimension should match. For correctness: new = compare outputs; upstream = creation + eager forward; baseline = the regular graph-break sweep on the same PT version. For dynamic shapes: new = trace with dynamic shapes; upstream = creation + static-shape eager; baseline = static-shape sweep.
+
+**Where the baselines live:** see `EXPERIMENTS.md` at the repo root. Add a row when shipping a new experiment type.
+
+*Why:* The Phase 3 correctness sweep produced 169 `create_error` results vs 16 in the pt2.11 graph-break baseline a few days earlier; the 169 were `full_graph` in baseline. The Phase 3 worker had a model-creation bug in the wrapper-variant path that smoke testing didn't cover. We almost reported 12 verification failures that weren't trustworthy.
+
 ## Script Map
 
 The codebase has two layers: **sweep/** runs the actual tests, **tools/** analyzes results and manages issues.
