@@ -1083,6 +1083,15 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
     # name so config creation, input detection, and model-specific handlers all
     # match against the same keys they use for base models.
     variant = spec.get("variant")
+    # Defensive: infer variant from class-name suffix when caller didn't set it.
+    # Specs loaded from corpus.json or other downstream sources can drop this
+    # field; without it config lookup falls through to the model class itself
+    # and creation fails with "missing 1 required positional argument: config".
+    if variant is None:
+        if model_name.endswith("ForCausalLM"):
+            variant = "causal_lm"
+        elif model_name.endswith("ForConditionalGeneration"):
+            variant = "conditional_generation"
     if variant == "causal_lm":
         base_model_name = model_name.replace("ForCausalLM", "Model")
     elif variant == "conditional_generation":

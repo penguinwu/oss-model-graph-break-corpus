@@ -922,6 +922,25 @@ def run_correctness(args):
             specs.append({"name": e["name"], "source": e["source"]})
         print(f"Loaded {len(specs)} HF clean models from {CORPUS_FILE}")
 
+    # Hydrate HF specs against the live enumeration so wrapper-class metadata
+    # (variant, hf_class, hf_config, input_type) matches what the identify pass
+    # uses. corpus.json doesn't carry these fields, and without them
+    # create_hf_model can't resolve the right Config class for variants like
+    # *LMHeadModel or *ForSequenceClassification — see Phase 3 / pt2.11
+    # invariant violation, 2026-04-21.
+    from models import enumerate_hf
+    hf_meta = {s["name"]: s for s in enumerate_hf()}
+    for spec in specs:
+        if spec.get("source") != "hf":
+            continue
+        meta = hf_meta.get(spec["name"])
+        if not meta:
+            continue
+        for k in ("hf_class", "hf_config", "variant", "input_type",
+                  "constructor_args", "inputs"):
+            if k not in spec and k in meta:
+                spec[k] = meta[k]
+
     if args.limit:
         specs = specs[:args.limit]
         print(f"Limited to {len(specs)} models")
