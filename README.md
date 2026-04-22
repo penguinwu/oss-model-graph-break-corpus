@@ -4,12 +4,15 @@ A reusable corpus of **734 open-source models** for measuring and improving `tor
 
 ## Who Is This For?
 
-Compiler developers working on `torch.compile`. Four workflows:
+Primarily **compiler developers working on `torch.compile`**, and secondarily **skill maintainers needing clean per-pattern fixtures for diagnostic-skill evaluation**.
+
+Workflows:
 
 1. **Find & fix graph breaks** — reproduce any break with one command, see root causes and fix hints, prioritize by impact across 734 models
 2. **Prioritize work** — see which break categories affect the most models, track version-over-version progress, identify high-ROI fixes
 3. **Validate changes** — test compiler changes, dynamo flags, or diagnostics against a known corpus of real-world breaks
 4. **Surface numerical divergences** — compare eager vs compiled forward outputs across the `fullgraph_ok` subset to surface compiler-introduced numerical errors (Phase 3 correctness pass)
+5. **Per-pattern fixtures for diagnostic-skill evaluation** *(in scoping)* — clean, isolated, single-model reproducers tied to known root causes, suitable for unit-test-style checks of compiler-diagnostic skills. The corpus is *not* a general skill-eval source; for broader skill capability evaluation (multi-step reasoning, ambiguous diagnosis, richer Q&A) use the doc-eval project's Q&A corpus instead. See [USE_CASES.md §3](USE_CASES.md) for the niche framing and current consumers.
 
 ## Results at a Glance (PyTorch 2.11)
 
