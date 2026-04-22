@@ -14,6 +14,12 @@ Every divergence, every graph break, every error is a data point to investigate 
 
 If you catch yourself asking "what's the success target?" — you're in the wrong frame. Ask "what gets filed first?" instead.
 
+## Scope Posture
+
+The project is past funding — no fixed scope to defend. We organically expand by tracking the line. Promote a use case to active when it has a real consumer. Demote when speculative. Don't reflexively scope-protect, don't over-commit.
+
+When positioning a use case to consumers, name the niche it serves best. Don't oversell beyond strengths.
+
 Methodology and design rationale live in `design/design-doc.md` (also at Google Doc `1paCL1R8xoN6OajND8c4M5WgA68Uw1iEij-katYFqneM`). This file (CLAUDE.md) is for *how to operate*; the design doc is for *why we built it this way*.
 
 ## Closure Discipline
@@ -172,6 +178,7 @@ python tools/compare.py sweep_results/pt2.11/ sweep_results/nightly/2026-04-19/
 - Default sources: `hf diffusers custom` (TIMM/dynamic require explicit request)
 - Never use 0 or 1 as input dimensions for dynamic shape testing
 - Sweep results go in `sweep_results/<label>/` (e.g., `sweep_results/nightly/2026-04-19/`)
+- GitHub is canonical for project artifacts (design docs, proposals, charters). Drive is a mirror for share convenience.
 
 ## Key Data Files
 
