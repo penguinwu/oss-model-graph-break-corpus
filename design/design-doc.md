@@ -1,8 +1,8 @@
 # Design Doc: OSS Model Compiler Quality Corpus
 
-**Revision:** 35
+**Revision:** 36
 **Owner:** Peng Wu
-**Date:** 2026-04-20
+**Date:** 2026-04-22
 **Status:** Design Review
 **Google Drive:** [OSS Model Compiler Quality Corpus](https://drive.google.com/drive/folders/1r74REnQBKK6ssoF6dS9mcbBrIZ8hrtBd)
 
@@ -12,12 +12,15 @@
 
 Build a reusable corpus of open-source PyTorch models for measuring and improving `torch.compile` quality. The first application tracks `fullgraph=True` success rates; the infrastructure is designed to extend to other compiler quality studies.
 
-Use cases:
+Use cases (companion catalog with consumer-facing detail: [USE_CASES.md](../USE_CASES.md)):
 1. **Compiler quality measurement** — track graph break rates, compilation success, and version-over-version trends
-2. **Fix validation** — validate graph break fix skills/tools against known breaks (e.g., Arsh's GraphBreak skill)
-3. **Compiler hardening** — regression testing as Dynamo improves
-4. **Extended diagnostics** — dynamic shape behavior, recompilation patterns, performance analysis
-5. **Numerical correctness surfacing** — compare eager vs compiled forward outputs to surface compiler-introduced numerical drift, NaN/Inf, and shape mismatches (Phase 3 correctness pass)
+2. **Compiler hardening** — regression testing as Dynamo improves
+3. **Numerical correctness surfacing** — compare eager vs compiled forward outputs to surface compiler-introduced numerical drift, NaN/Inf, and shape mismatches (Phase 3 correctness pass)
+4. **Per-pattern fixture set for diagnostic-skill evaluation (niche)** — clean, isolated, single-model reproducers tied to known root causes, suitable for unit-test-style checks of compiler-diagnostic skills. *Not* a general skill-eval source; broader skill capability evaluation belongs to the doc-eval Q&A project. First named consumer: Arsh Zahed's `debug-graph-breaks` (D99943226).
+5. **Non-strict tracer soundness validation** — trace each model on input A, run the resulting graph on inputs B/C/D, compare per-input outputs. Surfaces input-dependent divergence in graphs assumed input-independent. Named consumer: Animesh Jain (anijain), in the context of the active non-strict-tracer vs Dynamo debate. Gated on multi-input infrastructure (today the corpus is one-input-per-model).
+6. **Extended diagnostics** — dynamic shape behavior, recompilation patterns, performance analysis. Includes scoping `optimum-benchmark` schema alignment (HF's canonical multi-backend benchmarking framework powering the LLM-Perf leaderboard) for interop with the HF benchmarking ecosystem. *Scoping only — no commitment until effort is known.*
+
+Scope-posture rule: this project is past funding. The corpus organically expands by tracking real consumers, not by defending a fixed scope. A use case is promoted to active when a real consumer exists, demoted when speculative. When positioning the corpus to a consumer, name the niche it serves best — don't oversell beyond strengths.
 
 ## 2. Scope
 
@@ -77,6 +80,8 @@ Models are instantiated locally using `Config()` objects — no network access o
 
 Input generation detects model modality (text, vision, audio, seq2seq, multimodal, video, time_series) and generates matching tensors. Batch size = 2 (PyTorch specializes on 0 and 1, so ≥2 is required for valid dynamic shape testing).
 
+**Forward-compatibility note (input set per model).** Today: one input per model. The corpus is structured so that the current single input is interpreted as a 1-element *input set*. Use cases #4 (skill-eval realism), #5 (tracer soundness — *requires* multi-input), and #6 (`optimum-benchmark` parity) all want canonical-plus-variations input sets. The multi-input MVP is intentionally deferred until the named consumer for #5 (Animesh) provides the concrete soundness signal he wants — building the wrong variation set is more expensive than waiting. See [charter delta 2026-04-22](charter-delta-2026-04-22.md) for sequencing.
+
 ### 3.3 Test Modes
 
 Each model is tested in 2 modes:
@@ -114,6 +119,33 @@ Two modes test Dynamo's handling of symbolic shapes:
 | `--dynamic mark` | Only batch (dim 0) + seq_len (dim 1 for NLP) symbolic | What users actually encounter |
 
 Static graph breaks persist under dynamic shapes. Dynamic testing reveals **constraint violation** errors where models specialize on dimensions we marked as dynamic — a distinct failure mode from static graph breaks.
+
+### 3.7 Tracer Soundness Mode (planned — gated on consumer signal)
+
+A new measurement type for use case #5. Status: design-only; gated on the multi-input MVP and on Animesh's concrete soundness signal.
+
+**Protocol.** For each model:
+1. Generate canonical input A and variation set {B, C, D, ...}.
+2. Trace the model on A using the non-strict tracer (or comparison tracer).
+3. Run the resulting traced graph on A, B, C, D, ... and on eager.
+4. For each input, compare traced-graph output to eager output using the Phase 3 correctness comparator (Section 8).
+5. Record per-input pass/diverge/error and the divergence pattern.
+
+**Result schema (per model).**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `model_name` | str | Model identifier |
+| `tracer` | str | Which tracer was used (e.g., `non_strict`, `dynamo`) |
+| `trace_input` | str | Identifier of the input the trace was produced from (typically `A`) |
+| `eval_inputs` | list[str] | Identifiers of all inputs the traced graph was run on |
+| `per_input_results` | list[dict] | One entry per `eval_input`: `{input_id, status, max_diff, severity, divergent_field, repro_hint}` |
+| `divergence_pattern` | str | Categorical: `none`, `single_input`, `subset`, `all_non_trace` (which inputs diverged) |
+| `notes` | str | Free-form explanation of suspected cause |
+
+**Cost.** Trace once per model; run once per input variation; compare. Multi-input cost scales linearly with variation set size. Budget assumption: 3-5 input variations per model on the eval-mode HF corpus (~352 fullgraph_ok models).
+
+**Why this lives in the corpus.** The non-strict tracer vs Dynamo comparison needs a large, diverse, real-model fixture set with reproducible inputs and a stable comparator. The corpus already provides the first three ingredients; soundness is the comparator the consumer wants.
 
 ## 4. Results (R8 — 468 HF+Diffusers Models, PyTorch 2.10.0)
 
@@ -492,6 +524,9 @@ This enables a feedback loop: Dynamo engineers or users can file issues against 
 | Item | Description | Priority |
 |------|-------------|----------|
 | **Diffusers expansion** | ~110 models with per-family constructor args and inputs | High |
+| **Multi-input infrastructure** | Per-model input set (canonical + variations); required by §3.7 tracer soundness, useful for #4/#6 | High (gated on Animesh's concrete signal) |
+| **`optimum-benchmark` schema scoping** | Research effort to align corpus inputs/results schema with HF's `optimum-benchmark` for LLM-Perf interop. Effort estimate (a/b/c with hours), no commitment until cost is known | Medium (scoping) |
+| **Skill-eval failure-mode catalog** | When piloting consumer skills (e.g., Arsh's `debug-graph-breaks`) against the corpus, the failure catalog is itself a deliverable, feeding the AI-native maintenance loop as "Skill integration request" feedback | Medium (driven by consumer pilots) |
 | **~~Multi-version comparison~~** | ~~Run corpus across PyTorch 2.8, 2.9, 2.10~~ | ✅ Done (Section 4.6) |
 | **aot_eager sweep** | Catch AOTAutograd-specific training failures | Medium |
 | **Gradient checkpointing mode** | Test `model.gradient_checkpointing_enable()` | Medium |
@@ -751,3 +786,4 @@ Benchmarked on PyTorch 2.8.0a0 (CPU, first-compile cost):
 | 33 | 2026-04-04–05 | **Explain methodology migration.** Replaced deprecated `torch._dynamo.explain()` with `TORCH_LOGS=+graph_breaks` + counting backend (explain API removed in PyTorch 2.10). Re-swept all 3 versions. Key changes: total breaks 1,247→1,254 (v2.10), AutoformerModel/InformerModel train now succeed (were explain_error), RwkvModel now times out. Added explain timeout tracking. Updated Section 3.1 methodology and Section 4.6 trend tables. |
 | 34 | 2026-04-05 | **GitHub issue tracking.** Created 4 issues for top graph break findings (deepcopy, frame skip, truncation, compile crashes). Added label taxonomy with `for:*` audience labels for Dynamo team, HF Transformers, and corpus tooling. Added `tools/github_issue_monitor.py` for automated new-issue/comment alerting. Expanded Section 4.4 remaining gaps (breaks without reasons, truncated sub-causes, explain errors, tlparse traces). Added Section 6. |
 | 35 | 2026-04-20 | **Phase 3 — correctness testing infra.** Added Section 8 (eager vs compiled forward output comparison). Adopted HF prior art: recursive `ModelOutput` walker with field-type taxonomy (skip int/bool/0-dim/Cache), HF tolerance table verbatim (fp32: atol=1e-6 rtol=1e-4), `set_seed` + less-flaky-test helpers. 5-class failure taxonomy: `match`, `divergence` (continuous severity = max_diff/atol — no arbitrary drift threshold), `nan_inf_introduced`, `shape_mismatch`, `dtype_mismatch`. MVP: HF eval fp32 backend=eager (~352 models). V2: train, dtype matrix, Diffusers, Inductor. Implemented `run_correctness` in `worker.py` (dispatch via `--pass-num 4`). Smoke validated on 5 known-clean models (Bert, GPT2, ViT, ResNet, T5Gemma — all match, max_diff ≤ 1.43e-6). Full Phase 3 spec at `design/phase3-correctness.md`. |
+| 36 | 2026-04-22 | **Charter expansion — niche skill-eval, tracer soundness, scope posture.** Reframed Section 1 use cases per [charter delta 2026-04-22](charter-delta-2026-04-22.md): (a) explicit niche framing for diagnostic-skill evaluation — corpus is per-pattern fixtures, not a general skill-eval source (doc-eval owns that), with Arsh Zahed's `debug-graph-breaks` (D99943226) as first named consumer; (b) new use case — non-strict tracer soundness validation with Animesh Jain (anijain) as named consumer; (c) `optimum-benchmark` schema alignment listed as scoping item, no commitment; (d) added scope-posture rule (past-funding project organically expands by tracking real consumers, no fixed scope to defend). Section 3.2 updated for forward-compatible input-set framing. New Section 3.7: Tracer Soundness Mode (planned protocol + result schema, gated on multi-input MVP and Animesh signal). Section 7 adds: multi-input infrastructure, `optimum-benchmark` schema scoping, skill-eval failure-mode catalog. AI-native maintenance doc taken over by Otter (Rocky off project); now GitHub-canonical at `design/ai-native-maintenance.md` Rev 2. |
