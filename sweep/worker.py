@@ -3387,6 +3387,7 @@ def _compare_outputs_recursive(out_eager, out_compiled, atol=1e-6, rtol=1e-4):
         "status": state["status"],
         "max_diff": state["max_diff"],
         "severity_ratio": (state["max_diff"] / atol) if atol > 0 else float("inf"),
+        "bitwise_equal": state["status"] == "match" and state["max_diff"] == 0.0,
         "compared_fields": state["compared"],
         "skipped_fields": state["skipped"],
         "first_divergence": state["first_divergence"],
@@ -3502,6 +3503,7 @@ def run_correctness(spec, device, mode):
     result["status"] = cmp["status"]
     result["max_diff"] = round(cmp["max_diff"], 8)
     result["severity_ratio"] = round(cmp["severity_ratio"], 4)
+    result["bitwise_equal"] = cmp["bitwise_equal"]
     result["tolerance"] = cmp["tolerance"]
     result["compared_fields"] = cmp["compared_fields"]
     # Compact skipped list — store reasons grouped
