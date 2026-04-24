@@ -1,0 +1,56 @@
+{
+  "case_id": "dbrx_moe_data_dep",
+  "variant_id": "V1",
+  "trial_label": "V1_3",
+  "started_at": "2026-04-24T18:07:38Z",
+  "elapsed_s": 342.19050884246826,
+  "agent_exit_code": 0,
+  "diff_path": "/tmp/discovery-runs/dbrx_moe_data_dep/20260424-173949/V1_3/agent_diff.patch",
+  "validation": {
+    "import_ok": true,
+    "eager_ok": true,
+    "compile_ok": true,
+    "graph_count": 9,
+    "graph_break_count": 8,
+    "max_diff_vs_eager_baseline": 0.0,
+    "error": null,
+    "max_diff_compiled_vs_eager_now": 1.4901161193847656e-07
+  },
+  "perf": {
+    "eager_ms": 7.389967795461416,
+    "compiled_ms": 8.723335806280375,
+    "speedup": 0.8471492969628661,
+    "eager_peak_mem_mb": 8.77001953125,
+    "compiled_peak_mem_mb": 8.75341796875,
+    "n_warmup": 5,
+    "n_repeat": 20,
+    "device": "cuda",
+    "compile_s": 8.417119806166738,
+    "error": null,
+    "tier": "fast",
+    "compile_speedup_vs_baseline": 1.1066355326721442,
+    "eager_speedup_vs_baseline": 1.2170978463229138,
+    "end_to_end_speedup_vs_baseline_eager": 1.031063584847475
+  },
+  "flags": [
+    "file-mutated:modeling_dbrx.py",
+    "file-mutated:baseline_dbrx.py"
+  ],
+  "error": null,
+  "perf_tier2": {
+    "eager_ms": 8.30869423225522,
+    "compiled_ms": 9.359372779726982,
+    "speedup": 0.8877404958430974,
+    "eager_peak_mem_mb": 157.966796875,
+    "compiled_peak_mem_mb": 19.56396484375,
+    "n_warmup": 5,
+    "n_repeat": 20,
+    "device": "cuda",
+    "compile_s": 8.680020664818585,
+    "error": null,
+    "tier": "realistic",
+    "compile_speedup_vs_baseline": 1.029247180222,
+    "eager_speedup_vs_baseline": 1.4020885752980827,
+    "end_to_end_speedup_vs_baseline_eager": 1.244690807051062
+  }
+}

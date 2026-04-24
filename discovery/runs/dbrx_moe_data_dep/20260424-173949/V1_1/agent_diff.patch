@@ -1,0 +1,35 @@
+--- /tmp/discovery-runs/dbrx_moe_data_dep/modeling_dbrx.py.original	2026-04-24 08:31:55.750422906 -0700
++++ /home/pengwu/envs/torch211/lib/python3.12/site-packages/transformers/models/dbrx/modeling_dbrx.py	2026-04-24 10:57:41.612621038 -0700
+@@ -307,16 +307,14 @@
+         with torch.no_grad():
+             expert_mask = torch.nn.functional.one_hot(top_k_index, num_classes=self.num_experts)
+             expert_mask = expert_mask.permute(2, 1, 0)
+-            expert_hit = torch.greater(expert_mask.sum(dim=(-1, -2)), 0).nonzero()
+ 
+         split_expert_shape = (-1, self.ffn_hidden_size, self.hidden_size)
+-        for expert_idx in expert_hit:
+-            expert_idx = expert_idx[0]
++        for expert_id in range(self.num_experts):
+             with torch.no_grad():
+-                idx, token_idx = torch.where(expert_mask[expert_idx])
+-            v1 = self.mlp.v1.view(split_expert_shape)[expert_idx]
+-            w1 = self.mlp.w1.view(split_expert_shape)[expert_idx]
+-            w2 = self.mlp.w2.view(split_expert_shape)[expert_idx]
++                idx, token_idx = torch.where(expert_mask[expert_id])
++            v1 = self.mlp.v1.view(split_expert_shape)[expert_id]
++            w1 = self.mlp.w1.view(split_expert_shape)[expert_id]
++            w2 = self.mlp.w2.view(split_expert_shape)[expert_id]
+             states = self.mlp(hidden_states[token_idx], w1, v1, w2)
+             states = states.view(-1, self.ffn_hidden_size) * top_k_weights[token_idx, idx, None]
+             next_states.index_add_(0, token_idx, states)
+
+--- /tmp/discovery-runs/dbrx_moe_data_dep/baseline_dbrx.py.original	2026-04-24 08:31:55.747422898 -0700
++++ /tmp/discovery-runs/dbrx_moe_data_dep/baseline_dbrx.py	2026-04-24 10:57:45.398633072 -0700
+@@ -10,6 +10,7 @@
+ from transformers import DbrxConfig, DbrxForCausalLM
+ 
+ torch.manual_seed(0)
++torch._dynamo.config.capture_dynamic_output_shape_ops = True
+ 
+ # Tiny config — keep params low so this runs fast.
+ # Mirrors the corpus sweep config (worker.py applies _reduce_model_size + Dbrx-specific syncs).

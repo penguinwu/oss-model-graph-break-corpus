@@ -1,0 +1,18 @@
+{
+  "case_id": "dbrx_moe_data_dep",
+  "model": "DbrxForCausalLM",
+  "break_shape_id": "BS-103",
+  "captured_at": "2026-04-24T16:13:00Z",
+  "baseline": {
+    "eager_ms": 8.994313888251781,
+    "compiled_ms": 9.653553366661072,
+    "speedup": 0.9317101741327707,
+    "eager_peak_mem_mb": 8.77001953125,
+    "compiled_peak_mem_mb": 8.75927734375,
+    "n_warmup": 5,
+    "n_repeat": 20,
+    "device": "cuda"
+  },
+  "note": "perf v0.3 \u2014 compile time intentionally not measured.",
+  "interpretation": "Compiled is ~7% slower than eager. Graph breaks fragment the compiled graph and prevent fusion, so the compiled artifact runs no faster than eager (and pays a small dispatch overhead). Any successful discovery strategy should produce speedup > 1.0."
+}

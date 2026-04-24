@@ -1,0 +1,21 @@
+{
+  "case_id": "dbrx_moe_data_dep",
+  "model": "DbrxForCausalLM",
+  "break_shape_id": "BS-103",
+  "tier": "realistic",
+  "input_shape": "(4, 512)",
+  "captured_at": "2026-04-24T18:15:00Z",
+  "baseline": {
+    "eager_ms": 11.649525258690119,
+    "compiled_ms": 9.633108042180538,
+    "speedup": 1.20932156139849,
+    "eager_peak_mem_mb": 157.966796875,
+    "compiled_peak_mem_mb": 55.81005859375,
+    "compile_s": 17.13597200298682,
+    "n_warmup": 5,
+    "n_repeat": 20,
+    "device": "cuda"
+  },
+  "note": "perf v0.3 \u2014 tier-2 (realistic). batch=4, seq=512 = 2048 tokens. ~128x tier-1 token count.",
+  "interpretation": "At realistic size, even the broken-compile baseline gets ~1.2x speedup (more compute per graph segment amortizes the fixed graph-break overhead). Strategy ranking should compare against this number, not tier-1's 0.93x baseline."
+}

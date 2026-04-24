@@ -1,0 +1,63 @@
+--- /tmp/discovery-runs/dbrx_moe_data_dep/modeling_dbrx.py.original	2026-04-24 08:31:55.750422906 -0700
++++ /home/pengwu/envs/torch211/lib/python3.12/site-packages/transformers/models/dbrx/modeling_dbrx.py	2026-04-24 11:06:05.338208279 -0700
+@@ -302,24 +302,43 @@
+     ) -> torch.Tensor:
+         batch_size = hidden_states.shape[0]
+         hidden_states = hidden_states.reshape(-1, self.ffn_hidden_size)
++        num_tokens = hidden_states.shape[0]
++        top_k = top_k_index.shape[1]
+ 
+-        next_states = torch.zeros_like(hidden_states, dtype=hidden_states.dtype, device=hidden_states.device)
+-        with torch.no_grad():
+-            expert_mask = torch.nn.functional.one_hot(top_k_index, num_classes=self.num_experts)
+-            expert_mask = expert_mask.permute(2, 1, 0)
+-            expert_hit = torch.greater(expert_mask.sum(dim=(-1, -2)), 0).nonzero()
+-
+-        split_expert_shape = (-1, self.ffn_hidden_size, self.hidden_size)
+-        for expert_idx in expert_hit:
+-            expert_idx = expert_idx[0]
+-            with torch.no_grad():
+-                idx, token_idx = torch.where(expert_mask[expert_idx])
+-            v1 = self.mlp.v1.view(split_expert_shape)[expert_idx]
+-            w1 = self.mlp.w1.view(split_expert_shape)[expert_idx]
+-            w2 = self.mlp.w2.view(split_expert_shape)[expert_idx]
+-            states = self.mlp(hidden_states[token_idx], w1, v1, w2)
+-            states = states.view(-1, self.ffn_hidden_size) * top_k_weights[token_idx, idx, None]
+-            next_states.index_add_(0, token_idx, states)
++        # Reshape expert weight banks: [num_experts, ffn_hidden_size, hidden_size]
++        split_shape = (self.num_experts, self.ffn_hidden_size, self.hidden_size)
++        w1 = self.mlp.w1.view(split_shape)
++        v1 = self.mlp.v1.view(split_shape)
++        w2 = self.mlp.w2.view(split_shape)
++
++        # Flatten (token, slot) pairs — all shapes are statically known
++        flat_expert_idx = top_k_index.reshape(-1)                       # [N * top_k]
++        flat_weights = top_k_weights.reshape(-1, 1)                     # [N * top_k, 1]
++        token_idx = (
++            torch.arange(num_tokens, device=hidden_states.device)
++            .unsqueeze(1)
++            .expand(-1, top_k)
++            .reshape(-1)
++        )                                                                # [N * top_k]
++
++        # Gather hidden states and expert weights for every pair
++        flat_hidden = hidden_states[token_idx]                           # [N * top_k, D]
++        w1_sel = w1[flat_expert_idx]                                     # [N * top_k, F, D]
++        v1_sel = v1[flat_expert_idx]
++        w2_sel = w2[flat_expert_idx]
++
++        # Batched GLU expert forward (mirrors DbrxExpertGLU.forward)
++        gate_proj = torch.bmm(flat_hidden.unsqueeze(1), w1_sel).squeeze(1)
++        up_proj = torch.bmm(flat_hidden.unsqueeze(1), v1_sel).squeeze(1)
++        gate_proj = self.mlp.activation_fn(gate_proj)
++        intermediate = gate_proj * up_proj
++        down_proj = torch.bmm(intermediate.unsqueeze(1),
++                               w2_sel.transpose(1, 2)).squeeze(1)        # [N * top_k, D]
++
++        # Weight by routing score and scatter-add back to token positions
++        weighted = down_proj.view(-1, self.ffn_hidden_size) * flat_weights
++        next_states = torch.zeros_like(hidden_states)
++        next_states.index_add_(0, token_idx, weighted)
+ 
+         next_states = next_states.view(batch_size, -1, self.ffn_hidden_size)
+         return next_states
