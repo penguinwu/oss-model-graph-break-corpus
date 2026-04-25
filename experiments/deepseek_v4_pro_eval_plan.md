@@ -9,11 +9,11 @@ forcing_function: tools/check_plan.py + daily brief at 7:30 AM ET
 
 # DeepSeek V4 Pro — Evaluation Plan
 
-> **Status: APPROVED for execution** (Peng review 2026-04-25 13:22 ET — answered 5 open questions; 1 Kibana follow-up still pending below).
+> **Status: APPROVED for execution** (Peng review 2026-04-25 13:22 + 13:32 ET — all 5 open questions resolved including the AutoDev Kanban board pointer).
 
 ## Goal
 
-Evaluate the latest DeepSeek-V4-Pro release ([huggingface.co/deepseek-ai/DeepSeek-V4-Pro](https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro)) on **four dimensions**, with results landing on a Kibana dashboard for ongoing visibility:
+Evaluate the latest DeepSeek-V4-Pro release ([huggingface.co/deepseek-ai/DeepSeek-V4-Pro](https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro)) on **four dimensions**, with results landing on a AutoDev Kanban board dashboard for ongoing visibility:
 
 | Dimension | What we measure | Pass criterion |
 |---|---|---|
@@ -116,11 +116,18 @@ This applies to the perf-primitive **broadly**, not just DeepSeek V4 Pro — sam
 
 **Numerics.** Bitwise + max_abs_diff in bf16 specifically — DeepSeek's training/inference is bf16-native so any compile-induced fp32-bf16 mismatch is real-world relevant. If model has multiple output heads (router logits, hidden states, final logits), report per-head separately so we can isolate where divergence enters.
 
-## Output — Kibana dashboard + detailed writeup
+## Output — AutoDev Kanban board + detailed writeup
 
-**Source-of-truth artifact:** each phase produces a `results.json` under `experiments/results/deepseek_v4_pro/<phase>-<date>/`. Kibana is downstream of that JSON.
+**Source-of-truth artifact:** each phase produces a `results.json` under `experiments/results/deepseek_v4_pro/<phase>-<date>/`. The AutoDev board surfaces the work-in-progress state.
 
-**Kibana instance:** Peng said "use the same kabana" 2026-04-25 13:22 ET. **Awaiting clarification on which specific instance** — corpus doesn't currently push to any Kibana, so this is the first ETL we'd build. Need from Peng: URL / index name / auth pattern. Once I have that, I'll write the small ETL that maps the `results.json` rows into Kibana documents and design the panels (gb count distribution, max_abs_diff histogram, speedup tier-1 vs tier-2 scatter, compile_s vs model-size).
+**AutoDev Kanban board:** [github.com/users/penguinwu/projects/1](https://github.com/users/penguinwu/projects/1) — the same board the discovery cases (#59, #61, #62, #63) live on. Per Peng 2026-04-25 13:32 ET. No new ETL or dashboard infra needed — just track this eval as GitHub issues that auto-attach to the board (project automation handles status moves). Proposed issue structure:
+
+- **Umbrella:** `[Eval] DeepSeek V4 Pro` — top-level tracking issue with links to phase sub-issues + the plan file.
+- **Phase 1 sub-issue:** `[Eval] DeepSeek V4 Pro — Phase 1 (tiny config, correctness)` — closes when Phase 1 results land.
+- **Phase 2 sub-issue:** `[Eval] DeepSeek V4 Pro — Phase 2 (full model, performance)` — closes when Phase 2 results land.
+- **Per-failure issues:** filed via the existing `tools/file_issues.py` pipeline for graph-break categories and correctness divergences. These auto-attach to the board too.
+
+Board view = the live dashboard. Status moves: Backlog → Ready → In progress → Done (project automation: closing the issue moves the card to Done, same as we saw with #59 today).
 
 **Detailed writeup (high-profile model — people will care):**
 
@@ -134,7 +141,7 @@ Per Peng 2026-04-25: this is a release the broader community will be interested 
 6. **Failures filed** — links to corpus issues, with one-line on each.
 7. **What this tells us** — short interpretation, in Peng's voice (drafted with her).
 
-Output venues: corpus repo (`experiments/results/deepseek_v4_pro/<phase>/README.md`) + Kibana dashboard + (per Peng's call) Workplace post to PT2 working group / Compile Q&A.
+Output venues: corpus repo (`experiments/results/deepseek_v4_pro/<phase>/README.md`) + AutoDev Kanban board dashboard + (per Peng's call) Workplace post to PT2 working group / Compile Q&A.
 
 Per-eval `results.json` schema (proposed):
 
@@ -162,13 +169,13 @@ Per-eval `results.json` schema (proposed):
 
 | # | Question | Decision |
 |---|---|---|
-| 1 | Kibana instance | "Use the same kabana." **Awaiting clarification on specific instance/index URL.** See "Output" section. |
+| 1 | "Kabana" instance | **AutoDev Kanban board** ([github.com/users/penguinwu/projects/1](https://github.com/users/penguinwu/projects/1)) — same board discovery cases live on. ("Kabana" = Kanban; I'd misread it as Kibana the viz tool.) Per Peng 2026-04-25 13:32 ET. |
 | 2 | Tiny-config vs full-model | Two phases: tiny + correctness FIRST, then full-model + perf. See "Two-phase execution" section. |
 | 3 | Comparable baseline | None. Absolute numbers only. |
 | 4 | Tolerance per dtype | **1e-4** (default per upstream `pytorch/benchmarks/dynamo/common.py:1069`). |
 | 5 | Filed vs dashboard | Detailed writeup of all three dimensions (graph breaks + correctness/numerics + performance). High-profile model — community-facing report. Peng will guide the summary process. |
 
-**One remaining open question:** which specific Kibana instance + index + auth pattern? Need pointer before Phase 1 results land.
+**All open questions resolved.** Plan is fully unblocked for execution.
 
 ## Done means
 
@@ -184,7 +191,7 @@ Per-eval `results.json` schema (proposed):
 - Phase 2 writeup at `experiments/results/deepseek_v4_pro/phase2-full-<date>/README.md`.
 
 **Both phases:**
-- Kibana dashboard rows pushed (once instance is known).
+- Umbrella + sub-issues tracked on AutoDev board ([projects/1](https://github.com/users/penguinwu/projects/1)); cards auto-move to Done on issue close.
 - Combined detailed writeup ready for Peng-guided community summary (per Resolved Decision #5).
 
 ## Stop conditions
@@ -205,7 +212,7 @@ Per-eval `results.json` schema (proposed):
 **Pre-flight (both phases):**
 1. Read HF model card + config; fill in the "What we know about the model" checklist above.
 2. Land RNG-determinism patch + `non_deterministic_models` set in `discovery/perf.py` (per the "RNG determinism" subsection).
-3. Confirm Kibana instance/index/auth (resolves the one remaining open question).
+3. Create the umbrella issue + Phase 1 + Phase 2 sub-issues on the AutoDev board (use `tools/queue_task.py` or hand-create with the existing per-case template style).
 
 **Phase 1 — Tiny-config, correctness-first:**
 4. Identify smallest viable config (HF dev-config, or hand-shrink the standard config to test-shape).
@@ -222,7 +229,7 @@ Per-eval `results.json` schema (proposed):
 13. Author `experiments/configs/deepseek-v4-pro-phase2.json` (full config; sharded if infra exists).
 14. Re-run correctness at scale (cheap sanity check before perf).
 15. Run perf check (`measure_perf` tier-1 + tier-2).
-16. Aggregate to Phase 2 `results.json`; push Kibana rows.
+16. Aggregate to Phase 2 `results.json`; close the Phase 2 sub-issue (auto-moves the board card to Done).
 17. Write Phase 2 `README.md`.
 18. Combined community-facing summary (Peng-guided per Resolved Decision #5).
 
@@ -230,4 +237,5 @@ Per-eval `results.json` schema (proposed):
 
 - *2026-04-25 13:15 ET:* Plan drafted from Peng's directive. 5 open questions raised.
 - *2026-04-25 13:18 ET:* Folded in two new pointers from Peng — `pytorch/pytorch/benchmarks` at sha 7a6f3270 (HF benchmark suite reference) + the deterministic RNG seed pattern at `common.py:540` (Animesh's note on HF model non-determinism). Scope expanded: hardening `discovery/perf.py` is part of this work, not just DeepSeek-specific.
-- *2026-04-25 13:22 ET:* Peng answered the 5 open questions. Two-phase execution adopted (tiny+correctness → full+perf). Tolerance pinned at 1e-4 (upstream default). No comparable baseline. Detailed writeup required for community release. Status moved from `draft` to `active`. One follow-up pending: which Kibana instance.
+- *2026-04-25 13:22 ET:* Peng answered the 5 open questions. Two-phase execution adopted (tiny+correctness → full+perf). Tolerance pinned at 1e-4 (upstream default). No comparable baseline. Detailed writeup required for community release. Status moved from `draft` to `active`. One follow-up pending: "Kabana" instance.
+- *2026-04-25 13:32 ET:* "Kabana" resolved — it's the **AutoDev Kanban board** ([projects/1](https://github.com/users/penguinwu/projects/1)), the same board discovery cases live on. (I'd been parsing it as "Kibana" the Elasticsearch viz tool — wrong.) No new dashboard ETL required; track via GitHub issues that auto-attach to the board. Plan is fully unblocked.
