@@ -1,0 +1,12 @@
+"""Per-case validate.py template.
+
+Each case's `/tmp/discovery-runs/<case_id>/validate.py` should be a thin shim into
+`discovery.validate_runner.main()` so all cases produce the structured
+`validation_v2` schema natively (no post-hoc revalidate.py needed).
+
+Replace `<CASE_ID>` with the actual case_id when authoring.
+"""
+import sys
+sys.path.insert(0, "/home/pengwu/projects/oss-model-graph-break-corpus")
+from discovery.validate_runner import main
+sys.exit(main(case_id="<CASE_ID>"))

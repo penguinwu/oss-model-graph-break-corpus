@@ -1,0 +1,172 @@
+"""Generic per-trial validator producing the validation_v2 schema.
+
+Per-case `validate.py` shims into this so future runs produce structured
+fix_status verdicts natively (no post-hoc revalidate.py needed).
+
+Schema produced (printed as JSON to stdout):
+
+```
+{
+  "integrity": {"import_ok", "eager_ok", "compile_ok"},
+  "fix_status": "general" | "setup-required" | "none" | "unknown",
+  "details": {
+    "gb_in_agent_run": int | None,
+    "gb_under_canonical_inputs": int | None,
+    "max_diff_compiled_vs_eager": float | None,
+    "max_diff_vs_baseline": float | None
+  },
+  "error": str | None
+}
+```
+
+Usage from a per-case validate.py shim:
+
+```python
+import sys
+from discovery.validate_runner import main
+sys.exit(main(case_id="mistral3_data_dep"))
+```
+"""
+from __future__ import annotations
+
+import importlib
+import json
+import os
+import re
+import subprocess
+import sys
+import traceback
+from pathlib import Path
+
+import torch
+
+
+def _run_canonical_check(case) -> dict:
+    """Run model with case-spec canonical inputs; return integrity + gb + max_diff."""
+    out = {
+        "import_ok": False,
+        "eager_ok": False,
+        "compile_ok": False,
+        "graph_count": None,
+        "graph_break_count": None,
+        "max_diff_vs_eager_baseline": None,
+        "max_diff_compiled_vs_eager_now": None,
+        "error": None,
+    }
+    try:
+        # Use case_spec's make_model + make_inputs (the canonical regime)
+        case_mod = importlib.import_module(f"discovery.cases.{case.case_id}")
+        # Reset any cached modules the agent may have edited
+        for m in list(sys.modules):
+            # Heuristic: drop module families that might overlap with watched files
+            for wf in case.watched_files:
+                stem = Path(wf.path).stem
+                if stem in m:
+                    del sys.modules[m]
+                    break
+        # Re-import case (and via it, fresh model code)
+        case_mod = importlib.reload(case_mod)
+        out["import_ok"] = True
+
+        torch.manual_seed(0)
+        model = case_mod.make_model()
+        inputs = case_mod.make_inputs(model)
+
+        with torch.no_grad():
+            eager_out = model(**inputs)
+            if hasattr(eager_out, "logits"):
+                eager_out = eager_out.logits
+        out["eager_ok"] = True
+
+        # Compare to saved baseline output if present (any baseline_eager_output.pt in WORK_DIR)
+        baseline_eager_pt = None
+        if hasattr(case_mod, "WORK_DIR"):
+            cand = case_mod.WORK_DIR / "baseline_eager_output.pt"
+            if cand.exists():
+                baseline_eager_pt = cand
+        if baseline_eager_pt:
+            baseline_out = torch.load(baseline_eager_pt, map_location=eager_out.device)
+            out["max_diff_vs_eager_baseline"] = (eager_out - baseline_out).abs().max().item()
+
+        torch._dynamo.reset()
+        explanation = torch._dynamo.explain(model)(**inputs)
+        out["graph_count"] = explanation.graph_count
+        out["graph_break_count"] = explanation.graph_break_count
+
+        torch._dynamo.reset()
+        compiled = torch.compile(model)
+        with torch.no_grad():
+            compiled_out = compiled(**inputs)
+            if hasattr(compiled_out, "logits"):
+                compiled_out = compiled_out.logits
+        out["compile_ok"] = True
+        out["max_diff_compiled_vs_eager_now"] = (eager_out - compiled_out).abs().max().item()
+
+    except Exception as e:
+        out["error"] = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
+    return out
+
+
+def _run_agent_baseline(case) -> int | None:
+    """Run the agent's edited baseline_*.py via subprocess; parse `graph_break_count=N`."""
+    baseline_wf = None
+    for wf in case.watched_files:
+        if "baseline" in Path(wf.path).name:
+            baseline_wf = wf
+            break
+    if baseline_wf is None:
+        return None
+    try:
+        res = subprocess.run(
+            [sys.executable, str(baseline_wf.path)],
+            capture_output=True, text=True, timeout=300,
+        )
+        text = res.stdout + "\n" + res.stderr
+        m = re.search(r"graph_break_count\s*=\s*(\d+)", text)
+        return int(m.group(1)) if m else None
+    except Exception:
+        return None
+
+
+def _derive_fix_status(agent_gb: int | None, canonical_gb: int | None) -> str:
+    if agent_gb is None:
+        if canonical_gb == 0:
+            return "general"
+        if canonical_gb is not None and canonical_gb > 0:
+            return "none"
+        return "unknown"
+    if agent_gb == 0 and canonical_gb == 0:
+        return "general"
+    if agent_gb == 0 and canonical_gb is not None and canonical_gb > 0:
+        return "setup-required"
+    if agent_gb > 0:
+        return "none"
+    return "unknown"
+
+
+def main(case_id: str) -> int:
+    """Entry point for per-case validate.py shims. Prints validation_v2 JSON to stdout."""
+    case_mod = importlib.import_module(f"discovery.cases.{case_id}")
+    case = case_mod.get_case_spec()
+
+    canonical = _run_canonical_check(case)
+    agent_gb = _run_agent_baseline(case)
+    fix_status = _derive_fix_status(agent_gb, canonical["graph_break_count"])
+
+    validation_v2 = {
+        "integrity": {
+            "import_ok": canonical["import_ok"],
+            "eager_ok": canonical["eager_ok"],
+            "compile_ok": canonical["compile_ok"],
+        },
+        "fix_status": fix_status,
+        "details": {
+            "gb_in_agent_run": agent_gb,
+            "gb_under_canonical_inputs": canonical["graph_break_count"],
+            "max_diff_compiled_vs_eager": canonical["max_diff_compiled_vs_eager_now"],
+            "max_diff_vs_baseline": canonical["max_diff_vs_eager_baseline"],
+        },
+        "error": canonical["error"],
+    }
+    print(json.dumps(validation_v2, indent=2))
+    return 0

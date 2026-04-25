@@ -116,11 +116,22 @@ These are **questions, not hypotheses.** We collect data and report what we see.
 
 ## What we record per trial
 
-- *`validate.py` output:* `import_ok`, `eager_ok`, `compile_ok`, `graph_count`, `graph_break_count`, `max_diff_compiled_vs_eager_now`, `max_diff_vs_eager_baseline`.
+- *`validate.py` (legacy field, canonical-input check):* `import_ok`, `eager_ok`, `compile_ok`, `graph_count`, `graph_break_count`, `max_diff_compiled_vs_eager_now`, `max_diff_vs_eager_baseline`.
+- *`validation_v2` (preferred — added by `discovery/revalidate.py`):*
+  - `integrity`: `{import_ok, eager_ok, compile_ok}`
+  - `fix_status`: verdict — `general` (model-layer alone fixes; gb=0 under canonical inputs) | `setup-required` (agent's full fix incl. setup-layer edits achieves gb=0, but model-layer alone doesn't) | `none` (gb>0 even in agent's own run) | `unknown`
+  - `details`: `{gb_in_agent_run, gb_under_canonical_inputs, max_diff_compiled_vs_eager, max_diff_vs_baseline}`
 - *`measure_perf` tier-1 (small inputs) + tier-2 (realistic inputs):* `eager_ms`, `compiled_ms`, `speedup`, `peak_mem_mb`, `compile_s`.
 - *`agent_diff.patch`:* which files edited, what changed.
 - *Stream metadata:* turns, wall time, $ cost, agent's final summary.
 - *Strategy fingerprint (5-axis lock from Phase 1):* `{fix-locus, fix-shape-family, op-order-preserved, sparsity-preserved, escape-hatch-used}`. Per-case reports may add a 6th axis if the case demands it.
+
+**Vocabulary — "model-layer" vs "setup-layer" changes:**
+
+- *Model-layer changes:* edits to `modeling_*.py` files. Affect the model itself. Generalize across callers (production HF processor outputs, standalone scripts, any input shape).
+- *Setup-layer changes:* edits to the run script (`baseline_<model>.py`) — input formatting, flag setting, wrapper code. Local to that run; don't affect the model. Legitimate fixes, just narrower in scope.
+
+The `fix_status` verdict surfaces this distinction: `general` = model-layer fix; `setup-required` = setup-layer or model+setup combination that doesn't generalize past the agent's setup.
 
 ## Stop conditions
 
@@ -135,17 +146,32 @@ These are **questions, not hypotheses.** We collect data and report what we see.
 - If no case in {3a, 3b} produces diverse strategies → harness frame is wrong; pause Phase 3, revisit `discovery/design.md`
 - If only V0 trials succeed across cases → variant catalog is broken; rebuild before continuing
 
-## Per-case execution shape
+## Per-case execution shape (6-phase flow)
 
 For each case in order:
 
-1. Author `corpus/discovery/cases/<case>.{py,baseline.json}` per `discovery/design.md` §6 schema
-2. Pre-flight: model loads, baseline correctness recorded, baseline perf seeded
-3. Pre-register the case as a per-model issue using `tools/new_case_issue.py <experiment-slug> <case_id> "<Model name>"` (do NOT hand-roll the issue body — see `corpus/CLAUDE.md` §"Discovery Experiments")
-4. Launch the harness: `python -m discovery.run_case --case <case_id> --variants V0,V2,V4,V6 --skills none,/home/pengwu/projects/oss-model-graph-break-corpus/discovery/skills/debug-graph-breaks/SKILL.md --n 3 --timeout 1800` (24 trials sequential, ~12 hrs wall)
-5. Tier-2 enrichment via `enrich_tier2.py`
-6. Write per-case findings → `discovery/experiments/2026-04-cross-case-skill-discovery/reports/<case>.md`
-7. Submit PR adding the report → links back to per-model issue → merge → issue moves to Done
+1. *Author the case files.* `corpus/discovery/cases/<case>.{py,baseline.json}` per `discovery/design.md` §6 schema. Set up `/tmp/discovery-runs/<case_id>/` with `baseline_*.py`, `validate.py`, source backups, baseline_eager_output.pt.
+2. *Pre-register the case as a per-model issue.* Use `tools/new_case_issue.py <experiment-slug> <case_id> "<Model name>"` (do NOT hand-roll — see `corpus/CLAUDE.md` §"Discovery Experiments"). The scaffold injects the canonical Pre-launch checklist (below) into the issue body.
+3. *Walk the Pre-launch checklist* (canonical below + any case-specific additions in the per-model issue). Tick each item before launching. If a case has quirks, add case-specific items to the issue's "Case-specific additions" section before launch.
+4. *Launch the harness:* `python -m discovery.run_case --case <case_id> --variants V0,V2,V4,V6 --skills none,/home/pengwu/projects/oss-model-graph-break-corpus/discovery/skills/debug-graph-breaks/SKILL.md --n 3 --timeout 1800` (24 trials sequential, ~12 hrs wall).
+5. *Run Phase 0 audit + Phase A-F analysis* per `discovery/skills/per-case-analysis/SKILL.md`. Produces `reports/<case_id>/findings.md` + `fingerprints.csv`. Phase 0 (data trustworthiness) GATES Phase A — don't analyze on suspect data.
+6. *Submit PR* adding the report → PR description links per-model issue → merge → issue moves to Done.
+
+## Pre-launch checklist (canonical — snapshot into per-model issues)
+
+Tick each item before launching the harness. Paste command output for any check that's not obviously a one-liner.
+
+- [ ] *Case file imports cleanly:* `python -c "from discovery.cases.<case_id> import get_case_spec; print(get_case_spec().case_id)"` returns the case_id without exception.
+- [ ] *Baseline.json present:* `ls discovery/cases/<case_id>.baseline.json` exists with reasonable speedup numbers.
+- [ ] *Pristine source backups:* `ls /tmp/discovery-runs/<case_id>/*.original` returns expected files (one `.original` per watched source file).
+- [ ] *Baseline eager output saved:* `ls /tmp/discovery-runs/<case_id>/baseline_eager_output.pt` exists.
+- [ ] *Validate runs cleanly:* `python /tmp/discovery-runs/<case_id>/validate.py` reports `import_ok`, `eager_ok`, `compile_ok` all true; `graph_break_count` matches the case's documented baseline (in baseline.json or case docstring).
+- [ ] *Backend confirmed:* `baseline_*.py` and `validate.py` use `torch.compile(model)` with default backend (inductor) — NOT `backend="eager"`. Discovery uses inductor; sweep uses eager (per design.md §2.1).
+- [ ] *Watched files set:* case spec lists exactly the files agent may edit; no shared infra (`sdpa_attention.py`, decomposition tables) included; allowed list matches what the prompt declares.
+- [ ] *Skill file accessible:* `ls discovery/skills/debug-graph-breaks/SKILL.md` exists (used in the with-skill arm).
+- [ ] *No conflicting trials in flight:* `ps -ef | grep "discovery.run_case --case <case_id>"` returns nothing — sequential trials would conflict on shared model files.
+
+If any item is flagged, fix or document the deviation BEFORE launching. Don't launch with unchecked items.
 
 ## Cross-case synthesis (after 3a–3d done)
 

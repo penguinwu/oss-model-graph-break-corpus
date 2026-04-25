@@ -50,8 +50,13 @@ def _parse_skills(skills_arg: str) -> list[tuple[str, Path | None]]:
             raise SystemExit(f"--skills: file does not exist: {path}")
         if not path.is_file():
             raise SystemExit(f"--skills: not a file: {path}")
-        # Tag = filename stem, sanitized.
-        tag = path.stem.replace("-", "_")
+        # Tag = filename stem, sanitized. If the filename is generic
+        # (SKILL.md / skill.md), use the parent dir name instead — that's the
+        # actual skill identity (e.g. debug-graph-breaks/SKILL.md → "debug_graph_breaks").
+        if path.stem.lower() == "skill":
+            tag = path.parent.name.replace("-", "_")
+        else:
+            tag = path.stem.replace("-", "_")
         skills.append((tag, path))
     if not skills:
         raise SystemExit("--skills must be non-empty (use 'none' for the baseline arm)")

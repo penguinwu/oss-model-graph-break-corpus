@@ -23,6 +23,7 @@ Does NOT mutate the umbrella issue. Caller is responsible for running
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import re
 import sys
 from pathlib import Path
@@ -55,6 +56,27 @@ def _read_plan_metadata(experiment_dir: Path) -> dict[str, str]:
     return meta
 
 
+def _extract_canonical_checklist(experiment_dir: Path) -> str:
+    """Pull the `## Pre-launch checklist (canonical ...)` section from plan.md.
+
+    Returns the bullet block (everything between the header and the next `## ` header
+    or the explicit "If any item" footer). Returns a stub if the section is missing.
+    """
+    plan_text = (experiment_dir / "plan.md").read_text()
+    # Find the canonical checklist header
+    m = re.search(r"^## Pre-launch checklist \(canonical[^)]*\)\s*$(.+?)(?=^## |\Z)", plan_text, re.MULTILINE | re.DOTALL)
+    if not m:
+        return "(no canonical checklist found in master plan — please add `## Pre-launch checklist (canonical ...)` section to plan.md)"
+    block = m.group(1).strip()
+    # Drop the leading prose paragraph (everything before the first `- [ ]`)
+    bullets_start = block.find("- [ ]")
+    if bullets_start == -1:
+        return block
+    # Take from first bullet through the "If any item" line if present, else through end
+    body = block[bullets_start:]
+    return body.strip()
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("experiment_slug", help="e.g. 2026-04-cross-case-skill-discovery")
@@ -70,12 +92,17 @@ def main() -> None:
     umbrella_issue = meta["umbrella_issue"].lstrip("#")
     experiment_title = meta["title"]
 
+    canonical_checklist = _extract_canonical_checklist(experiment_dir)
+    snapshot_date = dt.date.today().isoformat()
+
     body = TEMPLATE.read_text().format(
         experiment_title=experiment_title,
         experiment_slug=args.experiment_slug,
         umbrella_issue=umbrella_issue,
         case_id=args.case_id,
         model_name=args.model_name,
+        canonical_checklist=canonical_checklist,
+        snapshot_date=snapshot_date,
     )
     title = f"[{experiment_title}] {args.model_name} case"
 

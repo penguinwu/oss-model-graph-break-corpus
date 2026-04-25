@@ -2,6 +2,7 @@
 
 **Experiment:** [`{experiment_slug}`](https://github.com/penguinwu/oss-model-graph-break-corpus/tree/main/discovery/experiments/{experiment_slug})
 **Master plan:** [`plan.md`](https://github.com/penguinwu/oss-model-graph-break-corpus/blob/main/discovery/experiments/{experiment_slug}/plan.md) — methodology, matrix, questions, what we record. Read this before launching.
+**Analysis methodology:** [`per-case-analysis SKILL`](https://github.com/penguinwu/oss-model-graph-break-corpus/blob/main/discovery/skills/per-case-analysis/SKILL.md) — 7-phase blueprint (Phase 0 audit + A-F). Follow this when the run completes.
 **Umbrella:** #{umbrella_issue}
 **Owner:** Otter
 **Status:** Backlog (case file not yet authored)
@@ -35,6 +36,20 @@ This issue holds the **model-specific** setup, results, and discussion for case 
 - `compile_s`: TBD
 - `max_diff_compiled_vs_eager` (baseline drift): TBD
 
+## Pre-launch checklist
+
+### Canonical (snapshotted from master plan on {snapshot_date})
+
+{canonical_checklist}
+
+### Case-specific additions
+
+(Add case-specific items below — quirks like train mode, M-RoPE config, etc. Empty if no quirks.)
+
+- [ ] (none yet)
+
+If any item above is unchecked, fix or document the deviation BEFORE launching.
+
 ## Launch command (when ready)
 
 ```bash
@@ -58,9 +73,25 @@ nohup /home/pengwu/envs/torch211/bin/python -m discovery.run_case \
 |---|---|---|---|---|---|---|
 | — | — | — | — | — | — | — |
 
+## Post-run checklist
+
+Tick after the harness completes and before declaring the case done.
+
+- [ ] *Phase 0 audit clean* (per `per-case-analysis SKILL`): artifact completeness, .original SHA-verified against pristine source, no serious flags, internal consistency, value bounds sane, stream integrity OK.
+- [ ] *validation_v2 added* to all trial result.json files (run `python -m discovery.revalidate --case {case_id} --run-id <run_id>` if not native to the per-case validate.py).
+- [ ] *fingerprints.csv produced* per Phase A, classifying every trial.
+- [ ] *Phase B aggregations* computed (fix_status × variant × skill table; perf distributions; strategy clusters).
+- [ ] *Phase C-D-E walked* in the findings doc — questions answered, surprises documented, open observations flagged honestly (no invented mechanisms).
+- [ ] *Findings doc landed* at `discovery/experiments/{experiment_slug}/reports/{case_id}/findings.md` per Phase F.
+- [ ] *PR opened* adding the report; PR description links back to this issue.
+
 ## Final report (deliverable)
 
-PR adds `discovery/experiments/{experiment_slug}/reports/{case_id}.md` per the master plan's report convention. PR description links back to this issue. Merge → this issue moves to Done.
+PR adds `discovery/experiments/{experiment_slug}/reports/{case_id}/findings.md` + `fingerprints.csv` per the master plan's report convention. PR description links back to this issue. Merge → this issue moves to Done.
+
+## Lessons learned (harvested at case wrap)
+
+(Filled in when the case wraps. Anything this case taught us about the harness, the variant catalog, the fingerprint axes, the master plan, the methodology — short bullets. Cross-case synthesis pulls from these.)
 
 ## Status updates (comment thread)
 

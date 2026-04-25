@@ -29,6 +29,14 @@ The output of one discovery run is a **trade-off matrix** for that case, not a s
 - Not a fix-shipping tool — the output is decision-support material for humans (and, eventually, for skill catalog curation).
 - Not a sweep-scale infrastructure project (yet) — first ships scoped to one case at a time, manually invoked.
 
+### 2.1 Backend choice — inductor (default), not eager
+
+Discovery uses `torch.compile(model)` with the *default* backend (inductor). `sweep/` uses `backend="eager"` for fast breadth-first surveying with no codegen. Discovery is the opposite: depth-per-case where production-realistic perf matters, and codegen is part of what we're studying. A successful "fix" at the discovery layer means the agent improved compile-time + runtime perf, which only inductor can measure.
+
+Trade-off: max_diff between eager and compiled is ~1e-4 even with no breaks (inductor codegen drift) vs near-zero under eager backend. Worth it — the perf signal is essential.
+
+Decision: 2026-04-25, per Peng. Documented here so future contributors don't accidentally swap backends.
+
 ## 3. Why now
 
 Pilot 4 surfaced two things our current setup can't see:
