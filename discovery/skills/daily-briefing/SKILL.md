@@ -65,7 +65,7 @@ Pick what's interesting today. You decide order and emphasis. **Never invent.** 
 - *Blank line between every section.* Sections are visually separated by whitespace, not headers.
 - *Bullets, not paragraphs.* Even narrative content gets broken into 1-line bullets. No 3-sentence prose blocks.
 - *Continuous numbering.* Items are numbered `1. 2. 3. ...` across the WHOLE brief, never restarting at 1 per section. Makes "close item 7, defer 9" trivial to write.
-- *HANDOFF section is the exception.* Show it verbatim (the agent paraphrasing loses signal). Not numbered; no synthesis.
+- *HANDOFF section is a synthesis, not a dump.* Don't paste the file verbatim — pull out 2-4 bullets of what Peng needs to know to pick up where things left off. Highlight blockers explicitly.
 - *Section titles in `*single asterisks*`.* Title is its own line, blank line above + below.
 - *Keep titles concrete.* Not "Plans" — say "Active workstream plans". Not "Backlog" — say "Aged Backlog (>7 days)".
 
@@ -84,7 +84,7 @@ Pick what's interesting today. You decide order and emphasis. **Never invent.** 
 
 *HANDOFF state*  (only if mtime within 24h)
 
-(Paste handoff.first_lines verbatim. Don't paraphrase. The skill consumer wrote that file with intent; reproduce it. Strip the leading "# Otter HANDOFF — <date>" line if present, but keep the rest including all `## ` subsections.)
+(2-4 bullets of what Peng needs to pick up where things left off. Pull from handoff.first_lines but synthesize — don't paste raw subsections. Highlight blockers explicitly with the word "Blocked:". Keep each bullet to one line.)
 
 *Active workstream plans*
 
@@ -117,7 +117,7 @@ Source: tools/brief_data.py + project board #1
 
 - *"What shipped since yesterday" is the headline.* Bullets, one line each. Issue numbers OK; commit hashes are noise.
 - *Continuous numbering.* If "What shipped" has 5 bullets (1-5), and "Active workstream plans" follows with 3 entries, those are 6, 7, 8. Never restart numbering.
-- *HANDOFF verbatim.* The handoff was authored deliberately for this purpose — copy it through, don't summarize. Drop only the title line.
+- *HANDOFF is synthesis, not dump.* 2-4 bullets max. Pull blockers explicitly. Peng wants the bottom line, not the whole file.
 - *Trim aggressively.* If a section has 10+ items, show top N and "+M more (numbered K through K+M)".
 
 ## Step 4 — Format for GChat
