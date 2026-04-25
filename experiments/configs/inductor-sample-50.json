@@ -1,0 +1,13 @@
+{
+  "name": "inductor-sample-50",
+  "description": "50-model inductor sample (seed=42, same as aot_eager). Measures codegen crash rate and compile times.",
+  "models": {"source": "sample", "size": 50, "seed": 42},
+  "configs": [
+    {
+      "name": "inductor",
+      "compile_kwargs": {"backend": "inductor", "fullgraph": false},
+      "dynamo_flags": {}
+    }
+  ],
+  "settings": {"device": "cuda", "modes": ["eval"], "workers": 4, "timeout_s": 300}
+}
