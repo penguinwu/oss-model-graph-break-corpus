@@ -17,3 +17,8 @@ data/pt2-issues/pt2_analysis_data.json
 data/pt2-issues/pt2_analysis_output.txt
 data/pt2-issues/pt2_analysis_summary.json
 myclaw.db
+
+# Discovery harness: raw agent reasoning traces are scratch paper.
+# Outcome artifacts (agent_diff.patch, prompt.txt, result.json, summary.json)
+# stay in git; full streams are archived to Drive.
+discovery/runs/**/stream.jsonl
