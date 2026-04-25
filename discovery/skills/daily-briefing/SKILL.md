@@ -63,9 +63,10 @@ Pick what's interesting today. You decide order and emphasis. **Never invent.** 
 ### Visual rules (apply to every section)
 
 - *Blank line between every section.* Sections are visually separated by whitespace, not headers.
-- *Number every list item.* Use `1. 2. 3.` so Peng can reference items by number ("close item 3, defer 5").
+- *Bullets, not paragraphs.* Even narrative content gets broken into 1-line bullets. No 3-sentence prose blocks.
+- *Continuous numbering.* Items are numbered `1. 2. 3. ...` across the WHOLE brief, never restarting at 1 per section. Makes "close item 7, defer 9" trivial to write.
+- *HANDOFF section is the exception.* Show it verbatim (the agent paraphrasing loses signal). Not numbered; no synthesis.
 - *Section titles in `*single asterisks*`.* Title is its own line, blank line above + below.
-- *Sub-items / context* under a numbered item: indent with two spaces, no leading marker.
 - *Keep titles concrete.* Not "Plans" — say "Active workstream plans". Not "Backlog" — say "Aged Backlog (>7 days)".
 
 ### Skeleton
@@ -75,34 +76,38 @@ Pick what's interesting today. You decide order and emphasis. **Never invent.** 
 
 *What shipped since yesterday*
 
-(One narrative paragraph — 1-3 sentences. Synthesize from commits + closed issues + closed_loops. Do NOT enumerate commit hashes; describe the WORK done. Example: "Built the experiment scaffold + drift detector + runner skill arm; closed #64 (Mistral3 relaunch absorbed into #59); closed 3 WS1 pilots from this morning's session." Always cite issue numbers when referring to closures, since those are linkable.)
+1. <One-line bullet summarizing one thread of work, with issue refs if applicable.>
+2. <Next bullet.>
+3. <Next bullet.>
+
+(Synthesize from commits + closed issues + closed_loops into bullets. Do NOT enumerate commit hashes — describe the WORK done. Issue numbers are fine — they link. Keep each bullet to one line. Aim for 3-7 bullets total.)
 
 *HANDOFF state*  (only if mtime within 24h)
 
-(2-3 sentences summarizing what's in flight per HANDOFF.md. Highlight any blockers explicitly.)
+(Paste handoff.first_lines verbatim. Don't paraphrase. The skill consumer wrote that file with intent; reproduce it. Strip the leading "# Otter HANDOFF — <date>" line if present, but keep the rest including all `## ` subsections.)
 
 *Active workstream plans*
 
-1. WS<N> — <plan name>: ok / STALE (<N>d since last_check)
-2. WS<N> — <plan name>: ok / STALE (<N>d since last_check)
+<continuing numbering from above>. WS<N> — <plan name>: ok / STALE (<N>d since last_check)
+<next>. WS<N> — <plan name>: ok / STALE (<N>d since last_check)
 ...
 
-(If all are ok with recent last_check, write "All N plans current." instead of enumerating.)
+(If all are ok with recent last_check, write "All N plans current — no stale items." as a single numbered bullet instead of enumerating.)
 
 *Experiment convention drift*  (only if drift > 0)
 
-1. <slug>: <key problem>
-2. ...
+<continuing>. <slug>: <key problem>
+<continuing>. ...
 
 *Aged Backlog (>7 days)*  (only if non-empty)
 
-1. #<N> (<age>d) — <title>
-2. ...
+<continuing>. #<N> (<age>d) — <title>
+<continuing>. ...
 
 *Awaiting your input*  (only if non-empty — these are blockers)
 
-1. <WS> — <task> (<age>d) ← (← marker if started >= 2 days ago)
-2. ...
+<continuing>. <WS> — <task> (<age>d) ← (← marker if started >= 2 days ago)
+<continuing>. ...
 
 —
 Source: tools/brief_data.py + project board #1
@@ -110,10 +115,10 @@ Source: tools/brief_data.py + project board #1
 
 ### Composition guidance
 
-- *"What shipped since yesterday" is the headline.* Lead with it. Synthesize, don't enumerate. Issue numbers are fine (they link); commit hashes are noise.
-- *"Active workstream plans" replaces the old "Plans"* — the previous label was unclear. Show plan name + workstream tag + staleness.
-- *Trim aggressively.* If a section has only 1-2 items, fine; if it has 10+, summarize the top and say "+N more".
-- *Numbering is across-section, not global.* Each section starts at 1.
+- *"What shipped since yesterday" is the headline.* Bullets, one line each. Issue numbers OK; commit hashes are noise.
+- *Continuous numbering.* If "What shipped" has 5 bullets (1-5), and "Active workstream plans" follows with 3 entries, those are 6, 7, 8. Never restart numbering.
+- *HANDOFF verbatim.* The handoff was authored deliberately for this purpose — copy it through, don't summarize. Drop only the title line.
+- *Trim aggressively.* If a section has 10+ items, show top N and "+M more (numbered K through K+M)".
 
 ## Step 4 — Format for GChat
 
