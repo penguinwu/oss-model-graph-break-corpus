@@ -58,42 +58,62 @@ Post that and exit. Do NOT include plans / open-loops / Backlog sections in supp
 
 ## Step 3 — Compose the full brief (if not suppressing)
 
-Pick what's interesting today. You decide order and emphasis. **Never invent.** Fields with empty values can simply be omitted from the output — no need to write "(none)" everywhere.
+Pick what's interesting today. You decide order and emphasis. **Never invent.** Fields with empty values are simply omitted from the output — no need to write "(none)" everywhere.
 
-Suggested skeleton (rearrange / drop sections based on what's notable):
+### Visual rules (apply to every section)
+
+- *Blank line between every section.* Sections are visually separated by whitespace, not headers.
+- *Number every list item.* Use `1. 2. 3.` so Peng can reference items by number ("close item 3, defer 5").
+- *Section titles in `*single asterisks*`.* Title is its own line, blank line above + below.
+- *Sub-items / context* under a numbered item: indent with two spaces, no leading marker.
+- *Keep titles concrete.* Not "Plans" — say "Active workstream plans". Not "Backlog" — say "Aged Backlog (>7 days)".
+
+### Skeleton
 
 ```
 [🦦 Otter] Daily brief — <today>
 
-*Closed since yesterday*
+*What shipped since yesterday*
 
-(commits — show up to ~10 by hash + first line; if more, "...and N more")
-(closed issues — `#N — title`)
-(closed_loops — first ~80 chars per bullet, drop `**bold**` markers)
+(One narrative paragraph — 1-3 sentences. Synthesize from commits + closed issues + closed_loops. Do NOT enumerate commit hashes; describe the WORK done. Example: "Built the experiment scaffold + drift detector + runner skill arm; closed #64 (Mistral3 relaunch absorbed into #59); closed 3 WS1 pilots from this morning's session." Always cite issue numbers when referring to closures, since those are linkable.)
 
-*HANDOFF*  (only if mtime within 24h)
+*HANDOFF state*  (only if mtime within 24h)
 
-(first ~15 lines of handoff.first_lines, trim aggressively if long; or just 2-3 sentences summarizing what's in flight)
+(2-3 sentences summarizing what's in flight per HANDOFF.md. Highlight any blockers explicitly.)
 
-*Plans*  (only if any STALE; if all green, just say "all green")
+*Active workstream plans*
 
-(plan name + age days; STALE marker if stale)
+1. WS<N> — <plan name>: ok / STALE (<N>d since last_check)
+2. WS<N> — <plan name>: ok / STALE (<N>d since last_check)
+...
+
+(If all are ok with recent last_check, write "All N plans current." instead of enumerating.)
 
 *Experiment convention drift*  (only if drift > 0)
 
-(per-drift item with key problems)
+1. <slug>: <key problem>
+2. ...
 
-*Backlog aged*  (only if non-empty)
+*Aged Backlog (>7 days)*  (only if non-empty)
 
-(`#N (Nd) — title`, top 5)
+1. #<N> (<age>d) — <title>
+2. ...
 
-*Awaiting your input*  (only if non-empty)
+*Awaiting your input*  (only if non-empty — these are blockers)
 
-(`<section> — <task> (Nd ago)` with ← if started >= 2 days ago)
+1. <WS> — <task> (<age>d) ← (← marker if started >= 2 days ago)
+2. ...
 
 —
-Source: tools/brief_data.py + check_plan.py + check_experiments.py + OPEN-LOOPS.md + project board #1
+Source: tools/brief_data.py + project board #1
 ```
+
+### Composition guidance
+
+- *"What shipped since yesterday" is the headline.* Lead with it. Synthesize, don't enumerate. Issue numbers are fine (they link); commit hashes are noise.
+- *"Active workstream plans" replaces the old "Plans"* — the previous label was unclear. Show plan name + workstream tag + staleness.
+- *Trim aggressively.* If a section has only 1-2 items, fine; if it has 10+, summarize the top and say "+N more".
+- *Numbering is across-section, not global.* Each section starts at 1.
 
 ## Step 4 — Format for GChat
 
