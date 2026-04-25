@@ -1,6 +1,6 @@
-# Discovery Agent — Design Doc (v0.2, baked-in implications)
+# Discovery Agent — Design Doc (v0.4, Phase 1 closed)
 
-**Status:** Pre-implementation. v0.2 folds in the 4 implications from the Pilot 4 forensic re-run.
+**Status:** Phase 1 complete on Dbrx. v0.4 closes the §8 open questions with the answers Phase 1 produced.
 **Author:** Otter
 **Date:** 2026-04-24
 
@@ -13,6 +13,7 @@
   3. Trial harness must restore *both* model source AND test/baseline file between trials; post-trial diff check flags any test-file mutation not reflected in agent's diff.
   4. Pilot 4 strategy distribution to be re-tallied splitting clean / deliberate-flag / contaminated trials; lean is to skip re-running the contaminated 3 (discovery agent will re-cover the same case).
 - **v0.3 (2026-04-24 noon, per Peng)** — perf primitive scope correction: drop compile-time measurement. Compile is a one-time cost that varies with cache state and is unrelated to steady-state fix quality. The first warmup iteration triggers compilation and is discarded along with the rest of warmup.
+- **v0.4 (2026-04-24 evening, post-Phase-1)** — closed §8 open questions with answers Phase 1 produced on Dbrx. M=variant-driven (V0/V1/V6 sufficed for Dbrx), N=3 confirmed adequate for strategy-distribution signal, fingerprint stayed heuristic (no LLM-as-judge needed for Dbrx), output landed at `discovery/runs/<case>/<run-id>/` + report at `discovery/reports/<case>_<date>.md`, Phase 1 case = Dbrx as recommended.
 
 ---
 
@@ -166,17 +167,23 @@ Per Peng 2026-04-24: tucks under corpus repo for now (one-repo manageability); c
 
 **Phase 4 (deferred):** add bitwise as a sweep-level constraint, scale to corpus. This is the level-4 corpus extension — not Phase 1.
 
-## 8. Open questions for Peng
+## 8. Open questions — closed by Phase 1 (Dbrx)
 
-1. **Scope of M.** How many constraint variants per case is enough? My lean: 4 to start (V0/V1/V2/V4), expand if a case has obvious axes the catalog doesn't cover. **Recommend 4.**
+1. **Scope of M.** Phase 1 ran V0/V1/V6 on Dbrx (3 variants, not 4). V2 (bitwise) was deferred — accuracy axis already showed max_diff ~1e-7 on V0/V1/V6 so bitwise wasn't a separate axis worth a variant. V4 (no escape hatches) folded into V6's broader scope. **Conclusion:** M is variant-driven, not a fixed number. Pick variants that probe distinct *constraint axes*, not just "more is better." For Dbrx, 3 variants × 3 trials = 9 trials surfaced the full strategy space (masked-dense, bmm, config-flag).
 
-2. **Trials per variant (N).** Pilot 4 ran 3 per arm; that's enough for "did it converge" but small for "what's the strategy distribution." My lean: N=3 for first case, scale to N=5 once cost is understood. **Recommend 3.**
+2. **Trials per variant (N).** N=3 was sufficient for Dbrx — V0×3 all converged to masked-dense (low strategy variance under no constraint), V6×3 all converged to masked-dense (V0 attractor confirmed under tightened constraint), V1×3 split 1 bmm + 2 config-flag (constraint-induced variance). The split was visible at N=3. **Conclusion:** N=3 for first case of any new break-shape. Scale to N=5 only if N=3 leaves the strategy distribution ambiguous.
 
-3. **Strategy fingerprint sophistication.** Heuristic regex+AST is cheap. LLM-as-judge is more robust but costs $0.10–0.50 per trial classification. My lean: heuristics first, LLM-as-judge for the cases heuristics can't classify. **Recommend hybrid.**
+3. **Strategy fingerprint sophistication.** Heuristic regex (`for expert_idx in range(...)` for masked-dense, `torch.bmm` for bmm, `_dynamo.config` mutation for escape-flag) + post-trial diff inspection sufficed for all 9 Dbrx trials. **Conclusion:** Heuristic-first works for cases where the strategies are syntactically distinguishable. LLM-as-judge unused so far; reserve for the first case where heuristics can't classify a trial.
 
-4. **Where the discovery output lands.** Local file? Drive doc? Both? My lean: JSON to `discovery_results/<case>/<run_id>/`, narrative report uploaded to Drive PARA. **Recommend both.**
+4. **Where the discovery output lands.** Settled on: per-trial artifacts at `discovery/runs/<case>/<run-id>/V<n>_<trial>/` (agent_diff.patch, prompt.txt, result.json, stream.jsonl), per-run summary at `discovery/runs/<case>/<run-id>/summary.json`, narrative report at `discovery/reports/<case>_<date>.md`. Drive upload deferred until report stabilizes; reports live in repo first.
 
-5. **Phase 1 case selection.** Start with Dbrx (we have rich Pilot 4 + forensic data) or pick a fresh case to avoid confirmation bias? **Recommend Dbrx for Phase 1** — having forensic data lets us validate the harness against known ground truth before scaling.
+5. **Phase 1 case selection.** Confirmed Dbrx — Pilot 4 forensic data made it possible to validate the harness against known ground truth (V1 contamination caught by harness v0.2 dual-file restore + post-trial diff check exactly as designed).
+
+### New questions opened by Phase 1 (for Phase 3 case selection)
+
+- **Cross-case strategy generalization.** Does masked-dense's "strong attractor" property hold for other MoE cases (T5-MoE, Mixtral)? Or is it Dbrx-specific?
+- **Different break-shape, same methodology?** Jamba (data-dependent branch, BS-104) is a different break-shape than Dbrx (data-dependent for-loop, BS-103). Does the V0–V6 catalog need shape-specific variants, or do the existing variants generalize?
+- **When is N>3 needed?** Phase 1 didn't hit it. The first case where N=3 leaves strategy distribution ambiguous will be the trigger.
 
 ## 9. What this enables
 
@@ -192,4 +199,4 @@ Per Peng 2026-04-24: tucks under corpus repo for now (one-repo manageability); c
 
 ---
 
-*Awaiting Peng's review on §8 open questions before any code lands.*
+*Phase 1 complete on Dbrx (commit 6684ffa, 2026-04-24). §8 closed. Phase 3 (second case) awaiting Peng's go on case selection.*
