@@ -56,6 +56,17 @@ Convention is documented in `discovery/experiments/README.md` and enforced by `t
 
 The board is the canonical source of "agreed but not started" work. TodoWrite is in-conversation only; OPEN-LOOPS.md is project-level facts; the board is indefinite-lifetime and visible without local access. When you commit to deferred work, queue it.
 
+**Analysis outputs go through PR. Never commit-then-PR retroactively.**
+
+Anything under `discovery/experiments/<exp>/reports/` (findings docs, fingerprint CSVs, synthesis docs) is the deliverable that Peng reviews. The proper state is "in repo via merged PR," not "in repo via direct commit." Workflow:
+
+1. Compose findings on a branch named `review/<case_id>-findings` (or `review/<exp>-synthesis` for cross-case work).
+2. Push branch + open PR. PR diff = ONLY the findings doc + fingerprints.csv (or synthesis.md). Do NOT bundle scaffolding, methodology improvements, or other commits with analysis output.
+3. Wait for Peng's review. Address comments. She decides when to merge.
+4. After merge, the per-case issue moves to Done.
+
+Anti-pattern (caught 2026-04-25 on Mistral3 Case 3a): bundling findings with workflow scaffolding in a single commit pushed direct to main, then opening a retroactive review PR. The review PR had no gate function — content was already on main. Per-case findings get their own PR, no exceptions.
+
 ## Script Map
 
 The codebase has two layers: **sweep/** runs the actual tests, **tools/** analyzes results and manages issues.

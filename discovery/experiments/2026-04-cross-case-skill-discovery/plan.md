@@ -155,7 +155,7 @@ For each case in order:
 3. *Walk the Pre-launch checklist* (canonical below + any case-specific additions in the per-model issue). Tick each item before launching. If a case has quirks, add case-specific items to the issue's "Case-specific additions" section before launch.
 4. *Launch the harness:* `python -m discovery.run_case --case <case_id> --variants V0,V2,V4,V6 --skills none,/home/pengwu/projects/oss-model-graph-break-corpus/discovery/skills/debug-graph-breaks/SKILL.md --n 3 --timeout 1800` (24 trials sequential, ~12 hrs wall).
 5. *Run Phase 0 audit + Phase A-F analysis* per `discovery/skills/per-case-analysis/SKILL.md`. Produces `reports/<case_id>/findings.md` + `fingerprints.csv`. Phase 0 (data trustworthiness) GATES Phase A — don't analyze on suspect data.
-6. *Submit PR* adding the report → PR description links per-model issue → merge → issue moves to Done.
+6. *Submit PR* adding the report (PR-FIRST — never commit findings to main as a workaround). Branch `review/<case_id>-findings`, contains ONLY the findings doc + fingerprints.csv, no other files. PR description = TL;DR + headlines + link to per-case issue. Wait for Peng's review and approval before merge. Per-case issue moves to Done after merge.
 
 ## Pre-launch checklist (canonical — snapshot into per-model issues)
 

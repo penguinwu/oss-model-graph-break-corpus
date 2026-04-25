@@ -94,7 +94,7 @@ Two parts:
 1. *Open observations:* data points the analysis surfaces but doesn't explain. Honest "unexplained" beats fabricated story (see `feedback_overfitting_explanations.md` if applicable).
 2. *Cross-case implications:* what should the next case in the experiment series look for? What axes should be added to the fingerprint? What constraints proved (un)useful? What methodology gaps did this case expose?
 
-### Phase F — Writeup
+### Phase F — Writeup (PR-FIRST, NEVER direct-to-main)
 
 Compose the findings doc at `<exp>/reports/<case_id>/findings.md` with structure:
 
@@ -112,6 +112,17 @@ Compose the findings doc at `<exp>/reports/<case_id>/findings.md` with structure
 ```
 
 Include: headline metrics, all aggregation tables, per-question evidence, surprises with the divergence-from-expectation noted, recommendations both for skill curation and harness changes.
+
+**Delivery — non-negotiable workflow:**
+
+1. Create branch `review/<case_id>-findings` from current main.
+2. Add ONLY the findings doc + fingerprints.csv on the branch — do NOT bundle workflow scaffolding, methodology improvements, or other commits with the analysis.
+3. Push branch + open PR. PR description = TL;DR + headlines + workflow notes + link to per-case issue.
+4. Comment on the per-case issue linking the PR.
+5. **Wait for Peng's review.** Do not merge without sign-off. Do not commit findings to main as a workaround.
+6. After review + comments addressed, Peng merges (or closes if no merge needed). The per-case issue then moves to Done.
+
+**Anti-pattern — bundled megacommit:** in the Mistral3 Case 3a session (2026-04-25), findings were bundled with workflow scaffolding in commit ca3092c and pushed direct to main. PR #65 was opened retroactively as a review surface — but the content was already on main, defeating the gate purpose. **Don't do this.** Each case's analysis output is its own PR.
 
 ## Anti-patterns to avoid (per `feedback_overfitting_explanations.md`)
 
