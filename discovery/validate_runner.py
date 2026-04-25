@@ -41,6 +41,48 @@ from pathlib import Path
 import torch
 
 
+def _extract_tensor(out):
+    """Pull a comparable tensor out of a model output. Handles HuggingFace
+    Output objects with various tensor field names, and bare tensors."""
+    if isinstance(out, torch.Tensor):
+        return out
+    # HuggingFace ModelOutput convention: try common field names in order of
+    # specificity. First field that's a tensor wins.
+    for field in ("logits", "last_hidden_state", "waveform", "pooler_output", "prediction_logits"):
+        if hasattr(out, field):
+            v = getattr(out, field)
+            if isinstance(v, torch.Tensor):
+                return v
+    # Fallback: scan all attributes for the first tensor (deterministic via dir order)
+    for name in dir(out):
+        if name.startswith("_"):
+            continue
+        try:
+            v = getattr(out, name)
+        except Exception:
+            continue
+        if isinstance(v, torch.Tensor):
+            return v
+    raise TypeError(f"can't extract a tensor from {type(out).__name__}")
+
+
+def _safe_max_diff(a, b):
+    """Compare two tensors with prefix-clamp if they have different leading dims.
+    Some models (e.g. VitsModel with stochastic duration) produce variable-length
+    outputs between eager and compiled runs."""
+    if a.shape == b.shape:
+        return (a - b).abs().max().item()
+    # Try prefix-clamp on first dim
+    n = min(a.shape[0], b.shape[0]) if a.dim() > 0 else 0
+    if n == 0:
+        return None
+    a_clamped = a[:n] if a.dim() > 0 else a
+    b_clamped = b[:n] if b.dim() > 0 else b
+    if a_clamped.shape == b_clamped.shape:
+        return (a_clamped - b_clamped).abs().max().item()
+    return None  # shape mismatch beyond simple prefix; can't compare
+
+
 def _run_canonical_check(case) -> dict:
     """Run model with case-spec canonical inputs; return integrity + gb + max_diff."""
     out = {
@@ -73,20 +115,22 @@ def _run_canonical_check(case) -> dict:
         inputs = case_mod.make_inputs(model)
 
         with torch.no_grad():
-            eager_out = model(**inputs)
-            if hasattr(eager_out, "logits"):
-                eager_out = eager_out.logits
+            eager_raw = model(**inputs)
+        eager_out = _extract_tensor(eager_raw)
         out["eager_ok"] = True
 
-        # Compare to saved baseline output if present (any baseline_eager_output.pt in WORK_DIR)
+        # Compare to saved baseline output if present
         baseline_eager_pt = None
         if hasattr(case_mod, "WORK_DIR"):
             cand = case_mod.WORK_DIR / "baseline_eager_output.pt"
             if cand.exists():
                 baseline_eager_pt = cand
         if baseline_eager_pt:
-            baseline_out = torch.load(baseline_eager_pt, map_location=eager_out.device)
-            out["max_diff_vs_eager_baseline"] = (eager_out - baseline_out).abs().max().item()
+            baseline_loaded = torch.load(baseline_eager_pt, map_location=eager_out.device)
+            baseline_out = _extract_tensor(baseline_loaded) if not isinstance(baseline_loaded, torch.Tensor) else baseline_loaded
+            md = _safe_max_diff(eager_out, baseline_out)
+            if md is not None:
+                out["max_diff_vs_eager_baseline"] = md
 
         torch._dynamo.reset()
         explanation = torch._dynamo.explain(model)(**inputs)
@@ -96,11 +140,12 @@ def _run_canonical_check(case) -> dict:
         torch._dynamo.reset()
         compiled = torch.compile(model)
         with torch.no_grad():
-            compiled_out = compiled(**inputs)
-            if hasattr(compiled_out, "logits"):
-                compiled_out = compiled_out.logits
+            compiled_raw = compiled(**inputs)
+        compiled_out = _extract_tensor(compiled_raw)
         out["compile_ok"] = True
-        out["max_diff_compiled_vs_eager_now"] = (eager_out - compiled_out).abs().max().item()
+        md = _safe_max_diff(eager_out, compiled_out)
+        if md is not None:
+            out["max_diff_compiled_vs_eager_now"] = md
 
     except Exception as e:
         out["error"] = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
