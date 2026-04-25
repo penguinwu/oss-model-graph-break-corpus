@@ -1,0 +1,86 @@
+{
+  "metadata": {
+    "pytorch_version": "2.11.0",
+    "transformers_version": "unknown",
+    "timestamp": "2026-04-21T08:45:02",
+    "tolerance": {
+      "atol": 1e-06,
+      "rtol": 0.0001,
+      "dtype": "fp32"
+    }
+  },
+  "correctness_path": "correctness-resweep/2026-04-21/correctness_results.json",
+  "issues": [
+    {
+      "family_key": "aimv2",
+      "label": "AIMv2 family",
+      "action": "create",
+      "existing_number": null,
+      "proposed_title": "[correctness] AIMv2 family \u2014 divergence vs eager (2 models)",
+      "proposed_body": "## Summary\n\n2 models in this family produce numerical divergence between compiled and eager outputs.\n\n- Worst max_diff: **0.267717**\n- Worst severity_ratio: **267717.5** (divergence / tolerance)\n\n## Tolerance Used\n\n- atol: 1e-06\n- rtol: 0.0001\n- dtype: fp32\n\n## Affected Models\n\n| Model | max_diff | severity_ratio | first_divergence |\n|-------|---------:|---------------:|------------------|\n| Aimv2Model | 0.267717 | 267717.5 | text_model_output.last_hidden_state (max_diff=4.646e-02) |\n| Aimv2TextModel | 0.0484022 | 48402.2 | pooler_output (max_diff=4.840e-02) |\n\n## Reproduction\n\nRun the corpus correctness pass for an affected model:\n```bash\npython sweep/run_correctness.py --models <model_name>\n```\n\n## Tested On\n\n- PyTorch 2.11.0\n- Transformers unknown\n- Sweep date: 2026-04-21T08:45:02\n\n<!-- filed-by: otter/file_issues.py -->",
+      "model_count": 2,
+      "max_severity": 267717.4807
+    },
+    {
+      "family_key": "dia",
+      "label": "Dia family",
+      "action": "create",
+      "existing_number": null,
+      "proposed_title": "[correctness] Dia family \u2014 divergence vs eager (2 models)",
+      "proposed_body": "## Summary\n\n2 models in this family produce numerical divergence between compiled and eager outputs.\n\n- Worst max_diff: **1.097e-05**\n- Worst severity_ratio: **11.0** (divergence / tolerance)\n\n## Tolerance Used\n\n- atol: 1e-06\n- rtol: 0.0001\n- dtype: fp32\n\n## Affected Models\n\n| Model | max_diff | severity_ratio | first_divergence |\n|-------|---------:|---------------:|------------------|\n| DiaForConditionalGeneration | 1.097e-05 | 11.0 | logits (max_diff=1.097e-05) |\n| DiaModel | 9.18e-06 | 9.2 | last_hidden_state (max_diff=9.179e-06) |\n\n## Reproduction\n\nRun the corpus correctness pass for an affected model:\n```bash\npython sweep/run_correctness.py --models <model_name>\n```\n\n## Tested On\n\n- PyTorch 2.11.0\n- Transformers unknown\n- Sweep date: 2026-04-21T08:45:02\n\n<!-- filed-by: otter/file_issues.py -->",
+      "model_count": 2,
+      "max_severity": 10.9673
+    },
+    {
+      "family_key": "doge",
+      "label": "Doge family",
+      "action": "create",
+      "existing_number": null,
+      "proposed_title": "[correctness] Doge family \u2014 divergence vs eager (2 models)",
+      "proposed_body": "## Summary\n\n2 models in this family produce numerical divergence between compiled and eager outputs.\n\n- Worst max_diff: **0.040115**\n- Worst severity_ratio: **40115.0** (divergence / tolerance)\n\n## Tolerance Used\n\n- atol: 1e-06\n- rtol: 0.0001\n- dtype: fp32\n\n## Affected Models\n\n| Model | max_diff | severity_ratio | first_divergence |\n|-------|---------:|---------------:|------------------|\n| DogeModel | 0.040115 | 40115.0 | last_hidden_state (max_diff=4.011e-02) |\n| DogeForCausalLM | 0.0349192 | 34919.2 | logits (max_diff=3.492e-02) |\n\n## Reproduction\n\nRun the corpus correctness pass for an affected model:\n```bash\npython sweep/run_correctness.py --models <model_name>\n```\n\n## Tested On\n\n- PyTorch 2.11.0\n- Transformers unknown\n- Sweep date: 2026-04-21T08:45:02\n\n<!-- filed-by: otter/file_issues.py -->",
+      "model_count": 2,
+      "max_severity": 40114.9765
+    },
+    {
+      "family_key": "gemma_family",
+      "label": "Gemma family (incl. T5Gemma, VaultGemma)",
+      "action": "create",
+      "existing_number": null,
+      "proposed_title": "[correctness] Gemma family (incl. T5Gemma, VaultGemma) \u2014 divergence vs eager (9 models)",
+      "proposed_body": "## Summary\n\n9 models in this family produce numerical divergence between compiled and eager outputs.\n\n- Worst max_diff: **1.335e-05**\n- Worst severity_ratio: **13.4** (divergence / tolerance)\n\n## Tolerance Used\n\n- atol: 1e-06\n- rtol: 0.0001\n- dtype: fp32\n\n## Affected Models\n\n| Model | max_diff | severity_ratio | first_divergence |\n|-------|---------:|---------------:|------------------|\n| Gemma4ForCausalLM | 1.335e-05 | 13.4 | logits (max_diff=1.335e-05) |\n| Gemma3ForCausalLM | 7.63e-06 | 7.6 | logits (max_diff=7.629e-06) |\n| Gemma4Model | 6.79e-06 | 6.8 | last_hidden_state (max_diff=6.795e-06) |\n| T5GemmaForConditionalGeneration | 5.72e-06 | 5.7 | logits (max_diff=5.722e-06) |\n| VaultGemmaForCausalLM | 5.72e-06 | 5.7 | logits (max_diff=5.722e-06) |\n| Gemma4TextModel | 5.27e-06 | 5.3 | last_hidden_state (max_diff=5.268e-06) |\n| Gemma3nForCausalLM | 4.77e-06 | 4.8 | logits (max_diff=4.768e-06) |\n| Gemma2ForCausalLM | 4.53e-06 | 4.5 | logits (max_diff=4.530e-06) |\n| Gemma3TextModel | 1.31e-06 | 1.3 | last_hidden_state (max_diff=1.311e-06) |\n\n## Reproduction\n\nRun the corpus correctness pass for an affected model:\n```bash\npython sweep/run_correctness.py --models <model_name>\n```\n\n## Tested On\n\n- PyTorch 2.11.0\n- Transformers unknown\n- Sweep date: 2026-04-21T08:45:02\n\n<!-- filed-by: otter/file_issues.py -->",
+      "model_count": 9,
+      "max_severity": 13.3514
+    },
+    {
+      "family_key": "glm_moe_dsa",
+      "label": "GLM MoE DSA family",
+      "action": "create",
+      "existing_number": null,
+      "proposed_title": "[correctness] GLM MoE DSA family \u2014 divergence vs eager (2 models)",
+      "proposed_body": "## Summary\n\n2 models in this family produce numerical divergence between compiled and eager outputs.\n\n- Worst max_diff: **0.00383314**\n- Worst severity_ratio: **3833.1** (divergence / tolerance)\n\n## Tolerance Used\n\n- atol: 1e-06\n- rtol: 0.0001\n- dtype: fp32\n\n## Affected Models\n\n| Model | max_diff | severity_ratio | first_divergence |\n|-------|---------:|---------------:|------------------|\n| GlmMoeDsaForCausalLM | 0.00383314 | 3833.1 | logits (max_diff=3.833e-03) |\n| GlmMoeDsaModel | 0.00377325 | 3773.2 | last_hidden_state (max_diff=3.773e-03) |\n\n## Reproduction\n\nRun the corpus correctness pass for an affected model:\n```bash\npython sweep/run_correctness.py --models <model_name>\n```\n\n## Tested On\n\n- PyTorch 2.11.0\n- Transformers unknown\n- Sweep date: 2026-04-21T08:45:02\n\n<!-- filed-by: otter/file_issues.py -->",
+      "model_count": 2,
+      "max_severity": 3833.1393
+    },
+    {
+      "family_key": "idefics2",
+      "label": "Idefics2 family",
+      "action": "create",
+      "existing_number": null,
+      "proposed_title": "[correctness] Idefics2 family \u2014 divergence vs eager (2 models)",
+      "proposed_body": "## Summary\n\n2 models in this family produce numerical divergence between compiled and eager outputs.\n\n- Worst max_diff: **1.127e-05**\n- Worst severity_ratio: **11.3** (divergence / tolerance)\n\n## Tolerance Used\n\n- atol: 1e-06\n- rtol: 0.0001\n- dtype: fp32\n\n## Affected Models\n\n| Model | max_diff | severity_ratio | first_divergence |\n|-------|---------:|---------------:|------------------|\n| Idefics2Model | 1.127e-05 | 11.3 | image_hidden_states (max_diff=1.127e-05) |\n| Idefics2ForConditionalGeneration | 9.3e-06 | 9.3 | image_hidden_states (max_diff=9.298e-06) |\n\n## Reproduction\n\nRun the corpus correctness pass for an affected model:\n```bash\npython sweep/run_correctness.py --models <model_name>\n```\n\n## Tested On\n\n- PyTorch 2.11.0\n- Transformers unknown\n- Sweep date: 2026-04-21T08:45:02\n\n<!-- filed-by: otter/file_issues.py -->",
+      "model_count": 2,
+      "max_severity": 11.2653
+    },
+    {
+      "family_key": "phi4_multimodal",
+      "label": "Phi4 Multimodal vision",
+      "action": "create",
+      "existing_number": null,
+      "proposed_title": "[correctness] Phi4 Multimodal vision \u2014 divergence vs eager (1 models)",
+      "proposed_body": "## Summary\n\n1 models in this family produce numerical divergence between compiled and eager outputs.\n\n- Worst max_diff: **5312.72**\n- Worst severity_ratio: **5312716308.6** (divergence / tolerance)\n\n## Tolerance Used\n\n- atol: 1e-06\n- rtol: 0.0001\n- dtype: fp32\n\n## Affected Models\n\n| Model | max_diff | severity_ratio | first_divergence |\n|-------|---------:|---------------:|------------------|\n| Phi4MultimodalVisionModel | 5312.72 | 5312716308.6 | pooler_output (max_diff=5.313e+03) |\n\n## Reproduction\n\nRun the corpus correctness pass for an affected model:\n```bash\npython sweep/run_correctness.py --models <model_name>\n```\n\n## Tested On\n\n- PyTorch 2.11.0\n- Transformers unknown\n- Sweep date: 2026-04-21T08:45:02\n\n<!-- filed-by: otter/file_issues.py -->",
+      "model_count": 1,
+      "max_severity": 5312716308.5938
+    }
+  ],
+  "unmatched_models": []
+}

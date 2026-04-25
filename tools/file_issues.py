@@ -94,6 +94,28 @@ CORPUS_INFRA_ISSUES = {
 }
 
 
+# ── Correctness classifier ──────────────────────────────────────────────
+# Groups divergent models from a correctness sweep by model family.
+# Each rule: (key, label, match_fn(name) → bool)
+
+CORRECTNESS_FAMILIES = [
+    ("phi4_multimodal", "Phi4 Multimodal vision",
+        lambda name: "Phi4Multimodal" in name),
+    ("aimv2", "AIMv2 family",
+        lambda name: "Aimv2" in name),
+    ("doge", "Doge family",
+        lambda name: name.startswith("Doge")),
+    ("glm_moe_dsa", "GLM MoE DSA family",
+        lambda name: "GlmMoeDsa" in name),
+    ("gemma_family", "Gemma family (incl. T5Gemma, VaultGemma)",
+        lambda name: "Gemma" in name),
+    ("idefics2", "Idefics2 family",
+        lambda name: "Idefics2" in name),
+    ("dia", "Dia family",
+        lambda name: name.startswith("Dia")),
+]
+
+
 # ── GitHub API ───────────────────────────────────────────────────────────
 
 def _get_github_token():
@@ -174,6 +196,26 @@ def load_explain_data(explain_path):
     return data.get("results", [])
 
 
+def load_correctness_data(correctness_path, pytorch_version="unknown",
+                          transformers_version="unknown"):
+    """Load a correctness sweep result file.
+
+    The correctness_results.json metadata does not include framework versions
+    (only timestamp + tolerance), so callers must pass them explicitly.
+    """
+    with open(correctness_path) as f:
+        data = json.load(f)
+    results = data.get("results", [])
+    meta = data.get("metadata", {}) if isinstance(data, dict) else {}
+    metadata = {
+        "pytorch_version": pytorch_version,
+        "transformers_version": transformers_version,
+        "timestamp": meta.get("timestamp", "unknown"),
+        "tolerance": meta.get("tolerance", {}),
+    }
+    return results, metadata
+
+
 def load_identify_data(identify_path):
     with open(identify_path) as f:
         data = json.load(f)
@@ -243,6 +285,38 @@ def classify_breaks(explain_entries):
                 classified[key]["models"][model]["modes"].add(mode)
 
     return dict(classified), dict(unclassified)
+
+
+def classify_correctness(results):
+    """Group divergent models from a correctness sweep by family.
+
+    Returns:
+        ({family_key: {"label": str, "models": {name: {...}}}}, [unmatched_names])
+    """
+    families = defaultdict(lambda: {"label": "", "models": {}})
+    unmatched = []
+
+    for r in results:
+        if r.get("status") != "divergence":
+            continue
+        name = r["name"]
+        matched = False
+        for key, label, match_fn in CORRECTNESS_FAMILIES:
+            if match_fn(name):
+                families[key]["label"] = label
+                families[key]["models"][name] = {
+                    "max_diff": r.get("max_diff"),
+                    "severity_ratio": r.get("severity_ratio"),
+                    "first_divergence": r.get("first_divergence", ""),
+                    "compared_fields": r.get("compared_fields", []),
+                    "mode": r.get("mode", "eval"),
+                }
+                matched = True
+                break
+        if not matched:
+            unmatched.append(name)
+
+    return dict(families), unmatched
 
 
 def classify_infra(identify_entries):
@@ -433,6 +507,66 @@ def generate_model_specific_body(issue_num, data, explain_entries, metadata,
         lines.append("")
 
     lines.append(f"## Tested On\n")
+    lines.append(f"- PyTorch {pt_ver}")
+    lines.append(f"- Transformers {tf_ver}")
+    lines.append(f"- Sweep date: {timestamp}\n")
+    lines.append(ISSUE_MARKER)
+
+    return "\n".join(lines)
+
+
+def generate_correctness_title(family_key, data):
+    label = data["label"]
+    n = len(data["models"])
+    return f"[correctness] {label} — divergence vs eager ({n} models)"
+
+
+def generate_correctness_body(family_key, data, metadata):
+    """Generate issue body for a correctness divergence family."""
+    models = data["models"]
+    pt_ver = metadata["pytorch_version"]
+    tf_ver = metadata["transformers_version"]
+    timestamp = metadata["timestamp"]
+    tol = metadata.get("tolerance", {})
+
+    sev_values = [m["severity_ratio"] for m in models.values()
+                  if m["severity_ratio"] is not None]
+    diff_values = [m["max_diff"] for m in models.values()
+                   if m["max_diff"] is not None]
+    overall_max_diff = max(diff_values, default=0)
+    overall_max_sev = max(sev_values, default=0)
+
+    lines = ["## Summary\n"]
+    lines.append(f"{len(models)} models in this family produce numerical "
+                 f"divergence between compiled and eager outputs.\n")
+    lines.append(f"- Worst max_diff: **{overall_max_diff:.6g}**")
+    lines.append(f"- Worst severity_ratio: **{overall_max_sev:.1f}** "
+                 f"(divergence / tolerance)\n")
+
+    lines.append("## Tolerance Used\n")
+    lines.append(f"- atol: {tol.get('atol', '?')}")
+    lines.append(f"- rtol: {tol.get('rtol', '?')}")
+    lines.append(f"- dtype: {tol.get('dtype', '?')}\n")
+
+    lines.append("## Affected Models\n")
+    lines.append("| Model | max_diff | severity_ratio | first_divergence |")
+    lines.append("|-------|---------:|---------------:|------------------|")
+    for name in sorted(models.keys(),
+                       key=lambda n: -(models[n]["severity_ratio"] or 0)):
+        m = models[name]
+        md = m["max_diff"] if m["max_diff"] is not None else 0
+        sev = m["severity_ratio"] if m["severity_ratio"] is not None else 0
+        fd = m["first_divergence"]
+        lines.append(f"| {name} | {md:.6g} | {sev:.1f} | {fd} |")
+    lines.append("")
+
+    lines.append("## Reproduction\n")
+    lines.append("Run the corpus correctness pass for an affected model:")
+    lines.append("```bash")
+    lines.append("python sweep/run_correctness.py --models <model_name>")
+    lines.append("```\n")
+
+    lines.append("## Tested On\n")
     lines.append(f"- PyTorch {pt_ver}")
     lines.append(f"- Transformers {tf_ver}")
     lines.append(f"- Sweep date: {timestamp}\n")
@@ -802,6 +936,121 @@ def print_sweep_report(plan):
     print(f"{'=' * 70}\n")
 
 
+# ── Correctness plan building ───────────────────────────────────────────
+
+def build_correctness_report(correctness_path, pytorch_version,
+                             transformers_version):
+    """Build a correctness-issue creation plan from a sweep result file."""
+    results, metadata = load_correctness_data(
+        correctness_path, pytorch_version, transformers_version)
+
+    print(f"Loaded {len(results)} correctness entries")
+    print(f"PyTorch {metadata['pytorch_version']}, {metadata['timestamp']}")
+
+    print("Classifying divergences...")
+    families, unmatched = classify_correctness(results)
+
+    print("Fetching open issues...")
+    open_issues = fetch_open_issues()
+    title_to_issue = {i["title"]: i for i in open_issues}
+    print(f"  {len(open_issues)} open issues")
+
+    plan_issues = []
+    for family_key in sorted(families.keys()):
+        data = families[family_key]
+        title = generate_correctness_title(family_key, data)
+        body = generate_correctness_body(family_key, data, metadata)
+
+        existing = title_to_issue.get(title)
+        action = "update" if existing else "create"
+        sev_values = [m["severity_ratio"] for m in data["models"].values()
+                      if m["severity_ratio"] is not None]
+        max_sev = max(sev_values, default=0)
+
+        plan_issues.append({
+            "family_key": family_key,
+            "label": data["label"],
+            "action": action,
+            "existing_number": existing["number"] if existing else None,
+            "proposed_title": title,
+            "proposed_body": body,
+            "model_count": len(data["models"]),
+            "max_severity": max_sev,
+        })
+
+    plan = {
+        "metadata": metadata,
+        "correctness_path": str(correctness_path),
+        "issues": plan_issues,
+        "unmatched_models": unmatched,
+    }
+    return plan
+
+
+def print_correctness_report(plan):
+    """Print human-readable summary of the correctness plan."""
+    meta = plan["metadata"]
+    issues = plan["issues"]
+    creates = [i for i in issues if i["action"] == "create"]
+    updates = [i for i in issues if i["action"] == "update"]
+
+    print(f"\n{'=' * 70}")
+    print(f"CORRECTNESS REPORT")
+    print(f"  PyTorch {meta['pytorch_version']} ({meta['timestamp']})")
+    print(f"  {len(creates)} new issues to create, {len(updates)} updates")
+    print(f"  Tolerance: atol={meta['tolerance'].get('atol')}, "
+          f"rtol={meta['tolerance'].get('rtol')}, "
+          f"dtype={meta['tolerance'].get('dtype')}")
+    print(f"{'=' * 70}\n")
+
+    for i in sorted(issues, key=lambda x: -x["max_severity"]):
+        action_tag = "CREATE" if i["action"] == "create" else f"UPDATE #{i['existing_number']}"
+        print(f"  [{action_tag}] {i['proposed_title']}")
+        print(f"     models={i['model_count']}  max_severity={i['max_severity']:.1f}")
+
+    if plan.get("unmatched_models"):
+        print(f"\n--- UNMATCHED DIVERGENT MODELS (need new family rule) ---\n")
+        for name in plan["unmatched_models"]:
+            print(f"  {name}")
+
+    print(f"\n{'=' * 70}\n")
+
+
+def apply_correctness_plan(plan):
+    """POST new issues / PATCH existing ones based on the correctness plan."""
+    issues = plan["issues"]
+    success = 0
+    failed = 0
+
+    for entry in issues:
+        title = entry["proposed_title"]
+        body = entry["proposed_body"]
+        if entry["action"] == "create":
+            print(f"  POST: {title[:60]}...")
+            result = _proxy_api(
+                f"/repos/{REPO_SLUG}/issues",
+                method="POST",
+                body={"title": title, "body": body},
+            )
+        else:
+            num = entry["existing_number"]
+            print(f"  PATCH #{num}: {title[:60]}...")
+            result = _proxy_api(
+                f"/repos/{REPO_SLUG}/issues/{num}",
+                method="PATCH",
+                body={"title": title, "body": body},
+            )
+        if result and "number" in result:
+            success += 1
+            print(f"    → #{result['number']}")
+        else:
+            failed += 1
+            print(f"    FAILED")
+        time.sleep(0.5)
+
+    print(f"\nDone: {success} succeeded, {failed} failed.")
+
+
 # ── Plan execution ───────────────────────────────────────────────────────
 
 def apply_sweep_update(plan):
@@ -855,6 +1104,42 @@ def cmd_sweep_report(args):
           f"--plan {plan_out}")
 
 
+def cmd_correctness_report(args):
+    correctness_path = Path(args.correctness)
+    if not correctness_path.exists():
+        print(f"ERROR: {correctness_path} not found")
+        sys.exit(1)
+
+    plan = build_correctness_report(
+        correctness_path, args.pytorch_version, args.transformers_version)
+    print_correctness_report(plan)
+
+    plan_out = correctness_path.parent / "correctness-report.json"
+    with open(plan_out, "w") as f:
+        json.dump(plan, f, indent=2)
+    print(f"Plan saved to: {plan_out}")
+    print(f"Review, then run: python tools/file_issues.py correctness-apply "
+          f"--plan {plan_out}")
+
+
+def cmd_correctness_apply(args):
+    plan_path = Path(args.plan)
+    if not plan_path.exists():
+        print(f"ERROR: {plan_path} not found")
+        sys.exit(1)
+
+    with open(plan_path) as f:
+        plan = json.load(f)
+
+    meta = plan["metadata"]
+    issues = plan["issues"]
+    print(f"Applying correctness plan")
+    print(f"  PyTorch {meta['pytorch_version']} ({meta['timestamp']})")
+    print(f"  {len(issues)} issues to process\n")
+
+    apply_correctness_plan(plan)
+
+
 def cmd_sweep_update(args):
     plan_path = Path(args.plan)
     if not plan_path.exists():
@@ -897,6 +1182,26 @@ def main():
         "--plan", required=True, metavar="PLAN_JSON",
         help="Path to sweep-report.json plan file")
 
+    sub_corr_report = subparsers.add_parser(
+        "correctness-report",
+        help="Analyze a correctness sweep and generate an issue plan (read-only)")
+    sub_corr_report.add_argument(
+        "--correctness", required=True, metavar="CORRECTNESS_JSON",
+        help="Path to correctness_results.json")
+    sub_corr_report.add_argument(
+        "--pytorch-version", required=True, metavar="VERSION",
+        help="PyTorch version used for the sweep (e.g. 2.11.0)")
+    sub_corr_report.add_argument(
+        "--transformers-version", default="unknown", metavar="VERSION",
+        help="Transformers version used for the sweep")
+
+    sub_corr_apply = subparsers.add_parser(
+        "correctness-apply",
+        help="Apply a reviewed correctness plan to GitHub issues")
+    sub_corr_apply.add_argument(
+        "--plan", required=True, metavar="PLAN_JSON",
+        help="Path to correctness-report.json plan file")
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -907,6 +1212,10 @@ def main():
         cmd_sweep_report(args)
     elif args.command == "sweep-update":
         cmd_sweep_update(args)
+    elif args.command == "correctness-report":
+        cmd_correctness_report(args)
+    elif args.command == "correctness-apply":
+        cmd_correctness_apply(args)
 
 
 if __name__ == "__main__":
