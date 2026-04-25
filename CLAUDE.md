@@ -56,16 +56,16 @@ Convention is documented in `discovery/experiments/README.md` and enforced by `t
 
 The board is the canonical source of "agreed but not started" work. TodoWrite is in-conversation only; OPEN-LOOPS.md is project-level facts; the board is indefinite-lifetime and visible without local access. When you commit to deferred work, queue it.
 
-**Analysis outputs go through PR. Never commit-then-PR retroactively.**
+**Analysis outputs land on main directly + headline summary on the per-case issue.**
 
-Anything under `discovery/experiments/<exp>/reports/` (findings docs, fingerprint CSVs, synthesis docs) is the deliverable that Peng reviews. The proper state is "in repo via merged PR," not "in repo via direct commit." Workflow:
+Anything under `discovery/experiments/<exp>/reports/` (findings docs, fingerprint CSVs, synthesis docs) commits to main directly. After landing:
 
-1. Compose findings on a branch named `review/<case_id>-findings` (or `review/<exp>-synthesis` for cross-case work).
-2. Push branch + open PR. PR diff = ONLY the findings doc + fingerprints.csv (or synthesis.md). Do NOT bundle scaffolding, methodology improvements, or other commits with analysis output.
-3. Wait for Peng's review. Address comments. She decides when to merge.
-4. After merge, the per-case issue moves to Done.
+1. Post a headline summary as a comment on the per-case issue (or umbrella for cross-case synthesis). Link the file path on main.
+2. Per-case issue moves to Done.
 
-Anti-pattern (caught 2026-04-25 on Mistral3 Case 3a): bundling findings with workflow scaffolding in a single commit pushed direct to main, then opening a retroactive review PR. The review PR had no gate function — content was already on main. Per-case findings get their own PR, no exceptions.
+No PR-FIRST workflow — discontinued 2026-04-25 per Peng. Reasons: PR diffs are hard to read for analysis docs; merge conflicts accumulated when feature branches drifted from main. Direct-to-main + issue comment is the workflow now.
+
+(Earlier sessions encoded a PR-FIRST rule. That rule is removed. This block is the current state.)
 
 ## Script Map
 
