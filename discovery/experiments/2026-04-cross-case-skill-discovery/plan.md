@@ -1,6 +1,7 @@
 # Experiment Plan: Cross-Case Skill Discovery (April 2026)
 
 **Slug:** `2026-04-cross-case-skill-discovery`
+**Title:** Cross-Case Skill Discovery
 **Type:** Discovery (no preconceived expectations on agent behavior)
 **Owner:** Otter
 **Workstream:** WS1 — Skill discovery via corpus

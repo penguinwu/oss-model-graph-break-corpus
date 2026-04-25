@@ -36,6 +36,26 @@ Every new sweep adds a *dimension* — correctness, dynamic shapes, a new compil
 
 *Why:* The Phase 3 correctness sweep produced 169 `create_error` results vs 16 in the pt2.11 graph-break baseline a few days earlier; the 169 were `full_graph` in baseline. The Phase 3 worker had a model-creation bug in the wrapper-variant path that smoke testing didn't cover. We almost reported 12 verification failures that weren't trustworthy.
 
+## Discovery Experiments
+
+Multi-trial discovery experiments (skill-evaluation studies, agent-strategy studies) are tracked under `discovery/experiments/<YYYY-MM-slug>/`. Each experiment has:
+
+- `plan.md` — methodology, matrix, open questions, stop conditions
+- `reports/<case>.md` — per-case findings (one per model)
+- `synthesis.md` — cross-case writeup (deferred until all cases close)
+
+Convention is documented in `discovery/experiments/README.md` and enforced by `tools/check_experiments.py` (run nightly via the daily brief).
+
+**Use the scaffold tools — do NOT hand-roll directories or issues:**
+
+| Tool | When |
+|---|---|
+| `tools/new_experiment.py "<slug>" --title "<Title>"` | Starting a new experiment |
+| `tools/new_case_issue.py <experiment-slug> <case_id> "<Model name>"` | Adding a case to an existing experiment |
+| `tools/queue_task.py "<title>" [--umbrella N]` | Deferring work — creates a Backlog card on project board #1 so the commitment survives session end |
+
+The board is the canonical source of "agreed but not started" work. TodoWrite is in-conversation only; OPEN-LOOPS.md is project-level facts; the board is indefinite-lifetime and visible without local access. When you commit to deferred work, queue it.
+
 ## Script Map
 
 The codebase has two layers: **sweep/** runs the actual tests, **tools/** analyzes results and manages issues.
