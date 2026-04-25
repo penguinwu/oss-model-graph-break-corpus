@@ -43,6 +43,7 @@ For each of N trials, read `agent_diff.patch` + `result.json` + the FINAL `resul
 - *op-order-preserved:* `yes` | `no` | `unclear`
 - *escape-hatch-used:* list (custom_op, disable, cond, allow_in_graph, nonstrict_trace, leaf_function, is_compiling, or `none`)
 - *break-shapes-attacked:* semicolon-separated list
+- *semantic-equivalence:* `bit-equivalent` | `math-equivalent` | `context-equivalent` | `lossy` | `unclear` (worst equivalence in the diff; values below `math-equivalent` flag escape-hatch candidates — see fingerprint_schema.md for definitions)
 
 Plus per-trial: `files_touched`, `diff_lines`, `turns`, `agent_claim` (one phrase).
 
@@ -61,6 +62,15 @@ From the fingerprint CSV + result.json data, compute:
 - Strategy-cluster identification (group by (fix_locus, escape_hatch))
 - Break-shape histogram (across all trials)
 - Per-variant fix_status within each skill arm
+- `semantic_equivalence` distribution (count of trials per equivalence level). For any trial below `math-equivalent`, identify the specific transformation(s) in the diff that caused the demotion. Aggregate recurring non-equivalent transformations across the case as **escape-hatch candidates** — produce a small table in the findings doc (`Escape hatch candidates` section) listing transformation, trial count, why it's context-equivalent (not stronger), and a one-line escape-hatch idea. Per-case escape-hatch candidates feed cross-case Q7 synthesis: candidates that recur across cases are the highest-value PyTorch RFC signals.
+
+**Conditional V4/V6 trigger check (gate before Phase C if standard matrix only ran V0+V2 per master plan):**
+
+- *V4 trigger:* any V0 or V2 trial has `escape_hatches` containing a canonical hatch (`custom_op`, `disable`, `cond`, `allow_in_graph`, `nonstrict_trace`, `leaf_function`) or `is_compiling`. → Document the trigger in Phase B output, then return to Phase 6 of the per-case execution flow (master plan) and launch `--variants V4`.
+- *V6 trigger:* any V0 or V2 trial flipped a `torch._dynamo.config` flag (visible in the diff, e.g. `capture_scalar_outputs=True`). → Same: document and queue `--variants V6`.
+- *No triggers:* document "no conditional follow-ups warranted — V0/V2 surfaced no canonical escape hatches and no config flips" in Phase B and continue to Phase C with the 12 trials.
+
+After conditional follow-ups complete, **re-run Phase A on the new trials**, append to `fingerprints.csv`, and re-run Phase B over the full set. Do NOT skip phases for follow-up trials.
 
 **Output:** numerical tables in the findings doc.
 
@@ -100,6 +110,7 @@ Compose the findings doc at `<exp>/reports/<case_id>/findings.md` with structure
 
 ```
 # <case> — Findings (N-trial cross-case skill discovery)
+## Setup (1 paragraph + links — see below)
 ## TL;DR (3-7 bullets, the headline)
 ## The data (aggregation tables)
 ## Phase C — Q1–QN walk
@@ -112,6 +123,26 @@ Compose the findings doc at `<exp>/reports/<case_id>/findings.md` with structure
 ```
 
 Include: headline metrics, all aggregation tables, per-question evidence, surprises with the divergence-from-expectation noted, recommendations both for skill curation and harness changes.
+
+**The Setup section — MUST be the first section, before TL;DR.** Lets an outside reader land on this doc and orient without grepping the repo. Required content:
+
+```markdown
+## Setup
+
+This is the **<case_id>** case (<Model class>) inside the [Cross-Case Skill Discovery experiment](../../plan.md) (umbrella issue #60). Per-case issue: #<NN>. The experiment asks: *when the `debug-graph-breaks` skill is loaded into the discovery agent, does the agent's reasoning, fix-space, or fix-shape change vs. bare Claude?*
+
+**Matrix at a glance** — N trials = (skill arms) × (variants) × (replicates).
+
+| Axis | Values |
+|---|---|
+| Skill arm | `none` (bare Claude), `debug-graph-breaks` (Arsh Zahed's fork) |
+| Variant | V0 (bare prompt), V2 (bitwise equivalence required), V4 (no escape hatches), V6 (no config flags) |
+| Replicates | 3 per cell |
+
+**Where data lives.** Per-trial fingerprints in [`fingerprints.csv`](fingerprints.csv) (one row per trial). Raw artifacts (`agent_diff.patch`, `result.json`, `stream.jsonl`) in `/tmp/discovery-runs/<case_id>/<run_id>/`. Methodology details in the [master plan](../../plan.md). Phase 0 audit log alongside this doc as `phase0_audit.md` (if present).
+```
+
+Substitute case_id, Model class, and the per-case issue number. If a variant axis is dropped (e.g., V0+V2 only — see master plan), reflect that in the matrix table.
 
 **Delivery — non-negotiable workflow:**
 

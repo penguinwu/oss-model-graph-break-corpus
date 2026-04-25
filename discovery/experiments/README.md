@@ -24,7 +24,9 @@ Date prefix gives chronological order. Slug describes the path-finding goal — 
 
 ## Closed experiments
 
-(None yet. When this experiment's synthesis lands, move the row above to here and link `synthesis.md`.)
+| Slug | Status | Plan | Notes |
+|---|---|---|---|
+| `2026-04-phase1-pilot-cases` | done (retroactive) | [plan.md](2026-04-phase1-pilot-cases/plan.md) | Pre-harness Jamba + Dbrx pilots; methodology superseded by Phase 2. |
 
 ## Why this directory exists separately from `discovery/cases/` and `discovery/runs/`
 

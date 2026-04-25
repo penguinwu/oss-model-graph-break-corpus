@@ -52,16 +52,23 @@ If any item above is unchecked, fix or document the deviation BEFORE launching.
 
 ## Launch command (when ready)
 
+**Standard matrix (always run, ~6 hr wall):** V0+V2 only — see master plan §"Methodology" for why V4/V6 are conditional.
+
 ```bash
 cd ~/projects/oss-model-graph-break-corpus
 nohup /home/pengwu/envs/torch211/bin/python -m discovery.run_case \
   --case {case_id} \
-  --variants V0,V2,V4,V6 \
-  --skills none,/path/to/debug-graph-breaks/SKILL.md \
+  --variants V0,V2 \
+  --skills none,/home/pengwu/projects/oss-model-graph-break-corpus/discovery/skills/debug-graph-breaks/SKILL.md \
   --n 3 \
   --timeout 1800 \
   > /tmp/discovery-runs/{case_id}/launches/launch.log 2>&1 &
 ```
+
+**Conditional follow-ups (only if Phase B triggers):**
+
+- V4 trigger: any V0/V2 trial used a canonical escape hatch (`custom_op` / `disable` / `cond` / `allow_in_graph` / `nonstrict_trace` / `leaf_function`) or `torch.compiler.is_compiling()`. Relaunch with `--variants V4`.
+- V6 trigger: any V0/V2 trial flipped a `torch._dynamo.config` flag. Relaunch with `--variants V6`.
 
 (Drop the second `--skills` arm to `none` only if running without the skill axis.)
 
@@ -88,6 +95,8 @@ Tick after the harness completes and before declaring the case done.
 ## Final report (deliverable)
 
 PR adds `discovery/experiments/{experiment_slug}/reports/{case_id}/findings.md` + `fingerprints.csv` per the master plan's report convention. PR description links back to this issue. Merge → this issue moves to Done.
+
+The findings doc MUST open with a **Setup section** (per `per-case-analysis SKILL` Phase F template) that links back to: this issue, the umbrella (#{umbrella_issue}), the master plan, and a one-line glossary of variants + skill arms. The Setup section lets an outside reader land on the findings doc and orient without grepping the repo.
 
 ## Lessons learned (harvested at case wrap)
 

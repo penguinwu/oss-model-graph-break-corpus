@@ -67,20 +67,24 @@ For each model, we run the discovery harness across two crossed axes:
 
 **Axis 2: Prompt constraint.** A single-sentence constraint appended to the case prompt. Steers the agent toward / away from particular strategy families.
 
-| Variant | Constraint added | Why include this variant |
-|---|---|---|
-| V0 (bare) | (none) | Baseline. What does the agent reach for first when given no extra direction? |
-| V2 (bitwise) | "Compiled output must be bitwise equal to eager. Strategies that reorder floats are not acceptable." | Pushes toward escape-hatch family (custom_op / disable / cond) — only those preserve op order. |
-| V4 (no escape hatches) | "Do not use custom_op / dynamo.disable / allow_in_graph / torch.cond." | Forces in-graph fix (rewrite, not bypass). |
-| V6 (no config flags) | "Do not modify torch._dynamo.config." | Forces source-code fix, not a runtime flag flip. |
+| Variant | Tier | Constraint added | Why include this variant |
+|---|---|---|---|
+| V0 (bare) | **standard** | (none) | Baseline. What does the agent reach for first when given no extra direction? |
+| V2 (bitwise) | **standard** | "Compiled output must be bitwise equal to eager. Strategies that reorder floats are not acceptable." | Pushes toward escape-hatch family (custom_op / disable / cond) — only those preserve op order. |
+| V4 (no escape hatches) | conditional | "Do not use custom_op / dynamo.disable / allow_in_graph / torch.cond." | Forces in-graph fix (rewrite, not bypass). **Trigger:** any V0 or V2 trial used a canonical escape hatch (`custom_op`, `disable`, `cond`, `allow_in_graph`, `nonstrict_trace`, `leaf_function`) OR used `torch.compiler.is_compiling()` as a runtime guard. |
+| V6 (no config flags) | conditional | "Do not modify torch._dynamo.config." | Forces source-code fix, not a runtime flag flip. **Trigger:** any V0 or V2 trial flipped a `torch._dynamo.config` flag (e.g. `capture_scalar_outputs`, `capture_dynamic_output_shape_ops`). |
 
 **Skipped:** V1 (sparsity_preserved) — Dbrx-MoE-specific language, doesn't generalize.
 
-**Cross product:** 2 skill settings × 4 constraints = 8 cells. **N=3 trials per cell** → 24 trials per model.
+**Standard matrix (always run):** 2 skill settings × 2 variants (V0, V2) × N=3 trials → **12 trials per case**.
 
-**Total experiment scope:** 4 models × 24 trials = 96 trials across the experiment. Sequential per-model (no parallel — Pilot 3 race-condition lesson).
+**Conditional follow-ups:** if a trigger fires, run the matching variant on the same skill arm × 3 trials. Each conditional variant adds up to 6 trials (2 skill arms × 3 trials). If neither V4 nor V6 triggers, the case stops at 12 trials.
 
-**Per-trial wall budget:** 1800s (30 min). Per-model wall: ~12 hrs. Total experiment wall: ~48 hrs spread across multiple sessions.
+**Why conditional, not always-on:** Mistral3 case 3a ran the full 24-trial matrix; the V4/V6 cells produced essentially the same pattern as V0/V2 (master finding: the perf delta lived in `fix_locus`, not `variant`). Spending 12 trials per case on V4/V6 by default wastes budget. Run them when the standard matrix surfaces the thing they're designed to probe.
+
+**Total experiment scope (lower bound):** 4 models × 12 trials = 48 trials. **Upper bound (both V4 and V6 trigger on every case):** 4 × 24 = 96 trials. Sequential per-model (no parallel — Pilot 3 race-condition lesson).
+
+**Per-trial wall budget:** 1800s (30 min). Per-case wall (standard): ~6 hrs. Per-case wall (full): ~12 hrs. Total experiment wall: 24-48 hrs spread across multiple sessions.
 
 ## What we hold constant
 
@@ -146,16 +150,17 @@ The `fix_status` verdict surfaces this distinction: `general` = model-layer fix;
 - If no case in {3a, 3b} produces diverse strategies → harness frame is wrong; pause Phase 3, revisit `discovery/design.md`
 - If only V0 trials succeed across cases → variant catalog is broken; rebuild before continuing
 
-## Per-case execution shape (6-phase flow)
+## Per-case execution shape (7-phase flow)
 
 For each case in order:
 
 1. *Author the case files.* `corpus/discovery/cases/<case>.{py,baseline.json}` per `discovery/design.md` §6 schema. Set up `/tmp/discovery-runs/<case_id>/` with `baseline_*.py`, `validate.py`, source backups, baseline_eager_output.pt.
 2. *Pre-register the case as a per-model issue.* Use `tools/new_case_issue.py <experiment-slug> <case_id> "<Model name>"` (do NOT hand-roll — see `corpus/CLAUDE.md` §"Discovery Experiments"). The scaffold injects the canonical Pre-launch checklist (below) into the issue body.
 3. *Walk the Pre-launch checklist* (canonical below + any case-specific additions in the per-model issue). Tick each item before launching. If a case has quirks, add case-specific items to the issue's "Case-specific additions" section before launch.
-4. *Launch the harness:* `python -m discovery.run_case --case <case_id> --variants V0,V2,V4,V6 --skills none,/home/pengwu/projects/oss-model-graph-break-corpus/discovery/skills/debug-graph-breaks/SKILL.md --n 3 --timeout 1800` (24 trials sequential, ~12 hrs wall).
-5. *Run Phase 0 audit + Phase A-F analysis* per `discovery/skills/per-case-analysis/SKILL.md`. Produces `reports/<case_id>/findings.md` + `fingerprints.csv`. Phase 0 (data trustworthiness) GATES Phase A — don't analyze on suspect data.
-6. *Submit PR* adding the report (PR-FIRST — never commit findings to main as a workaround). Branch `review/<case_id>-findings`, contains ONLY the findings doc + fingerprints.csv, no other files. PR description = TL;DR + headlines + link to per-case issue. Wait for Peng's review and approval before merge. Per-case issue moves to Done after merge.
+4. *Launch the standard matrix:* `python -m discovery.run_case --case <case_id> --variants V0,V2 --skills none,/home/pengwu/projects/oss-model-graph-break-corpus/discovery/skills/debug-graph-breaks/SKILL.md --n 3 --timeout 1800` (12 trials sequential, ~6 hrs wall).
+5. *Run Phase 0 audit + Phase A-F analysis* per `discovery/skills/per-case-analysis/SKILL.md`. Produces `reports/<case_id>/findings.md` + `fingerprints.csv`. Phase 0 (data trustworthiness) GATES Phase A — don't analyze on suspect data. **Phase B includes the conditional-trigger check:** if any V0/V2 trial used a canonical escape hatch or `is_compiling`, queue a V4 follow-up; if any flipped a `torch._dynamo.config` flag, queue a V6 follow-up. If neither triggers, document "no conditional follow-ups warranted" in Phase B and stop at 12 trials.
+6. *Conditional follow-up runs (if Phase B triggered):* relaunch with `--variants V4` and/or `--variants V6` (same `--skills` and `--n` arguments). Re-run Phase A-F over the union of trials.
+7. *Submit PR* adding the report (PR-FIRST — never commit findings to main as a workaround). Branch `review/<case_id>-findings`, contains ONLY the findings doc + fingerprints.csv, no other files. PR description = TL;DR + headlines + link to per-case issue + note on whether V4/V6 follow-ups ran. Wait for Peng's review and approval before merge. Per-case issue moves to Done after merge.
 
 ## Pre-launch checklist (canonical — snapshot into per-model issues)
 
@@ -193,3 +198,4 @@ These are scope for a separate runner-changes PR (linked from the umbrella when 
 ## Revision log
 
 - *2026-04-24:* Plan created. Greenlit by Peng. Replaces the inline-per-issue methodology that risked drifting between cases. Skill axis added back per Peng 2026-04-24 23:00 ET (was wrongly dropped in the first draft of the per-model issue #59).
+- *2026-04-25:* Switched standard matrix from 4 variants (V0,V2,V4,V6 = 24 trials/case) to 2 variants (V0,V2 = 12 trials/case) with V4/V6 as conditional follow-ups gated on Phase B trigger checks. Reason: Mistral3 case 3a ran the full 24-trial matrix and the master finding (perf delta lives in `fix_locus`, not `variant`) showed the V4/V6 cells produced essentially the same pattern as V0/V2 — half the budget would have surfaced the same headline. The conditional triggers (`is_compiling` or canonical escape hatch → V4; config flag flip → V6) ensure V4/V6 still run when they'd be informative. Mistral3's existing 24-trial run is grandfathered.

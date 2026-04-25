@@ -18,6 +18,7 @@ If you need to add a new column or rename one, update THIS document FIRST and pr
 | 8 | `diff_lines` | int | non-negative | Total lines in `agent_diff.patch` (rough complexity measure). |
 | 9 | `turns` | int | non-negative | Number of agent turns from stream metadata. Leave blank if not parseable. |
 | 10 | `agent_claim` | string (no commas, semicolons OK) | Free text, one short phrase | Agent's own one-phrase summary at end of stream (e.g. "16->0 graph breaks; fullgraph ok"). |
+| 11 | `semantic_equivalence` | enum | `bit-equivalent` \| `math-equivalent` \| `context-equivalent` \| `lossy` \| `unclear` | Worst equivalence among all transformations in the diff (the diff is only as safe as its weakest piece). See definitions below. **Anything below `math-equivalent` flags an escape-hatch candidate** — the agent invented a workaround that wouldn't survive the canonical input distribution changing, which means PyTorch should arguably provide a first-class API for it. |
 
 ## Format rules
 
@@ -52,3 +53,15 @@ If you find yourself wanting to add the SAME extension to multiple cases, it sho
 - *input-type-tweak:* changes input shapes/types in baseline_*.py (e.g. tensor `image_sizes` → Python list).
 - *mixed:* ≥2 distinct families with no clear primary. Default for complex fixes.
 - *other:* a pattern not in this list. Describe in `agent_claim`.
+
+### `semantic_equivalence` definitions
+
+The diff's worst-case equivalence to the original code, evaluated under the case's canonical input set.
+
+- *bit-equivalent:* outputs are bitwise identical to the original code on canonical inputs. Rare.
+- *math-equivalent:* outputs are equal up to floating-point reordering noise (max_diff at fp32 noise floor). Same mathematical operation, possibly different reduction order. E.g. replacing per-image loop with batched unfold yields the same math but different fp accumulation order.
+- *context-equivalent:* outputs are equivalent **under the canonical input distribution** but the fix would diverge from the original under different inputs (or different runtime context). Examples: tensor → Python list input swap (only safe because inputs are static); `is_compiling()` runtime guards (eager path keeps original code, only compile path is hardened — split-path behavior); decorator deletion that removes side effects the canonical input doesn't observe (e.g. `@capture_outputs` ContextVar bookkeeping when nothing reads the captured output). **These are escape-hatch candidates.**
+- *lossy:* outputs are demonstrably different in math (drops scaling, removes a safety check, returns different dtype, etc.). Almost never desirable; if seen, agent has miscompiled.
+- *unclear:* can't determine without deeper inspection. Use sparingly.
+
+When a single diff combines transformations of different equivalence levels, the cell takes the WORST value. (A diff that's mostly math-equivalent but contains one context-equivalent step is `context-equivalent`.)
