@@ -8,7 +8,7 @@
 **Umbrella issue:** #60
 **Status:** active
 **Created:** 2026-04-24
-**Last updated:** 2026-04-25
+**Last updated:** 2026-04-25 (case files for 3b/3c/3d authored; runner changes shipped + landed; Mistral3 launched)
 
 ---
 
@@ -141,8 +141,8 @@ For each case in order:
 
 1. Author `corpus/discovery/cases/<case>.{py,baseline.json}` per `discovery/design.md` §6 schema
 2. Pre-flight: model loads, baseline correctness recorded, baseline perf seeded
-3. Pre-register the case as a per-model issue (use existing #59 as template)
-4. Launch the harness (24 trials sequential, ~12 hrs wall)
+3. Pre-register the case as a per-model issue using `tools/new_case_issue.py <experiment-slug> <case_id> "<Model name>"` (do NOT hand-roll the issue body — see `corpus/CLAUDE.md` §"Discovery Experiments")
+4. Launch the harness: `python -m discovery.run_case --case <case_id> --variants V0,V2,V4,V6 --skills none,/home/pengwu/projects/oss-model-graph-break-corpus/discovery/skills/debug-graph-breaks/SKILL.md --n 3 --timeout 1800` (24 trials sequential, ~12 hrs wall)
 5. Tier-2 enrichment via `enrich_tier2.py`
 6. Write per-case findings → `discovery/experiments/2026-04-cross-case-skill-discovery/reports/<case>.md`
 7. Submit PR adding the report → links back to per-model issue → merge → issue moves to Done
@@ -154,15 +154,13 @@ Write `discovery/experiments/2026-04-cross-case-skill-discovery/synthesis.md` an
 - Mental-model doc in PARA — *The Mental Model of Building a Graph-Break Skill (or Agent)* (per Peng 2026-04-23 forcing function)
 - Workplace post to PT2 working group + Compile Q&A
 
-## Runner changes required before relaunch
+## Runner changes — DONE (commit 3deefd0, 2026-04-24)
 
-The current `discovery/runner.py` cannot vary the skill axis or reliably capture diffs under timeout. These must ship before any case in this experiment relaunches:
+All three blockers landed before launch:
 
-1. **Add `--skill <id>` argument to `discovery/run_case.py`.** Plumb through `runner.py` and `_run_agent` so the trial agent runs with the named skill loaded. Need to verify whether the Claude CLI accepts skill loading via `--add-dir <skill-dir>`, `--system-prompt-include <file>`, or some other flag. If no clean flag exists, prepend the skill markdown to the prompt.
-
-2. **Fix diff capture under SIGTERM.** When timeout fires after the agent has edited files, the captured `agent_diff.patch` is empty (only the post-trial mutation flag survives). Re-snapshot the diff post-SIGTERM but before declaring done.
-
-3. **Default `--timeout` to 1800s.** Current default is 1200s, recent runs used 900s. Both too short for multimodal cases.
+1. ✅ `--skills` argument on `run_case.py`. Comma-separated; `none` = bare baseline arm, anything else = path to a markdown file injected via `--append-system-prompt-file`. Plumbed through `runner.py` → `_run_agent`.
+2. ✅ Diff capture fix. Post-validation re-snapshot (`agent_diff.patch` is taken twice; larger one wins; flagged `diff-promoted-post-validate` if the second was used).
+3. ✅ Default `--timeout` bumped 1200 → 1800.
 
 These are scope for a separate runner-changes PR (linked from the umbrella when filed).
 

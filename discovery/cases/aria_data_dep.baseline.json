@@ -1,0 +1,19 @@
+{
+  "case_id": "aria_data_dep",
+  "model": "AriaForConditionalGeneration",
+  "break_shape_id": "BS-107",
+  "captured_at": "2026-04-24T21:26:00Z",
+  "baseline": {
+    "eager_ms": 13.02801026031375,
+    "compiled_ms": 15.320026781409979,
+    "speedup": 0.8503908280449309,
+    "eager_peak_mem_mb": 25.70263671875,
+    "compiled_peak_mem_mb": 27.2451171875,
+    "n_warmup": 5,
+    "n_repeat": 20,
+    "device": "cuda",
+    "compile_s": 32.63091444130987
+  },
+  "note": "perf v0.3 — compile_s included; B=1, image_size=224, num_image_tokens=128, seq_len=136. Baseline graph_break_count=28 (graph_count=29) — matches corpus eval count of 19 distinct break_reasons + repeats from MoE expert loop and capture_outputs lock.",
+  "interpretation": "Compiled is ~15% SLOWER than eager. Unlike Mistral3 where Inductor still wins despite breaks, here the 28 fragments + MoE per-expert loop (sequential_experts_gemm) prevent any meaningful fusion — compile-time dominates and per-expert kernel-launch overhead from the broken trace exceeds eager's overhead. Discovery should improve fix-quality (fewer breaks, fullgraph closer to True) AND can plausibly flip speedup back above 1.0 if the MoE loop folds into a single graph. Compare against compiled_ms=15.32 ms and graph_break_count=28."
+}

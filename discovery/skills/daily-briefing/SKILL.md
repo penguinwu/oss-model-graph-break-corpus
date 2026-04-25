@@ -120,25 +120,70 @@ Source: tools/brief_data.py + project board #1
 - *HANDOFF is synthesis, not dump.* 2-4 bullets max. Pull blockers explicitly. Peng wants the bottom line, not the whole file.
 - *Trim aggressively.* If a section has 10+ items, show top N and "+M more (numbered K through K+M)".
 
-## Step 4 — Format for GChat
+## Step 4 — Render as HTML (rich card)
 
-GChat formatting rules — non-negotiable:
+Brief is posted as a GChat **rich card** (HTML) for better visual hierarchy. Compose the brief as a single HTML document. Skeleton:
 
-- *No markdown tables* (don't render on mobile). Use bullets or plain lines.
-- *No `**bold**`.* Only `*single-asterisk*` italics render.
-- *Blank lines* are the separator between sections, not headers like `###`.
-- *Section titles* use `*single asterisks*`.
-- *Total length* must be under 4000 chars. If you're over, trim sections (drop low-signal ones first).
+```html
+<h2>🦦 Otter — Daily brief — YYYY-MM-DD</h2>
 
-## Step 5 — Post
+<h3>What shipped since yesterday</h3>
+<ol>
+  <li>Bullet copy here. Issue refs like <a href="https://github.com/penguinwu/oss-model-graph-break-corpus/issues/N">#N</a> become real links.</li>
+  <li>Next bullet.</li>
+</ol>
 
-Write the composed brief to a temp file, then:
+<h3>HANDOFF state</h3>
+<ul>
+  <li>2-4 synthesized bullets (NOT verbatim — Peng wants the bottom line).</li>
+  <li><b>Blocked:</b> highlight blockers in bold.</li>
+</ul>
 
-```bash
-gchat send AAQANraxXE4 --as-bot --quiet --text-file <tempfile>
+<h3>Active workstream plans</h3>
+<ol start="N">
+  <li>WS1 — Skill Discovery Phase 3: ok (Xd since last_check)</li>
+  <li>...</li>
+</ol>
+
+<h3>Aged Backlog (>7 days)</h3>
+<ol start="N">
+  <li><a href="...">#N</a> (Xd) — title</li>
+</ol>
+
+<h3>Awaiting your input</h3>
+<ol start="N">
+  <li>WS1 — task description (Xd) — &larr; (use &larr; entity for arrow)</li>
+</ol>
+
+<p><i>Source: tools/brief_data.py + project board #1</i></p>
 ```
 
-Use `--text-file` (not inline `gchat send "..."`) — long inline messages hang on a stdout PIPE deadlock.
+HTML rules:
+
+- *Use `<ol start="N">`* to continue numbering across sections (since `<ol>` always starts at 1 unless `start` is set). Track the running number across sections.
+- *Use `<a href="...">#N</a>`* for issue references — produces clickable links.
+- *Use `<b>...</b>`* sparingly for emphasis (e.g., "Blocked:", "STALE").
+- *Use `<i>...</i>`* for subtle de-emphasis (e.g., footer Source line).
+- *Keep section headers as `<h3>`.* The top brief title is `<h2>`. Don't go deeper than `<h3>`.
+- *Drop empty sections entirely.* No "(none)" placeholders.
+- *Total under 4000 chars.* HTML overhead counts.
+
+## Step 5 — Post via card
+
+Write the HTML to a temp file, then:
+
+```bash
+gchat send AAQANraxXE4 --as-bot --quiet --card <tempfile>
+```
+
+`--card` requires `--as-bot`. Sends a rich card. The HTML renders as formatted content in GChat (links, lists, bold all work).
+
+**Suppression mode (no activity):** still use `--card` with this minimal HTML:
+
+```html
+<h2>🦦 Otter — Daily brief — YYYY-MM-DD</h2>
+<p>No new activity since yesterday.</p>
+```
 
 ## What NOT to do
 

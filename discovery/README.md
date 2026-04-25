@@ -7,23 +7,57 @@ Per-case discovery agent. Sibling to `sweep/`.
 
 ## Status
 
-Scaffolding. See `design.md` (mirror of `/tmp/discovery_agent_design.md` v0.2) for the full design.
+Phase 1 closed (Dbrx + Jamba). Phase 3 in flight — see `experiments/2026-04-cross-case-skill-discovery/plan.md`.
+
+See `design.md` for the harness-level design (v0.4).
 
 ## Layout
 
 ```
 discovery/
 ├── README.md          # this file
-├── design.md          # design doc v0.2
-├── perf.py            # measure_perf primitive (eager_ms, compiled_ms, peak_mem, compile_s)
-├── runner.py          # config-driven trial runner (M variants × N trials per case) — TODO
-├── variants.py        # constraint variant catalog (V0..V6) — TODO
-├── fingerprint.py     # strategy fingerprint extractor — TODO
-├── assessor.py        # 4-axis scoring (compute / accuracy / complexity / perf) — TODO
-├── synthesizer.py     # per-case report generator — TODO
-└── cases/             # per-case config files
+├── design.md          # harness design (v0.4)
+├── plan.md            # WS1 Phase 3 workstream pointer (see experiments/.../plan.md for methodology)
+├── perf.py            # measure_perf primitive
+├── runner.py          # config-driven trial runner (skill × variant × N)
+├── run_case.py        # CLI wrapper around runner
+├── variants.py        # constraint variant catalog (V0/V2/V4/V6)
+├── enrich_tier2.py    # tier-2 perf enrichment for completed runs
+├── _measure_case.py   # subprocess perf measurement (avoids module-state contamination)
+├── cases/             # per-case config files (one .py + one .baseline.json per case)
+├── runs/              # per-trial raw artifacts (stream.jsonl gitignored, archived to Drive)
+├── reports/           # legacy Phase 1 reports — new reports live under experiments/<exp>/reports/
+├── experiments/       # per-experiment plans + reports + synthesis (see experiments/README.md)
+└── skills/            # vendored Claude skills used by trial agents
+    └── debug-graph-breaks/SKILL.md  # Arsh's skill (canonical: azahed98/pytorch fork)
 ```
 
 ## Running
 
-Not yet wired. First milestone: `python -m discovery.perf` smoke test on a tiny model.
+Trial harness:
+
+```bash
+python -m discovery.run_case --case <case_id> \
+    --variants V0,V2,V4,V6 \
+    --skills none,/home/pengwu/projects/oss-model-graph-break-corpus/discovery/skills/debug-graph-breaks/SKILL.md \
+    --n 3 --timeout 1800
+```
+
+24 trials sequential per case (8 cells × N=3). ~12 hr wall.
+
+Standalone perf measurement:
+
+```bash
+python -m discovery.perf  # smoke test
+python -m discovery.cases.<case_id>  # per-case baseline measurement
+```
+
+## Conventions
+
+See `experiments/README.md` for the per-experiment directory convention. Use the scaffold tools — never hand-roll experiments or per-case issues:
+
+- `tools/new_experiment.py "<slug>" --title "<Title>"`
+- `tools/new_case_issue.py <experiment-slug> <case_id> "<Model name>"`
+- `tools/queue_task.py "<title>"` — only when there is no existing per-case issue
+
+Drift detected by `tools/check_experiments.py` (run nightly via the daily brief).

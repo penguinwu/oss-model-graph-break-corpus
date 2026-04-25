@@ -1,0 +1,21 @@
+{
+  "case_id": "vits_model_train",
+  "model": "VitsModel",
+  "break_shape_id": "BS-106",
+  "captured_at": "2026-04-24T21:24:00Z",
+  "baseline": {
+    "eager_ms": 95.77413881197572,
+    "compiled_ms": 86.0916948877275,
+    "speedup": 1.1124666431166808,
+    "eager_peak_mem_mb": 26.99072265625,
+    "compiled_peak_mem_mb": 60.12841796875,
+    "n_warmup": 5,
+    "n_repeat": 20,
+    "device": "cuda",
+    "compile_s": 58.81077053304762
+  },
+  "graph_break_count": 22,
+  "graph_count": 23,
+  "note": "perf v0.3 — tier-1 (fast). B=1, seq_len=16. TRAIN MODE: model.train() set so layerdrop / np.random.uniform path fires. Stochastic duration predictor produces different waveform lengths across runs — correctness must be measured on the common prefix. Compile time is HIGH (58.8s) and recompile_limit=8 is hit — see torch_compilable_check recompiles in import_utils.py:1502.",
+  "interpretation": "Compiled is only ~11% faster than eager despite 22 graph breaks. The breaks fragment the trace and the HiFi-GAN decoder (with 4 upsample layers) dominates compute, so Inductor's gains on un-broken segments are diluted. Train-mode-only break (np.random.uniform layerdrop at modeling_vits.py:1116) is the BS-106 dominant tag. Discovery strategies should target: (a) the layerdrop np.random.uniform call (rewrite to torch.rand under self.training), (b) find_spec / callable() guards in import_utils.py — these are infra-side and may not be agent-fixable, (c) data-dep F.conv1d guard from output_padding_mask (related to stochastic length prediction)."
+}

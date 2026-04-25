@@ -1,0 +1,19 @@
+{
+  "case_id": "paddle_ocr_vl",
+  "model": "PaddleOCRVLForConditionalGeneration",
+  "break_shape_id": "BS-108",
+  "captured_at": "2026-04-25T04:25:39Z",
+  "baseline": {
+    "eager_ms": 10.91089192777872,
+    "compiled_ms": 11.266352143138647,
+    "speedup": 0.9684493959674068,
+    "eager_peak_mem_mb": 406.3837890625,
+    "compiled_peak_mem_mb": 407.3837890625,
+    "n_warmup": 5,
+    "n_repeat": 20,
+    "device": "cuda",
+    "compile_s": 10.41472380887717
+  },
+  "note": "perf v0.3 — compile_s included; B=1, h=w=4 patches (n_vis=4 per image), seq_len=12. Tiny config (text hidden=256, vision hidden=128, 2 layers each).",
+  "interpretation": "Compiled is ~3% SLOWER than eager (speedup=0.97) with 19 graph breaks. The breaks fragment the trace badly: dominant cost is repeat_interleave on image_grid_thw (cu_seqlens construction at line 1234), Tensor.item() in vision embeddings (image_embeddings[start:end, :] at line 613), and sdpa is_causal data-dep guard in the vision encoder. Discovery strategies should improve fix-quality measures (fewer breaks, fullgraph=True) AND likely also yield real speedup once the trace is consolidated. Compare against compiled_ms=11.27 ms and graph_break_count=19."
+}

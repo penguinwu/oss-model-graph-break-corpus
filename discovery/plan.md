@@ -3,62 +3,37 @@ plan: WS1 — Skill Discovery Phase 3
 status: active
 owner: Otter
 created: 2026-04-24
-last_check: 2026-04-24
-forcing_function: tools/check_plan.py + daily brief at 7:30 AM ET
+last_check: 2026-04-25
+forcing_function: tools/check_plan.py + daily brief
 ---
-
-**Status (2026-04-24 21:45 ET):** Case 3a (Mistral3) authored — `discovery/cases/mistral3_data_dep.{py,baseline.json}`, baseline_mistral3.py + validate.py at WORK_DIR, smoke test green (gb=16, eager==baseline, compiled diff 2.68e-04). Ready for harness launch on next session.
-
 
 # WS1 Phase 3 — Discovery agent across diverse graph break cases
 
+**Methodology lives in [`experiments/2026-04-cross-case-skill-discovery/plan.md`](experiments/2026-04-cross-case-skill-discovery/plan.md).** This file is the workstream-level pointer; do not duplicate methodology here.
+
 ## Goal
 
-Run the discovery harness against 4 cases that span the widest graph-break shape diversity available in the corpus. Goal is **strategy discovery**, not fix-rate maximization. Per Peng 2026-04-24: "Graph break skills should not differentiate between dynamo fixable or not." Selection criterion: distinct break explanations, not user-fixability.
+Run the discovery harness against 4 cases that span the widest graph-break shape diversity available in the corpus. Goal is **strategy discovery**, not fix-rate maximization.
 
-## Frame
+Selection criterion: distinct break shapes, NOT user-fixability. Per Peng 2026-04-24: "Graph break skills should not differentiate between dynamo fixable or not."
 
-Each case = one graph-break shape. Per case: M=2 prompt variants (with-skill, no-skill) × N=6 trials → strategy fingerprints → cross-case attractor analysis.
+## Case queue
 
-Reference: `discovery/design.md` v0.4 §6 (case file schema), §8 (Phase 1 closed Qs + Phase 3 open Qs).
-
-## Queue
-
-| # | Case | gb count | Distinct types | Why selected | Status |
-|---|------|----------|----------------|--------------|--------|
-| 3a | **Mistral3** | 16 | 2 user-code* | Widest single-model diversity probe | **case authored** (2026-04-24, smoke green, gb=16) |
-| 3b | **VitsModel (train)** | 29 | 7 | Train mode + `as_proxy` + `find_spec` — novel categories | not started |
-| 3c | **Aria** | 27/28 | 7 | Second probe of Mistral3-shaped break space | not started |
-| 3d | **PaddleOCRVL** | 19 | 6 | Operator-generalization probe across data-dep ops | not started |
-
-Order is by diversity-first; do NOT reorder without writing why in the revision log.
-
-## Per-case execution shape
-
-For each case in order:
-
-1. Author `discovery/cases/<case>_<break-id>.{py,baseline.json}` matching the schema in `design.md` §6.
-2. Pre-flight: validate model loads, repro the break, baseline correctness recorded.
-3. Run harness sequentially (no parallel — Pilot 3 race-condition lesson). Wall budget: ~30 min/case.
-4. Tier-2 enrichment: run `enrich_tier2.py` on the variant outputs.
-5. Write per-case findings to `discovery/reports/<case>_<date>.md`. Distill: distinct strategies, fingerprint axes, surprises.
-6. Update this plan: status → done, link the report.
-
-## Cross-case synthesis (after 3a–3d done)
-
-- Cross-case attractor analysis: do the same strategy clusters appear, or does each case have its own attractor set?
-- Fingerprint axis stability: do the 5 axes locked in Phase 1 still partition strategies cleanly across all 4 cases?
-- Mental-model deliverable: doc + Workplace post (the WS1 forcing function from 2026-04-23).
+| # | Case | gb count | Why selected | Per-case issue | Status |
+|---|------|----------|--------------|----------------|--------|
+| 3a | Mistral3 | 16 | Widest single-model diversity probe (multimodal multi-shape) | #59 | Running (24-trial matrix launched 2026-04-25 04:18 UTC, ~12hr wall) |
+| 3b | VitsModel (train) | 22 | Train mode + layerdrop + dropout-active break categories | #61 | Ready (case authored, smoke green) |
+| 3c | Aria | 28 | Multimodal vision+text + MoE | #62 | Ready (case authored, smoke green) |
+| 3d | PaddleOCRVL | 19 | Operator-generalization across data-dep ops | #63 | Ready (case authored, smoke green) |
 
 ## Done means
 
-For this plan to be marked complete:
-- All 4 cases have a finished report under `discovery/reports/`.
-- `agent_diff.patch`, `prompt.txt`, `result.json` per trial are in git (per gitignore convention; raw `stream.jsonl` archived to Drive).
-- Cross-case synthesis section above is written into `discovery/design.md` §8 (Phase 3 closed Qs).
-- Mental-model doc landed in PARA + Workplace post sent.
+- All 4 cases have merged report PRs under `discovery/experiments/2026-04-cross-case-skill-discovery/reports/`
+- Cross-case synthesis written into `synthesis.md` (same dir)
+- Mental-model doc landed in PARA + Workplace post sent
 
 ## Revision log
 
-- 2026-04-24: Plan created. Order set by Peng 2026-04-24 evening (diversity-first, T5 deferred, FLOP reasoning de-emphasized).
-- 2026-04-24 21:45 ET: Case 3a authored (Mistral3, BS-105). Distinct-types count revised 8 → 2 (corpus had wrapper-noise inflation). *Per Peng 2026-04-24:* the case = the model with its full break set, not a single-shape probe — agent attacks all breaks. BS-XXX is descriptive label, not scope constraint.
+- 2026-04-24: Plan created. Order set diversity-first.
+- 2026-04-24 21:45 ET: Case 3a (Mistral3) authored, smoke green.
+- 2026-04-25 00:30 ET: Master experiment plan extracted to `experiments/2026-04-cross-case-skill-discovery/plan.md`; this file slimmed to a workstream-level pointer. Cases 3b/3c/3d authored in parallel (commits authored under #61/#62/#63). Mistral3 24-trial matrix launched.
