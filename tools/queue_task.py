@@ -7,6 +7,12 @@ column is the canonical source of "agreed but not started." TodoWrite is
 in-conversation only; OPEN-LOOPS.md is project-level facts; the board is
 indefinite-lifetime, visible without local access.
 
+⚠️ DO NOT use queue_task.py if an existing per-case issue (e.g. one created by
+new_case_issue.py) already covers the work. In that case, update THAT issue's
+Status field on the board instead. Creating a separate "queued" card is
+duplication — it splits the conversation across two issues. The lesson cost us
+one duplicate (#64 superseded by #59) on 2026-04-24.
+
 Usage:
     python3 tools/queue_task.py "<title>" [--body "<text>"] [--umbrella <issue#>] [--label <label>]
 

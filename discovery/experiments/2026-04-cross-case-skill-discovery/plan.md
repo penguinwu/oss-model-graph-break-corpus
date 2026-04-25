@@ -8,7 +8,7 @@
 **Umbrella issue:** #60
 **Status:** active
 **Created:** 2026-04-24
-**Last updated:** 2026-04-24
+**Last updated:** 2026-04-25
 
 ---
 
@@ -52,7 +52,18 @@ For each model, we run the discovery harness across two crossed axes:
 | Skill setting | What it means |
 |---|---|
 | `none` | Bare Claude. Agent figures out how to diagnose and fix from scratch. |
-| `debug-graph-breaks` | Arsh's skill is loaded — gives the agent a step-by-step methodology (run `dynamo.explain`, classify the cause, look up known patterns). |
+| `debug-graph-breaks` | Arsh's skill is loaded — gives the agent a step-by-step Detect → Diagnose → Fix → Benchmark workflow. Pushes toward escape hatches (`@leaf_function`, `@nonstrict_trace`, `torch.compiler.disable()`) and code restructuring. |
+
+**Skill source:**
+
+- Canonical: [`azahed98/pytorch:claude/debug_graph_breaks/.claude/skills/debug-graph-breaks/SKILL.md`](https://github.com/azahed98/pytorch/blob/claude/debug_graph_breaks/.claude/skills/debug-graph-breaks/SKILL.md) — Arsh's fork, not landed in main pytorch yet
+- Vendored copy in this repo: `corpus/discovery/skills/debug-graph-breaks/SKILL.md` — re-fetch from canonical URL if you suspect drift
+- Design doc (what the skill does, examples, comparison vs no-skill): Google Doc `1vs8pIShvxM4Z9env51-x0BTTtSE5S1Le4RNVgpgCjbw`
+
+**Skill ↔ constraint interactions to watch in results:**
+
+- The skill pushes toward escape hatches. V4 (no escape hatches) forces the skill to find non-escape-hatch fixes — direct test of whether the skill has alternate strategies.
+- The skill references external docs at meta-pytorch.org/compile-graph-break-site/. Trial agents may not have internet — skill text says "If the user provides a local path to a clone of the graph break website repository, read the documentation files directly from that directory instead." Future runner change: support `--add-dir <docs-clone>` if internet access becomes the limiter.
 
 **Axis 2: Prompt constraint.** A single-sentence constraint appended to the case prompt. Steers the agent toward / away from particular strategy families.
 
