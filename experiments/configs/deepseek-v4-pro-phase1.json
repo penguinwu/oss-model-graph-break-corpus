@@ -3,7 +3,9 @@
   "description": "DeepSeek V4 Pro evaluation, Phase 1: scaled-but-architecturally-complete config (all V4 features active at production dims; only num_hidden_layers, n_routed_experts, vocab_size scaled to fit 1x H100). bf16. fp32 matmul precision='high' for TF32. Top-level torch.compile(model, fullgraph=True). Reports gb count, correctness vs eager (max_abs_diff + bitwise), tier-1 perf (speedup + compile_times). See experiments/deepseek_v4_pro_eval_plan.md.",
   "model": {
     "source": "construct",
-    "architecture": "DeepseekV4ForCausalLM",
+    "module": "transformers.models.deepseek_v4",
+    "config_class": "DeepseekV4Config",
+    "model_class": "DeepseekV4ForCausalLM",
     "transformers_branch": "huggingface/transformers@add-deepseek-v4 (PR #45643)",
     "transformers_branch_sha": "a0a8482927a1ef14b1e62cd4d932e9bc29a2cd77",
     "config_kw": {

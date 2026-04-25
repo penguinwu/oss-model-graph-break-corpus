@@ -1,21 +1,36 @@
-"""DeepSeek V4 Pro evaluation, Phase 1 runner.
+"""Generic single-model evaluation runner.
 
-Reads config from experiments/configs/deepseek-v4-pro-phase1.json.
-Writes results to experiments/results/deepseek_v4_pro/phase1-tiny-<date>/results.json.
+Reads a JSON config (--config <path>) and runs the standard eval pipeline:
+  1. Instantiate model (per config.model.{module, config_class, model_class, config_kw})
+  2. Eager forward (sanity)
+  3. Graph-break analysis via torch._dynamo.explain
+  4. Correctness vs eager (max_abs_diff + bitwise_equal vs configured tolerance)
+  5. Tier-1 perf via discovery.perf.measure_perf (eager_self_check + warm_peak_mem +
+     compile_times breakdown)
 
-Requires the DeepSeek V4 PR branch of transformers (HF #45643). Run as:
+Writes results to <config.output_dir formatted with {date}>/results.json.
 
+Designed to be model-agnostic — adding a new evaluation = writing a new config
+JSON, NOT a new runner script. The config specifies the model class via dotted
+import path (so it works with HF models, transformers PR-branch overrides via
+PYTHONPATH, and corpus-vendored model code identically).
+
+Usage
+-----
+    # DeepSeek V4 Pro Phase 1 (requires transformers PR branch on PYTHONPATH)
     PYTHONPATH=/tmp/transformers-v4/src ~/envs/torch211/bin/python \\
-        experiments/scripts/run_deepseek_v4_pro_phase1.py
+        experiments/scripts/run_eval.py \\
+        --config experiments/configs/deepseek-v4-pro-phase1.json
 
-See experiments/deepseek_v4_pro_eval_plan.md for the experiment plan.
+See experiments/deepseek_v4_pro_eval_plan.md for the DeepSeek V4 Pro plan.
 """
 from __future__ import annotations
 
+import argparse
 import datetime as _dt
 import gc
+import importlib
 import json
-import os
 import sys
 import time
 from pathlib import Path
@@ -27,28 +42,45 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from discovery.perf import patch_torch_manual_seed, measure_perf  # noqa: E402
 
-CONFIG_PATH = REPO_ROOT / "experiments" / "configs" / "deepseek-v4-pro-phase1.json"
+
+def _import_model_classes(model_section: dict) -> tuple[type, type]:
+    """Resolve config + model classes from dotted import path in config."""
+    module_path = model_section["module"]
+    config_class_name = model_section["config_class"]
+    model_class_name = model_section["model_class"]
+    try:
+        module = importlib.import_module(module_path)
+    except ImportError as e:
+        raise SystemExit(
+            f"FATAL: cannot import {module_path} — {e}\n"
+            f"If the module is in an unmerged PR branch, set PYTHONPATH to its src/ before invoking."
+        )
+    return getattr(module, config_class_name), getattr(module, model_class_name)
 
 
 def main() -> None:
-    cfg = json.load(open(CONFIG_PATH))
-    print(f"Loaded config: {cfg['name']}")
-    print(f"  description: {cfg['description'][:100]}...")
+    parser = argparse.ArgumentParser(description="Generic single-model evaluation runner")
+    parser.add_argument("--config", required=True, help="Path to JSON config (relative or absolute)")
+    args = parser.parse_args()
+
+    cfg_path = Path(args.config)
+    if not cfg_path.is_absolute():
+        cfg_path = REPO_ROOT / cfg_path
+    cfg = json.load(open(cfg_path))
+    print(f"Loaded config: {cfg['name']}  ({cfg_path.relative_to(REPO_ROOT)})")
+    print(f"  description: {cfg['description'][:120]}...")
 
     # Apply RNG patch BEFORE any model construction.
     patch_torch_manual_seed(seed=cfg["settings"]["seed"])
-    torch.set_float32_matmul_precision(cfg["settings"]["matmul_precision"])
+    if cfg["settings"].get("matmul_precision"):
+        torch.set_float32_matmul_precision(cfg["settings"]["matmul_precision"])
 
-    # Lazy import — needs PYTHONPATH override for the PR branch
-    try:
-        from transformers.models.deepseek_v4 import DeepseekV4Config, DeepseekV4ForCausalLM
-        import transformers
-    except ImportError as e:
-        print(f"FATAL: cannot import transformers.models.deepseek_v4 — {e}")
-        print("Hint: PYTHONPATH=/tmp/transformers-v4/src python ...")
-        sys.exit(1)
-
+    # Resolve model + config classes via dotted import (model-agnostic)
+    ConfigClass, ModelClass = _import_model_classes(cfg["model"])
+    import transformers  # noqa: E402  — for version recording only
     print(f"  transformers: {transformers.__version__} from {transformers.__file__}")
+    print(f"  ConfigClass: {ConfigClass.__module__}.{ConfigClass.__name__}")
+    print(f"  ModelClass:  {ModelClass.__module__}.{ModelClass.__name__}")
 
     cfg_kw = cfg["model"]["config_kw"].copy()
     dtype = getattr(torch, cfg["settings"]["dtype"])
@@ -60,12 +92,11 @@ def main() -> None:
     tolerance = cfg["settings"]["tolerance_max_abs_diff"]
 
     def make_config():
-        return DeepseekV4Config(**cfg_kw)
+        return ConfigClass(**cfg_kw)
 
     def make_model():
-        torch.manual_seed(seed)  # patched, will always seed 1337 (or configured)
-        m = DeepseekV4ForCausalLM(make_config()).to(dtype=dtype, device=device).eval()
-        return m
+        torch.manual_seed(seed)
+        return ModelClass(make_config()).to(dtype=dtype, device=device).eval()
 
     def make_inputs(_model=None):
         torch.manual_seed(seed)
@@ -74,11 +105,13 @@ def main() -> None:
     started_at = _dt.datetime.utcnow().isoformat() + "Z"
     results: dict = {
         "config_name": cfg["name"],
-        "config_path": str(CONFIG_PATH.relative_to(REPO_ROOT)),
+        "config_path": str(cfg_path.relative_to(REPO_ROOT)),
         "model": {
-            "architecture": cfg["model"]["architecture"],
-            "transformers_branch": cfg["model"]["transformers_branch"],
-            "transformers_branch_sha": cfg["model"]["transformers_branch_sha"],
+            "module": cfg["model"]["module"],
+            "config_class": cfg["model"]["config_class"],
+            "model_class": cfg["model"]["model_class"],
+            "transformers_branch": cfg["model"].get("transformers_branch"),
+            "transformers_branch_sha": cfg["model"].get("transformers_branch_sha"),
             "transformers_version": transformers.__version__,
             "config_kw": cfg_kw,
         },
