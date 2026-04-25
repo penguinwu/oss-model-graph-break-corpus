@@ -7,6 +7,9 @@ last_check: 2026-04-24
 forcing_function: tools/check_plan.py + daily brief at 7:30 AM ET
 ---
 
+**Status (2026-04-24 21:45 ET):** Case 3a (Mistral3) authored — `discovery/cases/mistral3_data_dep.{py,baseline.json}`, baseline_mistral3.py + validate.py at WORK_DIR, smoke test green (gb=16, eager==baseline, compiled diff 2.68e-04). Ready for harness launch on next session.
+
+
 # WS1 Phase 3 — Discovery agent across diverse graph break cases
 
 ## Goal
@@ -23,7 +26,7 @@ Reference: `discovery/design.md` v0.4 §6 (case file schema), §8 (Phase 1 close
 
 | # | Case | gb count | Distinct types | Why selected | Status |
 |---|------|----------|----------------|--------------|--------|
-| 3a | **Mistral3** | 16 | 8 | Widest single-model diversity probe | not started |
+| 3a | **Mistral3** | 16 | 2 user-code* | Widest single-model diversity probe | **case authored** (2026-04-24, smoke green, gb=16) |
 | 3b | **VitsModel (train)** | 29 | 7 | Train mode + `as_proxy` + `find_spec` — novel categories | not started |
 | 3c | **Aria** | 27/28 | 7 | Second probe of Mistral3-shaped break space | not started |
 | 3d | **PaddleOCRVL** | 19 | 6 | Operator-generalization probe across data-dep ops | not started |
@@ -58,3 +61,4 @@ For this plan to be marked complete:
 ## Revision log
 
 - 2026-04-24: Plan created. Order set by Peng 2026-04-24 evening (diversity-first, T5 deferred, FLOP reasoning de-emphasized).
+- 2026-04-24 21:45 ET: Case 3a authored (Mistral3, BS-105). Distinct-types count revised 8 → 2 (corpus had wrapper-noise inflation). *Per Peng 2026-04-24:* the case = the model with its full break set, not a single-shape probe — agent attacks all breaks. BS-XXX is descriptive label, not scope constraint.

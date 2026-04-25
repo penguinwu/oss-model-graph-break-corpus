@@ -175,11 +175,17 @@ def _run_agent(
     prompt: str,
     add_dirs: list[Path],
     out_dir: Path,
-    timeout_s: int = 1200,
+    timeout_s: int = 1800,
+    skill_prompt_file: Path | None = None,
 ) -> tuple[int, float]:
     """Invoke claude with stream-json output. Returns (exit_code, elapsed_s).
 
     Captures stream.jsonl + claude_stderr.log into out_dir.
+
+    `skill_prompt_file`, if set, is appended to the agent's system prompt via
+    `--append-system-prompt-file`. Use this to inject a skill (e.g. Arsh's
+    debug-graph-breaks SKILL.md) into the trial agent without enabling slash
+    commands.
     """
     cmd = [
         "claude", "-p", prompt,
@@ -191,6 +197,8 @@ def _run_agent(
         "--bare",
         "--disable-slash-commands",
     ]
+    if skill_prompt_file is not None:
+        cmd.extend(["--append-system-prompt-file", str(skill_prompt_file)])
     for d in add_dirs:
         cmd.extend(["--add-dir", str(d)])
 
@@ -213,10 +221,16 @@ def run_trial(
     variant: Variant,
     trial_label: str,
     out_dir: Path,
-    timeout_s: int = 1200,
+    timeout_s: int = 1800,
     add_dirs: list[Path] | None = None,
+    skill_prompt_file: Path | None = None,
 ) -> TrialResult:
-    """Run one trial end-to-end and return a TrialResult."""
+    """Run one trial end-to-end and return a TrialResult.
+
+    `skill_prompt_file`, if set, is forwarded to `_run_agent` and appended to
+    the trial agent's system prompt. Use this to test a (skill ∈ {none, X})
+    axis by varying the value across trial groups.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
     started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
@@ -230,9 +244,12 @@ def run_trial(
     # 3. Invoke agent.
     add_dirs = add_dirs or [wf.path.parent for wf in case.watched_files]
     add_dirs = list(set(add_dirs))  # dedup
-    exit_code, elapsed = _run_agent(prompt, add_dirs, out_dir, timeout_s)
+    exit_code, elapsed = _run_agent(
+        prompt, add_dirs, out_dir, timeout_s, skill_prompt_file=skill_prompt_file
+    )
 
-    # 4. Capture full diff.
+    # 4. First diff snapshot (may be empty if agent's writes haven't flushed
+    #    yet — see step 5b for the post-validation re-snapshot).
     diff_path = out_dir / "agent_diff.patch"
     _capture_full_diff(case.watched_files, diff_path)
 
@@ -253,6 +270,18 @@ def run_trial(
             validation = {"raw_stdout": res.stdout, "parse_error": True}
     except Exception as e:
         flags.append(f"validate-crashed:{type(e).__name__}")
+
+    # 6b. Re-snapshot diff post-validation. If the agent's writes hadn't
+    #     flushed by step 4 (race after SIGTERM on timeout), validation acts
+    #     as a natural barrier — by the time `import` + eager + compile have
+    #     run, file state has settled. Take whichever diff is larger.
+    second_diff_path = out_dir / "agent_diff.post_validate.patch"
+    _capture_full_diff(case.watched_files, second_diff_path)
+    if second_diff_path.stat().st_size > diff_path.stat().st_size:
+        # Newer snapshot has more content; promote it.
+        diff_path.write_text(second_diff_path.read_text())
+        flags.append("diff-promoted-post-validate")
+    second_diff_path.unlink()  # keep only the canonical agent_diff.patch
 
     # 7. Perf rows (tier-1 always; tier-2 if case opts in).
     # Subprocess so module state from the agent's edits doesn't poison perf.
