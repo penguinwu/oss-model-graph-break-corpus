@@ -9,6 +9,22 @@
 
 ---
 
+## Setup
+
+This is the **`mistral3_data_dep`** case (`Mistral3ForConditionalGeneration`, multimodal vision-language) inside the [Cross-Case Skill Discovery experiment](../../plan.md) (umbrella issue [#60](https://github.com/penguinwu/oss-model-graph-break-corpus/issues/60)). Per-case issue: [#59](https://github.com/penguinwu/oss-model-graph-break-corpus/issues/59). The experiment asks: *when the `debug-graph-breaks` skill is loaded into the discovery agent, does the agent's reasoning, fix-space, or fix-shape change vs. bare Claude?*
+
+**Matrix at a glance** — 24 trials = 2 skill arms × 4 variants × 3 replicates.
+
+| Axis | Values |
+|---|---|
+| Skill arm | `none` (bare Claude), `debug-graph-breaks` (Arsh Zahed's fork) |
+| Variant | V0 (bare prompt), V2 (bitwise equivalence required), V4 (no escape hatches), V6 (no config flags) |
+| Replicates | 3 per cell |
+
+**Where data lives.** Per-trial fingerprints in [`fingerprints.csv`](fingerprints.csv) (one row per trial). Raw artifacts (`agent_diff.patch`, `result.json`, `stream.jsonl`) in `/tmp/discovery-runs/mistral3_data_dep/20260425-041832/`. Methodology details in the [master plan](../../plan.md). PR for this report: [#65](https://github.com/penguinwu/oss-model-graph-break-corpus/pull/65).
+
+---
+
 ## TL;DR
 
 - Every trial (24/24) achieved gb=0 in the agent's own run. Two distinct strategy classes emerged: **model-layer** (fix in `modeling_*.py` only — generalizes; 8 trials) and **mixed model+setup** (also edits `baseline_mistral3.py` to pass `image_sizes` as a Python list; 16 trials).
@@ -193,6 +209,24 @@ For VitsModel (3b), Aria (3c), PaddleOCRVL (3d) — what to add/watch:
 
 ---
 
+## Escape hatch candidates (semantic_equivalence axis)
+
+The `semantic_equivalence` axis (added 2026-04-25, retroactively classified) reveals: **24/24 trials are at best `context-equivalent`** — every fix the agents invented relies on at least one transformation that wouldn't generalize past the canonical input distribution. Zero trials achieved `bit-equivalent` or `math-equivalent`. The recurring non-equivalent transformations across the dataset are escape-hatch candidates: workarounds the agent had to invent because PyTorch lacks a first-class API for them.
+
+| Transformation | Trials | Why context-equivalent (not stronger) | Escape-hatch idea |
+|---|---|---|---|
+| `image_sizes` tensor → Python list (in `baseline_*.py`) | 16 | Only safe because canonical input has static shape; tensor input would re-introduce data-dep `.item()`. | First-class "static-shape input" API or a way to attach known-static metadata to a tensor input. |
+| `@capture_outputs` decorator deletion | ~14 | Drops `ContextVar` + `threading.Lock` side effects. Canonical input doesn't query captured outputs, so behaviorally equivalent — but in production, anything reading the captured store would see different results. | A traceable `ContextVar.set` op, or a Dynamo allowlist for ContextVar writes. |
+| `is_compiling()` runtime guard wrapping the original code | 4 | Eager path keeps the broken code; only the compile path is hardened. Split-path behavior — eager and compile are no longer the same function. | A first-class "trace-only" branch (akin to `torch.cond` but for code that's safe in eager and broken in trace). |
+| `torch_compilable_check` ValueError shim removal/bypass | ~21 trials touch this path | Changes error-reporting semantics; original raises `ValueError` on traced types, the bypass returns `True` or skips the check. | A traceable type-introspection API that doesn't raise on `FakeTensor`. |
+| `output_hidden_states=False` baseline tweak (sidesteps `@capture_outputs` entirely) | 1 | Changes what the model emits; only "equivalent" because the canonical eval doesn't consume hidden states. | n/a — this is more a setup choice than an escape hatch. |
+
+**How to read this:** if PyTorch added first-class APIs for the top 4 rows above, an agent fixing Mistral3 wouldn't need to invent the workaround — and the resulting fix would be `math-equivalent` or `bit-equivalent` instead of `context-equivalent`. That's the practical payoff of cataloging the demotion: it points at concrete API gaps in PyTorch's compile contract.
+
+**Cross-case implication:** the same escape-hatch candidate appearing across multiple cases is a strong signal. Track these in cross-case synthesis (Q7 in master plan) — repeat appearances are the highest-value PyTorch RFC candidates.
+
+---
+
 ## Recommendations
 
 1. *For the skill curation team:* the debug-graph-breaks skill's preference for setup-layer fixes is real and measurable. Whether that's good (more thorough diagnosis path) or bad (steers away from higher-perf strategies) is a value judgment for the skill author. Worth surfacing.
@@ -210,6 +244,7 @@ For VitsModel (3b), Aria (3c), PaddleOCRVL (3d) — what to add/watch:
 - *validate_v2* (added by `discovery/revalidate.py`) is the canonical fix_status verdict. Original `validation` field preserved as legacy. See `discovery/experiments/2026-04-cross-case-skill-discovery/plan.md` for schema.
 - *Per-trial fingerprint* in `fingerprints.csv` was extracted by 3 parallel subagents reading each trial's diff + result + stream-final-summary. Each axis defined in the prompt; semicolon delimiters within cells.
 - *Backend* — torch.compile uses default (inductor), per design.md §2.1.
+- *`semantic_equivalence` axis* (column 11) was added to the canonical schema on 2026-04-25 and applied retroactively to all 24 Mistral3 trials. See `per-case-analysis/fingerprint_schema.md` for value definitions. The "Escape hatch candidates" section above is derived from this axis.
 
 ## Appendix: trial-by-trial table
 
