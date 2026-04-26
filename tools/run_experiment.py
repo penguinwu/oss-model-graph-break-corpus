@@ -834,8 +834,8 @@ def run_check_env_command(args):
 def run_refresh_nightly(args):
     """Upgrade nightly venv to the latest PyTorch nightly build.
 
-    Tries CUDA variants in order (cu128, cu126) and falls back if primary
-    has no newer build. This handles periods where one variant's CI is broken.
+    Default variant is cu126 (active line as of 2026-04-26 — cu128 nightly CI
+    stopped publishing after Apr 8). Override with --cuda-variant if needed.
     """
     venv_dir = Path(args.venv).expanduser().resolve()
     pip = venv_dir / "bin" / "pip"
@@ -852,9 +852,10 @@ def run_refresh_nightly(args):
     old_version = result.stdout.strip() if result.returncode == 0 else "unknown"
     print(f"Current nightly: {old_version}")
 
-    # cu126 fallback removed 2026-04-26: pypi.nvidia.com (cuda-toolkit dep) is
-    # BPF-blocked for agent:claude_code identity. Restore once Tiger gets the
-    # allowlist filed via 3PAI.
+    # Single-variant only: pypi.nvidia.com (cuda-toolkit dep) is BPF-blocked
+    # for agent:claude_code, so any fallback to a variant whose cuda-toolkit
+    # isn't already in the venv will fail. Bootstrap a venv per variant
+    # manually from a non-agent shell, then point --venv at it.
     cuda_variants = [args.cuda_variant]
     packages = ["torch", "torchvision", "torchaudio"]
     installed = False
@@ -1881,8 +1882,8 @@ def main():
                     "detect+explain → corpus → scan → summary. "
                     "One command, fully automated.",
     )
-    sub_nightly.add_argument("--venv", default="~/envs/torch-nightly",
-                             help="Nightly venv path (default: ~/envs/torch-nightly)")
+    sub_nightly.add_argument("--venv", default="~/envs/torch-nightly-cu126",
+                             help="Nightly venv path (default: ~/envs/torch-nightly-cu126)")
     sub_nightly.add_argument("--label", metavar="NAME",
                              help="Run label (default: nightly-YYYYMMDD)")
     sub_nightly.add_argument("--source", nargs="+",
@@ -1922,12 +1923,12 @@ def main():
         "refresh-nightly",
         help="Upgrade nightly venv to latest PyTorch nightly build",
     )
-    sub_refresh.add_argument("--venv", default="~/envs/torch-nightly",
-                             help="Path to nightly venv (default: ~/envs/torch-nightly)")
+    sub_refresh.add_argument("--venv", default="~/envs/torch-nightly-cu126",
+                             help="Path to nightly venv (default: ~/envs/torch-nightly-cu126)")
     sub_refresh.add_argument("--with-transformers", action="store_true",
                              help="Also upgrade transformers and diffusers")
-    sub_refresh.add_argument("--cuda-variant", default="cu128",
-                             help="Primary CUDA variant (default: cu128, falls back to cu126)")
+    sub_refresh.add_argument("--cuda-variant", default="cu126",
+                             help="CUDA variant (default: cu126; cu128 nightly stale since Apr 8)")
 
     args = parser.parse_args()
 

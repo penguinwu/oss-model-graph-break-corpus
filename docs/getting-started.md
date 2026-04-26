@@ -5,8 +5,8 @@ Install the corpus tools, browse model data, and reproduce your first compiler q
 ## Install
 
 Convention: venvs live under `~/envs/<name>` (never inside the repo). Use a
-descriptive name — `~/envs/torch211` for current stable, `~/envs/torch-nightly`
-for nightly.
+descriptive name — `~/envs/torch211` for current stable,
+`~/envs/torch-nightly-cu126` for cu126 nightly.
 
 ```bash
 # Option 1: Auto-setup (path is required)
