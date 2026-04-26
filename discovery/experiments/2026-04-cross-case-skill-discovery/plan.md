@@ -8,7 +8,7 @@
 **Umbrella issue:** #60
 **Status:** active
 **Created:** 2026-04-24
-**Last updated:** 2026-04-25 (case files for 3b/3c/3d authored; runner changes shipped + landed; Mistral3 launched)
+**Last updated:** 2026-04-25 (V8 added — "model-layer fix only" — shipped + launched on case 3b; methodology framing "shut the door to shortcuts" elevated to organizing principle)
 
 ---
 
@@ -67,24 +67,29 @@ For each model, we run the discovery harness across two crossed axes:
 
 **Axis 2: Prompt constraint.** A single-sentence constraint appended to the case prompt. Steers the agent toward / away from particular strategy families.
 
-| Variant | Tier | Constraint added | Why include this variant |
-|---|---|---|---|
-| V0 (bare) | **standard** | (none) | Baseline. What does the agent reach for first when given no extra direction? |
-| V2 (bitwise) | **standard** | "Compiled output must be bitwise equal to eager. Strategies that reorder floats are not acceptable." | Pushes toward escape-hatch family (custom_op / disable / cond) — only those preserve op order. |
-| V4 (no escape hatches) | conditional | "Do not use custom_op / dynamo.disable / allow_in_graph / torch.cond." | Forces in-graph fix (rewrite, not bypass). **Trigger:** any V0 or V2 trial used a canonical escape hatch (`custom_op`, `disable`, `cond`, `allow_in_graph`, `nonstrict_trace`, `leaf_function`) OR used `torch.compiler.is_compiling()` as a runtime guard. |
-| V6 (no config flags) | conditional | "Do not modify torch._dynamo.config." | Forces source-code fix, not a runtime flag flip. **Trigger:** any V0 or V2 trial flipped a `torch._dynamo.config` flag (e.g. `capture_scalar_outputs`, `capture_dynamic_output_shape_ops`). |
+**Organizing principle — *shut the door to shortcut solutions.*** Each non-baseline variant closes one shortcut the agent might otherwise default to. Closing a door doesn't dictate the answer — it forces the agent to explore deeper, more novel graph-break strategies that only become visible when the easy path is removed. The variant catalog is therefore not a flat list but a *progression of door-closings*, each peeling back another layer of agent default behavior. The V0 baseline is the "all doors open" reference; everything else asks "what's the agent capable of when it can't take *this* shortcut?"
+
+| Variant | Tier | Door it closes | Constraint added | What it surfaces |
+|---|---|---|---|---|
+| V0 (bare) | **standard** | (none — all doors open) | (none) | The agent's default reach. What does it pick first when nothing is forbidden? |
+| V2 (bitwise) | **standard** | The float-reorder shortcut | "Compiled output must be bitwise equal to eager. Strategies that reorder floats are not acceptable." | Pushes toward escape-hatch family (custom_op / disable / cond) — only those preserve op order. |
+| V4 (no escape hatches) | conditional | The bypass shortcut | "Do not use custom_op / dynamo.disable / allow_in_graph / torch.cond." | Forces in-graph fix (rewrite, not bypass). **Trigger:** any V0 or V2 trial used a canonical escape hatch (`custom_op`, `disable`, `cond`, `allow_in_graph`, `nonstrict_trace`, `leaf_function`) OR used `torch.compiler.is_compiling()` as a runtime guard. |
+| V6 (no config flags) | conditional | The runtime-flag-flip shortcut | "Do not modify torch._dynamo.config." | Forces source-code fix, not a config setting. **Trigger:** any V0 or V2 trial flipped a `torch._dynamo.config` flag (e.g. `capture_scalar_outputs`, `capture_dynamic_output_shape_ops`). |
+| V8 (model-layer only) | conditional | The setup-edit shortcut | "Do not edit the test/baseline script. The fix must live entirely in the model source files. Setup-layer edits — input shapes, np→torch swaps, compile call site, random-seed patterns — are NOT acceptable." | Forces model-layer fix; agent can't sidestep breaks by reshaping the harness. **Trigger:** standard matrix shows ≥50% of trials with `fix_status = setup-required` on any cell — i.e. the case has a setup-edit attractor. |
 
 **Skipped:** V1 (sparsity_preserved) — Dbrx-MoE-specific language, doesn't generalize.
 
+**Why "door-closing" is the methodology, not just a list of constraints.** Closing a door is the only way to discover what's *behind* it. If V0 always produces a setup-edit fix, we never see whether the agent can reach a model-layer fix — V0 alone tells us nothing about the depth of the agent's strategy space. V8 is the most aggressive door-closing because it removes the largest shortcut family (entire harness rewrite), forcing the agent to either step up (real model-layer fix) or crater (no agent-reachable model-layer fix exists for this break shape). Both outcomes are signal. The catalog should grow this way: *whenever the standard matrix reveals a dominant shortcut attractor, add a door-closing variant for it.*
+
 **Standard matrix (always run):** 2 skill settings × 2 variants (V0, V2) × N=3 trials → **12 trials per case**.
 
-**Conditional follow-ups:** if a trigger fires, run the matching variant on the same skill arm × 3 trials. Each conditional variant adds up to 6 trials (2 skill arms × 3 trials). If neither V4 nor V6 triggers, the case stops at 12 trials.
+**Conditional follow-ups:** if a trigger fires, run the matching variant on the same skill arm × 3 trials. Each conditional variant adds up to 6 trials (2 skill arms × 3 trials). If none of V4/V6/V8 trigger, the case stops at 12 trials.
 
-**Why conditional, not always-on:** Mistral3 case 3a ran the full 24-trial matrix; the V4/V6 cells produced essentially the same pattern as V0/V2 (master finding: the perf delta lived in `fix_locus`, not `variant`). Spending 12 trials per case on V4/V6 by default wastes budget. Run them when the standard matrix surfaces the thing they're designed to probe.
+**Why conditional, not always-on:** Mistral3 case 3a ran the full 24-trial matrix; the V4/V6 cells produced essentially the same pattern as V0/V2 (master finding: the perf delta lived in `fix_locus`, not `variant`). Spending 12 trials per case on V4/V6/V8 by default wastes budget. Run them when the standard matrix surfaces the thing they're designed to probe — i.e. when there's an actual shortcut attractor worth closing the door on.
 
-**Total experiment scope (lower bound):** 4 models × 12 trials = 48 trials. **Upper bound (both V4 and V6 trigger on every case):** 4 × 24 = 96 trials. Sequential per-model (no parallel — Pilot 3 race-condition lesson).
+**Total experiment scope (lower bound):** 4 models × 12 trials = 48 trials. **Upper bound (V4, V6, and V8 all trigger on every case):** 4 × 30 = 120 trials. Sequential per-model (no parallel — Pilot 3 race-condition lesson).
 
-**Per-trial wall budget:** 1800s (30 min). Per-case wall (standard): ~6 hrs. Per-case wall (full): ~12 hrs. Total experiment wall: 24-48 hrs spread across multiple sessions.
+**Per-trial wall budget:** 1800s (30 min). Per-case wall (standard): ~6 hrs. Per-case wall (full with all conditionals): ~15 hrs. Total experiment wall: 24-60 hrs spread across multiple sessions.
 
 ## What we hold constant
 
@@ -158,8 +163,8 @@ For each case in order:
 2. *Pre-register the case as a per-model issue.* Use `tools/new_case_issue.py <experiment-slug> <case_id> "<Model name>"` (do NOT hand-roll — see `corpus/CLAUDE.md` §"Discovery Experiments"). The scaffold injects the canonical Pre-launch checklist (below) into the issue body.
 3. *Walk the Pre-launch checklist* (canonical below + any case-specific additions in the per-model issue). Tick each item before launching. If a case has quirks, add case-specific items to the issue's "Case-specific additions" section before launch.
 4. *Launch the standard matrix:* `python -m discovery.run_case --case <case_id> --variants V0,V2 --skills none,/home/pengwu/projects/oss-model-graph-break-corpus/discovery/skills/debug-graph-breaks/SKILL.md --n 3 --timeout 1800` (12 trials sequential, ~6 hrs wall).
-5. *Run Phase 0 audit + Phase A-F analysis* per `discovery/skills/per-case-analysis/SKILL.md`. Produces `reports/<case_id>/findings.md` + `fingerprints.csv`. Phase 0 (data trustworthiness) GATES Phase A — don't analyze on suspect data. **Phase B includes the conditional-trigger check:** if any V0/V2 trial used a canonical escape hatch or `is_compiling`, queue a V4 follow-up; if any flipped a `torch._dynamo.config` flag, queue a V6 follow-up. If neither triggers, document "no conditional follow-ups warranted" in Phase B and stop at 12 trials.
-6. *Conditional follow-up runs (if Phase B triggered):* relaunch with `--variants V4` and/or `--variants V6` (same `--skills` and `--n` arguments). Re-run Phase A-F over the union of trials.
+5. *Run Phase 0 audit + Phase A-F analysis* per `discovery/skills/per-case-analysis/SKILL.md`. Produces `reports/<case_id>/findings.md` + `fingerprints.csv`. Phase 0 (data trustworthiness) GATES Phase A — don't analyze on suspect data. **Phase B includes the conditional-trigger check:** if any V0/V2 trial used a canonical escape hatch or `is_compiling`, queue a V4 follow-up; if any flipped a `torch._dynamo.config` flag, queue a V6 follow-up; if ≥50% of trials in any cell ended `fix_status = setup-required`, queue a V8 follow-up. If none trigger, document "no conditional follow-ups warranted" in Phase B and stop at 12 trials.
+6. *Conditional follow-up runs (if Phase B triggered):* relaunch with `--variants V4`, `--variants V6`, and/or `--variants V8` (same `--skills` and `--n` arguments). Re-run Phase A-F over the union of trials.
 7. *Commit the report to main* (`findings.md` + `fingerprints.csv` under `discovery/experiments/<exp>/reports/<case_id>/`). Push. Post a headline summary as a comment on the per-case issue (TL;DR + headlines + note on whether V4/V6 follow-ups ran). Per-case issue moves to Done. (Workflow change 2026-04-25: PR-FIRST discontinued — direct-to-main is the convention now. See `per-case-analysis/SKILL.md` Phase F for rationale.)
 
 ## Pre-launch checklist (canonical — snapshot into per-model issues)
@@ -200,3 +205,4 @@ These are scope for a separate runner-changes PR (linked from the umbrella when 
 - *2026-04-24:* Plan created. Greenlit by Peng. Replaces the inline-per-issue methodology that risked drifting between cases. Skill axis added back per Peng 2026-04-24 23:00 ET (was wrongly dropped in the first draft of the per-model issue #59).
 - *2026-04-25:* Switched standard matrix from 4 variants (V0,V2,V4,V6 = 24 trials/case) to 2 variants (V0,V2 = 12 trials/case) with V4/V6 as conditional follow-ups gated on Phase B trigger checks. Reason: Mistral3 case 3a ran the full 24-trial matrix and the master finding (perf delta lives in `fix_locus`, not `variant`) showed the V4/V6 cells produced essentially the same pattern as V0/V2 — half the budget would have surfaced the same headline. The conditional triggers (`is_compiling` or canonical escape hatch → V4; config flag flip → V6) ensure V4/V6 still run when they'd be informative. Mistral3's existing 24-trial run is grandfathered.
 - *2026-04-25 (later):* PR-FIRST workflow for analysis output discontinued. Per-case findings now commit to main directly + headline summary on the per-case issue. PR diffs are hard to read for analysis docs (most of the value is the prose, not line-level changes), and feature branches accumulated merge conflicts when methodology landed during a review cycle. Encoding removed from CLAUDE.md, per-case-analysis SKILL Phase F, and step 7 of Per-case execution shape above.
+- *2026-04-25 (evening):* Added V8 ("model-layer fix only") as a conditional variant. Trigger: ≥50% of trials in any cell end `fix_status = setup-required` (i.e. setup-edit attractor present). Designed in response to VitsModel case 3b's 12/12 setup-required result on V0/V2/V4. Promoted the underlying methodology — *shut the door to shortcut solutions to steer agents toward novel/deeper graph-break strategies* — to organizing principle of the variant catalog. Variant table now lists each variant's "door it closes" alongside its constraint. Catalog growth rule documented: whenever the standard matrix reveals a dominant shortcut attractor, add a door-closing variant for it.

@@ -77,11 +77,26 @@ V6 = Variant(
     rationale="Added v0.2 after Pilot 4 forensic. Forces a code-only fix so we can see whether the agent has a fallback when flag-set is taken away.",
 )
 
+V8 = Variant(
+    id="V8",
+    name="model_layer_only",
+    constraint=(
+        "IMPORTANT CONSTRAINT — model-layer fix only: "
+        "do not edit the test/baseline script (the script that constructs the model "
+        "and calls torch.compile). The fix must live entirely in the model source "
+        "files. Setup-layer edits — changing input shapes, swapping numpy for torch "
+        "in the runner, adjusting random-seed patterns, modifying the torch.compile "
+        "call site, restructuring how the model is invoked — are NOT acceptable. "
+        "The model itself must be made to trace cleanly under the existing setup."
+    ),
+    rationale="Added 2026-04-25 for VitsModel case 3b. V0/V2/V4 produced 12/12 setup-required (agent escapes via baseline edits). V6 (no config flags) was the only variant that surfaced model-layer fixes (4/6 general). V8 closes the setup-edit escape route directly to test whether the agent can produce model-layer fixes consistently when forced.",
+)
+
 # Recommended starting set for Phase 1.
 DEFAULT_VARIANTS: tuple[Variant, ...] = (V0, V1, V2, V4, V6)
 
 # Lookup by id.
-ALL_VARIANTS: dict[str, Variant] = {v.id: v for v in (V0, V1, V2, V4, V6)}
+ALL_VARIANTS: dict[str, Variant] = {v.id: v for v in (V0, V1, V2, V4, V6, V8)}
 
 
 def compose_prompt(case_body: str, variant: Variant) -> str:
