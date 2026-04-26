@@ -1,13 +1,21 @@
 #!/usr/bin/env bash
 # Set up a virtual environment for the OSS Model Compiler Quality Corpus.
-# Usage: bash scripts/setup_env.sh [VENV_PATH]
+# Usage: bash scripts/setup_env.sh VENV_PATH
+# Convention: venvs live under ~/envs/<name>, never inside the repo.
 # Examples:
-#   bash scripts/setup_env.sh                    # creates ./env (default)
-#   bash scripts/setup_env.sh ~/envs/torch210    # creates at custom path
+#   bash scripts/setup_env.sh ~/envs/torch211       # current stable
+#   bash scripts/setup_env.sh ~/envs/torch-nightly  # nightly
 set -euo pipefail
 
+if [ "$#" -lt 1 ]; then
+    echo "Error: VENV_PATH is required." >&2
+    echo "Usage: bash scripts/setup_env.sh VENV_PATH" >&2
+    echo "Convention: use ~/envs/<name> (e.g., ~/envs/torch211, ~/envs/torch-nightly)." >&2
+    exit 2
+fi
+
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VENV_DIR="${1:-${REPO_ROOT}/env}"
+VENV_DIR="$1"
 
 if [ -d "$VENV_DIR" ]; then
     echo "Virtual environment already exists at $VENV_DIR"

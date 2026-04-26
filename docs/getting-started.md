@@ -4,9 +4,12 @@ Install the corpus tools, browse model data, and reproduce your first compiler q
 
 ## Install
 
+Convention: venvs live under `~/envs/<name>` (never inside the repo). Use a
+descriptive name — `~/envs/torch211` for current stable, `~/envs/torch-nightly`
+for nightly.
+
 ```bash
-# Option 1: Auto-setup (creates venv at ./env, or supply a custom path)
-bash scripts/setup_env.sh
+# Option 1: Auto-setup (path is required)
 bash scripts/setup_env.sh ~/envs/torch211
 
 # Option 2: Manual

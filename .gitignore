@@ -1,5 +1,10 @@
 __pycache__/
 *.pyc
+
+# Backstop: venvs belong under ~/envs/<name>, never in the repo.
+env/
+envs/
+
 sweep_results/
 experiments/results/
 correctness/
