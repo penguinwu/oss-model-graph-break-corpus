@@ -852,7 +852,10 @@ def run_refresh_nightly(args):
     old_version = result.stdout.strip() if result.returncode == 0 else "unknown"
     print(f"Current nightly: {old_version}")
 
-    cuda_variants = [args.cuda_variant, "cu126"] if args.cuda_variant != "cu126" else ["cu126"]
+    # cu126 fallback removed 2026-04-26: pypi.nvidia.com (cuda-toolkit dep) is
+    # BPF-blocked for agent:claude_code identity. Restore once Tiger gets the
+    # allowlist filed via 3PAI.
+    cuda_variants = [args.cuda_variant]
     packages = ["torch", "torchvision", "torchaudio"]
     installed = False
 
@@ -1304,23 +1307,26 @@ def run_nightly_command(args):
     if age_days is not None and age_days > 3:
         print(f"\n  *** PIP NIGHTLY IS STALE ({age_days} days old: {nightly_version}) ***")
         build_script = repo_root / "scripts" / "build-nightly-from-source.sh"
-        if build_script.exists():
-            print(f"  Attempting build from source...")
-            build_result = subprocess.run(
-                ["bash", str(build_script), str(venv_dir)],
-                cwd=str(repo_root))
-            if build_result.returncode == 0:
-                ver_result = subprocess.run(
-                    [sweep_python, "-c", "import torch; print(torch.__version__)"],
-                    capture_output=True, text=True)
-                nightly_version = ver_result.stdout.strip() if ver_result.returncode == 0 else "unknown"
-                print(f"  Source build succeeded: {nightly_version}")
-                steps_done.append("Source build (pip stale)")
-            else:
-                print(f"  WARNING: Source build failed (exit {build_result.returncode})")
-                print(f"  Continuing with stale pip nightly ({nightly_version})")
-        else:
-            print(f"  WARNING: Build script not found at {build_script}")
+        if not build_script.exists():
+            print(f"\n=== Nightly aborted: pip nightly stale and build script missing ===")
+            print(f"  Build script expected at: {build_script}")
+            print(f"  A sweep on stale pytorch produces no regression signal — aborting.")
+            sys.exit(1)
+        print(f"  Attempting build from source...")
+        build_result = subprocess.run(
+            ["bash", str(build_script), str(venv_dir)],
+            cwd=str(repo_root))
+        if build_result.returncode != 0:
+            print(f"\n=== Nightly aborted: source build failed (exit {build_result.returncode}) ===")
+            print(f"  Pip nightly was {age_days} days old; source build was the only path to fresh pytorch.")
+            print(f"  A sweep on stale pytorch produces no regression signal — aborting.")
+            sys.exit(1)
+        ver_result = subprocess.run(
+            [sweep_python, "-c", "import torch; print(torch.__version__)"],
+            capture_output=True, text=True)
+        nightly_version = ver_result.stdout.strip() if ver_result.returncode == 0 else "unknown"
+        print(f"  Source build succeeded: {nightly_version}")
+        steps_done.append("Source build (pip stale)")
     elif age_days is not None:
         print(f"  Pip nightly is fresh ({age_days} days old)")
 
