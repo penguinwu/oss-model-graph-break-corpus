@@ -110,10 +110,15 @@ def _run_canonical_check(case) -> dict:
         case_mod = importlib.reload(case_mod)
         out["import_ok"] = True
 
+        # Reseed before each model invocation. Stochastic ops in train mode
+        # (layerdrop, dropout, stochastic samplers) advance the global RNG state
+        # during each call, so eager / explain / compile must each start from
+        # the same seed for a deterministic apples-to-apples comparison.
         torch.manual_seed(0)
         model = case_mod.make_model()
         inputs = case_mod.make_inputs(model)
 
+        torch.manual_seed(0)
         with torch.no_grad():
             eager_raw = model(**inputs)
         eager_out = _extract_tensor(eager_raw)
@@ -133,11 +138,13 @@ def _run_canonical_check(case) -> dict:
                 out["max_diff_vs_eager_baseline"] = md
 
         torch._dynamo.reset()
+        torch.manual_seed(0)
         explanation = torch._dynamo.explain(model)(**inputs)
         out["graph_count"] = explanation.graph_count
         out["graph_break_count"] = explanation.graph_break_count
 
         torch._dynamo.reset()
+        torch.manual_seed(0)
         compiled = torch.compile(model)
         with torch.no_grad():
             compiled_raw = compiled(**inputs)

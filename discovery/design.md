@@ -1,8 +1,8 @@
-# Discovery Agent — Design Doc (v0.4, Phase 1 closed)
+# Discovery Agent — Design Doc (v0.5, declared-fallback principle)
 
-**Status:** Phase 1 complete on Dbrx. v0.4 closes the §8 open questions with the answers Phase 1 produced.
+**Status:** Phase 1 complete on Dbrx; cross-case skill discovery in progress (Mistral3, VitsModel). v0.5 introduces the variant-rule design principle and folds in the 2026-04-26 empirical findings.
 **Author:** Otter
-**Date:** 2026-04-24
+**Date:** 2026-04-26
 
 ## Revision Log
 
@@ -14,6 +14,10 @@
   4. Pilot 4 strategy distribution to be re-tallied splitting clean / deliberate-flag / contaminated trials; lean is to skip re-running the contaminated 3 (discovery agent will re-cover the same case).
 - **v0.3 (2026-04-24 noon, per Peng)** — perf primitive scope correction: drop compile-time measurement. Compile is a one-time cost that varies with cache state and is unrelated to steady-state fix quality. The first warmup iteration triggers compilation and is discarded along with the rest of warmup.
 - **v0.4 (2026-04-24 evening, post-Phase-1)** — closed §8 open questions with answers Phase 1 produced on Dbrx. M=variant-driven (V0/V1/V6 sufficed for Dbrx), N=3 confirmed adequate for strategy-distribution signal, fingerprint stayed heuristic (no LLM-as-judge needed for Dbrx), output landed at `discovery/runs/<case>/<run-id>/` + report at `discovery/reports/<case>_<date>.md`, Phase 1 case = Dbrx as recommended.
+- **v0.5 (2026-04-26, post-VITS-V8 + empirical noise-floor test)** — three changes:
+  1. **§2.1 sharpened with proof.** Inductor noise-floor magnitude and cause are now empirical, not estimated. A fixed-model eager-vs-inductor test produced `backend=eager → max_diff=0`, `backend=inductor → max_diff=2.0` on the same code path. Confirms the floor is *Inductor codegen numerical drift*, not RNG. Old "~1e-4" estimate replaced.
+  2. **New §4.7 — Variant-rule design principle: "declared fallback with required justification."** Variants forbid escape hatches by default. Agent may use a forbidden mechanism *only if* declared + justified in the findings doc. Post-trial classifier sorts trials into "legit declared fallback" vs "undeclared shortcut." Applies uniformly to backend choice, capture_* flags, and any future agent-action category. Through-line confirmed by Peng three times this session.
+  3. **§4.3 amended.** Canonical check now reseeds (`validate_runner.py:_run_canonical_check`) and per-case baselines reseed before each leg of the eager/compiled comparison. `manual_seed` insertions empirically reclassified as **L non-functional defensive** — they don't flatten anything because the noise floor is not RNG.
 
 ---
 
@@ -33,9 +37,18 @@ The output of one discovery run is a **trade-off matrix** for that case, not a s
 
 Discovery uses `torch.compile(model)` with the *default* backend (inductor). `sweep/` uses `backend="eager"` for fast breadth-first surveying with no codegen. Discovery is the opposite: depth-per-case where production-realistic perf matters, and codegen is part of what we're studying. A successful "fix" at the discovery layer means the agent improved compile-time + runtime perf, which only inductor can measure.
 
-Trade-off: max_diff between eager and compiled is ~1e-4 even with no breaks (inductor codegen drift) vs near-zero under eager backend. Worth it — the perf signal is essential.
+**Empirical noise floor (v0.5 update, 2026-04-26).** The inductor backend introduces a per-case `max_diff` floor that is *not* RNG. Verified on a fixed VITS model: same code path, same inputs, two backends —
 
-Decision: 2026-04-25, per Peng. Documented here so future contributors don't accidentally swap backends.
+| Backend | `max_diff` (eager vs compiled) |
+|---|---|
+| `eager` | 0.0 |
+| `inductor` (default) | ~2.0 |
+
+The 2.0 magnitude is Inductor codegen numerical drift (op reordering, fused kernel arithmetic). It does not change between runs, is not RNG-related, and cannot be flattened by `manual_seed` insertion. This floor must not be confused with a correctness regression, but also must not be used as cover for a real correctness regression — see §4.7 for how variants enforce that.
+
+Trade-off accepted: the per-case noise floor is real (case-dependent, can be calibrated), but the perf signal Inductor produces is essential to the trade-off matrix. Worth it.
+
+Decision: 2026-04-25, per Peng. Empirical confirmation: 2026-04-26. Documented here so future contributors don't accidentally swap backends, and so future readers don't mistake the floor for a regression.
 
 ## 3. Why now
 
@@ -82,6 +95,12 @@ Reuse the Pilot 4 harness shape: per-trial isolated state restore, GPU pre-check
 - Per-trial restore covers *both* model source AND test/baseline file from `.original` backups. (Pilot 4's harness only restored model source — a flag added by `with_skill_2` to `baseline_dbrx.py` persisted into 4 subsequent trials and silently contaminated them.)
 - Post-trial diff check: if any restored file differs from `.original` and the diff is not present in `agent_diff.patch`, the trial is flagged `test-file-mutated` and its strategy fingerprint is marked invalid.
 - All file mutations the agent makes — including ones to the test harness — must show up in the captured diff.
+
+**v0.5 hardening (canonical-check determinism, 2026-04-26):**
+- `validate_runner.py:_run_canonical_check` reseeds (torch + python + numpy) before each leg of the eager-vs-compiled comparison. Systemic — applies to every case.
+- Per-case baselines reseed analogously inside their `.original` files (currently shipped: `baseline_vits.py.original`; the other 5 baselines are an open loop, see Decision 1 in `~/.myclaw/spaces/AAQANraxXE4/threads/2026-04-26-determinism-decisions.md`).
+- This pins eager-vs-eager `max_diff` to deterministic 0.0, exposing Inductor's intrinsic noise floor (§2.1) cleanly.
+- **Implication for the L/M/S/R taxonomy (§4.7):** `manual_seed` insertions in agent diffs are now empirically classified **L non-functional defensive** — they don't flatten max_diff because the floor isn't RNG. They are not measurement-affecting (M) and not shortcuts (S).
 
 Every trial runs with `--output-format stream-json --include-partial-messages` so we capture the full trace for downstream classification.
 
