@@ -4,6 +4,8 @@
 **Author:** Otter
 **Date:** 2026-04-27
 
+> **Before running ANY discovery experiment** (multi-trial run, harness change, schema change, case addition), read [`EXPERIMENT_LIFECYCLE.md`](EXPERIMENT_LIFECYCLE.md) — the 5-gate methodology that's mandatory for all discovery work. The gates exist because we kept rushing launches and burning attention on bugs that small-scale validation would have caught in seconds.
+
 > ⚠️ **2026-04-27 retraction summary** — read this BEFORE acting on §2.1 / §4.3 / §4.7 below. The "Inductor noise floor 2.0" framing throughout v0.5 was empirically wrong. The actual root cause was our validator using `torch.manual_seed` alone, which doesn't seed numpy/python.random. Many HF models (VITS layerdrop) use `np.random` in forward — outputs were intermittently non-deterministic. With HF's full `set_seed` (torch + numpy + python.random + cuda), eager VITS is bit-identical across forwards. The 2.0 magnitude is the saturation max for [-1, 1]-bounded waveform output, not codegen drift. *V0.5's manual_seed-as-L-non-functional-defensive reclassification is therefore also wrong* — manual_seed insertions ARE incomplete, not non-functional. Full-rewrite of §2.1/§4.3/§4.7 deferred until next iteration; treat them as superseded.
 
 ## Revision Log
