@@ -303,6 +303,57 @@ def test_perf_runtime_failure_path() -> None:
     print(f"  ✓ test_perf_runtime_failure_path (msg={result.runtime_failure_msg[:60]}...)")
 
 
+def test_parallel_runs_isolated() -> None:
+    """REGRESSION TEST for parallel runner state isolation.
+    Launches 3 `run_config` subprocesses in parallel against the synthetic
+    `_smoke_parallel` case (no transformers, no agent — just exercises
+    sandbox setup + validator subprocess + result.json write under
+    concurrency). Asserts: all 3 produce result.json with correct schema,
+    no cross-process interference."""
+    import concurrent.futures
+    import shutil
+
+    test_dir = Path("/tmp/_test_parallel_smoke")
+    if test_dir.exists():
+        shutil.rmtree(test_dir)
+    test_dir.mkdir(parents=True)
+
+    cmd_template = [
+        "/home/pengwu/envs/torch211/bin/python", "-m", "discovery.run_config",
+        "--case", "_smoke_parallel", "--variant", "V0", "--skill", "none",
+        "--skip-agent",
+    ]
+
+    def _run(idx: int) -> tuple[int, str, Path]:
+        cfg_dir = test_dir / f"cfg{idx}"
+        cmd = cmd_template + [
+            "--trial-label", f"smoke{idx}",
+            "--out-dir", str(cfg_dir),
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=120, cwd=str(REPO))
+        return idx, res.stderr[-300:], cfg_dir
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+        futures = [pool.submit(_run, i) for i in range(1, 4)]
+        results = [f.result() for f in concurrent.futures.as_completed(futures)]
+
+    # Assert each config produced a clean result.json with the expected schema
+    for idx, stderr_tail, cfg_dir in results:
+        rj = cfg_dir / "result.json"
+        assert rj.exists(), f"config {idx} missing result.json. stderr: {stderr_tail}"
+        r = json.loads(rj.read_text())
+        assert r.get("case_id") == "_smoke_parallel", f"config {idx} wrong case_id: {r.get('case_id')}"
+        assert r.get("trial_label") == f"smoke{idx}", f"config {idx} wrong trial_label"
+        val = r.get("validation") or {}
+        assert val.get("fix_status") == "general", f"config {idx} fix_status={val.get('fix_status')}"
+        # No flags should be set under clean parallel run
+        assert not r.get("flags"), f"config {idx} unexpected flags: {r.get('flags')}"
+
+    # Cleanup
+    shutil.rmtree(test_dir)
+    print(f"  ✓ test_parallel_runs_isolated (3 parallel run_config subprocesses, all clean)")
+
+
 def test_perfresult_schema_completeness() -> None:
     """Every PerfResult field expected downstream actually exists."""
     from discovery.perf import PerfResult
@@ -398,6 +449,7 @@ def main() -> int:
                         test_validator_broken_model,
                         test_validator_no_state_contamination_across_repeated_calls,
                         test_validator_seeding_covers_nprandom,
+                        test_parallel_runs_isolated,
                         test_perf_happy_path,
                         test_perf_runtime_failure_path,
                         test_perfresult_schema_completeness,

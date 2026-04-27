@@ -56,8 +56,11 @@ python -m discovery.cases.<case_id>  # per-case baseline measurement
 
 See `experiments/README.md` for the per-experiment directory convention. Use the scaffold tools — never hand-roll experiments or per-case issues:
 
-- `tools/new_experiment.py "<slug>" --title "<Title>"`
-- `tools/new_case_issue.py <experiment-slug> <case_id> "<Model name>"`
+- `tools/new_experiment.py "<slug>" --title "<Title>"` — lightweight default: dir + plan.md + README row, no GitHub issue
+- `tools/new_experiment.py "<slug>" --title "<Title>" --with-umbrella-issue` — opt-in to ALSO file an umbrella issue + add to project board
+- `tools/new_case_issue.py <experiment-slug> <case_id> "<Model name>"` — opt-in per-case GitHub issue
 - `tools/queue_task.py "<title>"` — only when there is no existing per-case issue
+
+Issue creation is *orthogonal* to scaffolding. Most local experiments don't warrant team-visible GitHub tracking; use `--with-umbrella-issue` only for experiments producing shipped findings or needing cross-team comments.
 
 Drift detected by `tools/check_experiments.py` (run nightly via the daily brief).
