@@ -12,6 +12,7 @@ Schema produced (printed as JSON to stdout):
   "details": {
     "gb_in_agent_run": int | None,
     "gb_under_canonical_inputs": int | None,
+    "gb_call_sites": [{"reason": str, "file": str | None, "line": int | None}, ...] | None,
     "max_diff_compiled_vs_eager": float | None,
     "max_diff_vs_baseline": float | None
   },
@@ -91,6 +92,7 @@ def _run_canonical_check(case) -> dict:
         "compile_ok": False,
         "graph_count": None,
         "graph_break_count": None,
+        "graph_break_call_sites": None,
         "max_diff_vs_eager_baseline": None,
         "max_diff_compiled_vs_eager_now": None,
         "error": None,
@@ -142,6 +144,17 @@ def _run_canonical_check(case) -> dict:
         explanation = torch._dynamo.explain(model)(**inputs)
         out["graph_count"] = explanation.graph_count
         out["graph_break_count"] = explanation.graph_break_count
+        # Surface per-break (reason, file, line) so trial-to-trial GB identity
+        # is comparable. Lifted from the GraphCompileReason objects dynamo
+        # already returns; user_stack[-1] is the innermost user frame.
+        out["graph_break_call_sites"] = [
+            {
+                "reason": gb.reason,
+                "file": gb.user_stack[-1].filename if gb.user_stack else None,
+                "line": gb.user_stack[-1].lineno if gb.user_stack else None,
+            }
+            for gb in explanation.break_reasons
+        ]
 
         torch._dynamo.reset()
         torch.manual_seed(0)
@@ -215,6 +228,7 @@ def main(case_id: str) -> int:
         "details": {
             "gb_in_agent_run": agent_gb,
             "gb_under_canonical_inputs": canonical["graph_break_count"],
+            "gb_call_sites": canonical["graph_break_call_sites"],
             "max_diff_compiled_vs_eager": canonical["max_diff_compiled_vs_eager_now"],
             "max_diff_vs_baseline": canonical["max_diff_vs_eager_baseline"],
         },
