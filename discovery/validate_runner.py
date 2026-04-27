@@ -12,7 +12,9 @@ Schema produced (printed as JSON to stdout):
   "details": {
     "gb_in_agent_run": int | None,
     "gb_under_canonical_inputs": int | None,
-    "gb_call_sites": [{"reason": str, "file": str | None, "line": int | None}, ...] | None,
+    "gb_call_sites": [{"reason": str, "type": str, "file": str | None, "line": int | None, "location": str | None}, ...] | None,
+    "eager_self_diff": float | None,
+    "eager_deterministic": bool | None,
     "max_diff_compiled_vs_eager": float | None,
     "max_diff_vs_baseline": float | None
   },
@@ -99,6 +101,8 @@ def _run_canonical_check(case) -> dict:
         "graph_count": None,
         "graph_break_count": None,
         "graph_break_call_sites": None,
+        "eager_self_diff": None,
+        "eager_deterministic": None,
         "max_diff_vs_eager_baseline": None,
         "max_diff_compiled_vs_eager_now": None,
         "error": None,
@@ -131,6 +135,25 @@ def _run_canonical_check(case) -> dict:
             eager_raw = model(**inputs)
         eager_out = _extract_tensor(eager_raw)
         out["eager_ok"] = True
+
+        # Second eager forward WITHOUT reseed — measures internal RNG drift.
+        # A non-zero diff means the model has stochastic ops that fire
+        # independently of the global manual_seed (e.g. dropout in train mode,
+        # stochastic routing). Lifted from perf.py:_eager_self_check so the
+        # determinism signal is available regardless of whether downstream
+        # perf measurement crashes. Clone inputs to preserve byte values
+        # against any in-place mutation by the first forward.
+        inputs_b = {
+            k: (v.detach().clone() if isinstance(v, torch.Tensor) else v)
+            for k, v in inputs.items()
+        }
+        with torch.no_grad():
+            eager_raw_b = model(**inputs_b)
+        eager_out_b = _extract_tensor(eager_raw_b)
+        self_diff = _safe_max_diff(eager_out, eager_out_b)
+        if self_diff is not None:
+            out["eager_self_diff"] = self_diff
+            out["eager_deterministic"] = (self_diff == 0.0)
 
         # Compare to saved baseline output if present
         baseline_eager_pt = None
@@ -248,6 +271,8 @@ def main(case_id: str) -> int:
             "gb_in_agent_run": agent_gb,
             "gb_under_canonical_inputs": canonical["graph_break_count"],
             "gb_call_sites": canonical["graph_break_call_sites"],
+            "eager_self_diff": canonical["eager_self_diff"],
+            "eager_deterministic": canonical["eager_deterministic"],
             "max_diff_compiled_vs_eager": canonical["max_diff_compiled_vs_eager_now"],
             "max_diff_vs_baseline": canonical["max_diff_vs_eager_baseline"],
         },
