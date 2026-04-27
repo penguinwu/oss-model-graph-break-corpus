@@ -4,9 +4,7 @@
 **Author:** Otter
 **Date:** 2026-04-27
 
-> **Before running ANY discovery experiment** (multi-trial run, harness change, schema change, case addition), read [`EXPERIMENT_LIFECYCLE.md`](EXPERIMENT_LIFECYCLE.md) — the 5-gate methodology that's mandatory for all discovery work. The gates exist because we kept rushing launches and burning attention on bugs that small-scale validation would have caught in seconds.
-
-> ⚠️ **2026-04-27 retraction summary** — read this BEFORE acting on §2.1 / §4.3 / §4.7 below. The "Inductor noise floor 2.0" framing throughout v0.5 was empirically wrong. The actual root cause was our validator using `torch.manual_seed` alone, which doesn't seed numpy/python.random. Many HF models (VITS layerdrop) use `np.random` in forward — outputs were intermittently non-deterministic. With HF's full `set_seed` (torch + numpy + python.random + cuda), eager VITS is bit-identical across forwards. The 2.0 magnitude is the saturation max for [-1, 1]-bounded waveform output, not codegen drift. *V0.5's manual_seed-as-L-non-functional-defensive reclassification is therefore also wrong* — manual_seed insertions ARE incomplete, not non-functional. Full-rewrite of §2.1/§4.3/§4.7 deferred until next iteration; treat them as superseded.
+> **Before any discovery experiment work** (multi-trial run, harness change, schema change, case addition), read [`EXPERIMENT_LIFECYCLE.md`](EXPERIMENT_LIFECYCLE.md) — the 5-gate methodology that's mandatory for all discovery work. The launchers (`run_case.py`, `revalidate.py`) enforce it mechanically.
 
 ## Revision Log
 
@@ -55,18 +53,15 @@ The output of one discovery run is a **trade-off matrix** for that case, not a s
 
 Discovery uses `torch.compile(model)` with the *default* backend (inductor). `sweep/` uses `backend="eager"` for fast breadth-first surveying with no codegen. Discovery is the opposite: depth-per-case where production-realistic perf matters, and codegen is part of what we're studying. A successful "fix" at the discovery layer means the agent improved compile-time + runtime perf, which only inductor can measure.
 
-**Empirical noise floor (v0.5 update, 2026-04-26).** The inductor backend introduces a per-case `max_diff` floor that is *not* RNG. Verified on a fixed VITS model: same code path, same inputs, two backends —
+**Determinism precondition (v0.6, 2026-04-27 — supersedes v0.5 noise-floor framing).** For any meaningful eager-vs-compiled comparison, eager must be deterministic. That precondition holds *only* when ALL RNG sources are seeded before each forward — torch (CPU+CUDA), numpy, and python.random. HF's `transformers.trainer_utils.set_seed` is the corpus-canonical helper; `torch.manual_seed` alone is incomplete because many HF models call `np.random` or `python.random` in forward (VITS layerdrop is one example, modeling_vits.py:1116).
 
-| Backend | `max_diff` (eager vs compiled) |
-|---|---|
-| `eager` | 0.0 |
-| `inductor` (default) | ~2.0 |
+The v0.5 doc claimed an "Inductor codegen noise floor" of ~2.0 max_diff on VITS. That attribution was wrong: with full `set_seed`, eager VITS is bit-identical across forwards (verified 7/7 on 4 fresh process runs). The 2.0 magnitude is the saturation max for [-1,1]-bounded waveform output when sequence lengths differ — itself a downstream consequence of un-seeded numpy RNG drifting the stochastic duration predictor's output length. There is no inductor codegen noise floor at the magnitude originally claimed.
 
-The 2.0 magnitude is Inductor codegen numerical drift (op reordering, fused kernel arithmetic). It does not change between runs, is not RNG-related, and cannot be flattened by `manual_seed` insertion. This floor must not be confused with a correctness regression, but also must not be used as cover for a real correctness regression — see §4.7 for how variants enforce that.
+Eager-vs-compile diffs that survive proper seeding ARE real signal — they reflect either (a) compile-path RNG-order divergence at graph breaks (compile may fall back to eager for un-traceable ops, consuming RNG in different order), or (b) actual numerical differences from Inductor's fused kernels. Both are correctness signals worth measuring; neither should be dismissed as "noise floor."
 
-Trade-off accepted: the per-case noise floor is real (case-dependent, can be calibrated), but the perf signal Inductor produces is essential to the trade-off matrix. Worth it.
+Validator's `eager_self_diff` field operationalizes this: with HF set_seed before both eager calls, `eager_self_diff > 0` means there's an RNG source set_seed doesn't cover (custom generator, hardware non-determinism). It's a diagnostic for "is our reseed pattern adequate for this model?" not a noise-floor measurement.
 
-Decision: 2026-04-25, per Peng. Empirical confirmation: 2026-04-26. Documented here so future contributors don't accidentally swap backends, and so future readers don't mistake the floor for a regression.
+Decision: discovery uses inductor backend (2026-04-25, Peng). Determinism methodology corrected to HF set_seed (2026-04-27).
 
 ## 3. Why now
 
@@ -114,13 +109,29 @@ Reuse the Pilot 4 harness shape: per-trial isolated state restore, GPU pre-check
 - Post-trial diff check: if any restored file differs from `.original` and the diff is not present in `agent_diff.patch`, the trial is flagged `test-file-mutated` and its strategy fingerprint is marked invalid.
 - All file mutations the agent makes — including ones to the test harness — must show up in the captured diff.
 
-**v0.5 hardening (canonical-check determinism, 2026-04-26):**
-- `validate_runner.py:_run_canonical_check` reseeds (torch + python + numpy) before each leg of the eager-vs-compiled comparison. Systemic — applies to every case.
-- Per-case baselines reseed analogously inside their `.original` files (currently shipped: `baseline_vits.py.original`; the other 5 baselines are an open loop, see Decision 1 in `~/.myclaw/spaces/AAQANraxXE4/threads/2026-04-26-determinism-decisions.md`).
-- This pins eager-vs-eager `max_diff` to deterministic 0.0, exposing Inductor's intrinsic noise floor (§2.1) cleanly.
-- **Implication for the L/M/S/R taxonomy (§4.7):** `manual_seed` insertions in agent diffs are now empirically classified **L non-functional defensive** — they don't flatten max_diff because the floor isn't RNG. They are not measurement-affecting (M) and not shortcuts (S).
+**v0.6 hardening (canonical-check determinism, 2026-04-27 — supersedes v0.5):**
+- `validate_runner.py:_run_canonical_check` uses `from transformers.trainer_utils import set_seed; set_seed(0)` before each leg (eager-1, eager-2, explain, compile). HF's set_seed covers torch (CPU+CUDA) + numpy + python.random — corpus-canonical.
+- Validator's two-eager pattern (commit `0cd779c`): both eager calls reseed via set_seed; `eager_self_diff` measures whether set_seed is sufficient for the model. `eager_self_diff > 0` flags an RNG source set_seed doesn't cover (custom generator, hardware non-determinism, time-based op).
+- Validator runs each trial via subprocess in `revalidate.py` (commit `ed6a1ec`) to avoid cross-trial state contamination from in-process module + dynamo + sweep.explain handler accumulation. Root cause of contamination still under investigation; subprocess sidesteps without diagnosing.
+- Graph-break analysis uses corpus-canonical `sweep.explain.run_graph_break_analysis` (TORCH_LOGS-based, commit `8dfcb9a`), NOT deprecated `torch._dynamo.explain` (which segfaults on VITS in nightly per `corpora/custom-models/repro_segfault_gptsovits.py`). Surfaces structured `gb_call_sites` with `type` classification (`Tensor.item()` / `data-dependent-branch` / `aten.nonzero` / `other`).
+- Per-case baselines (5 of 6: aria, dbrx, jamba, mistral3, paddle_ocr_vl) still use `torch.manual_seed` only — corpus-wide audit pending in OPEN-LOOPS.
+
+**Predecessor framing (v0.5, 2026-04-26) was wrong:**
+- Claimed validator reseeded "torch + python + numpy" but only torch was actually being seeded (numpy + python.random missing).
+- Reclassified `manual_seed` insertions as **L non-functional defensive** — incorrect. `torch.manual_seed` insertions are INCOMPLETE (cover only torch RNG, missing numpy + python.random). They're a partial fix, not a no-op.
 
 Every trial runs with `--output-format stream-json --include-partial-messages` so we capture the full trace for downstream classification.
+
+**Schema (per-trial result.json) as of v0.6:**
+- `validation.details.gb_call_sites` — `[{reason, type, file, line, location}]` per break
+- `validation.details.eager_self_diff`, `eager_deterministic` — pre-perf determinism diagnostic
+- `perf.perf_shape_sanity` — `"ok" | "runtime_failure" | "unknown"` (model broken at perf shapes vs measurement noise vs not-tested)
+- `perf.runtime_failure_msg` — RuntimeError message when sanity fails
+- `fix_survives_perf` (top-level) — `True | False | None`. Integrated verdict combining validator's fix_status with perf shape-sanity from both tiers.
+
+**Pre-launch testing (mandatory, see [`EXPERIMENT_LIFECYCLE.md`](EXPERIMENT_LIFECYCLE.md) for the 5-gate methodology):**
+- `discovery/smoke_test.py` — Layer 1 synthetic (validator + perf on tiny MLP, both happy and broken paths) + Layer 2 per-case canonical. Mandatory before any multi-trial run.
+- Launchers (`run_case.py`, `revalidate.py` with `--rerun-perf` or batch mode) refuse to start unless smoke_test passes AND target plan.md has all `## Pre-launch gates` checkboxes ticked. Bypass via `--lifecycle-bypass --reason "<text>"` (writes audit entry to plan.md).
 
 ### 4.4 Strategy fingerprint
 
@@ -169,7 +180,7 @@ Variants are *intent specifications*, not hard bans. The default for every forbi
 **L/M/S/R taxonomy (per-trial post-hoc classification).**
 
 - *L (Legitimate)* — override was declared AND the diff matches the declaration. The agent honored the variant's intent: it knew it was breaking the constraint and named why. The fix is admissible into strategy aggregation.
-- *M (Measurement-affecting)* — override changes what the experiment is measuring. Example: `backend="eager"` hides Inductor's noise floor (§2.1) so the perf and accuracy axes mean something different from every other trial. M-tagged trials are reported separately; their numbers do not aggregate with the rest.
+- *M (Measurement-affecting)* — override changes what the experiment is measuring. Example: `backend="eager"` swaps the entire compile path (no codegen, no fused kernels, no Inductor RNG-order divergence) so the perf and accuracy axes mean something fundamentally different from every other trial. M-tagged trials are reported separately; their numbers do not aggregate with the rest.
 - *S (Shortcut)* — the diff uses a forbidden mechanism with no matching declaration. Counts as an undeclared constraint violation. Surfaces in the strategy distribution as "agent routed around the constraint without acknowledging it" — itself a signal worth measuring.
 - *R (Refused)* — the agent declared it could not produce a fix under the constraint and exited cleanly without writing a forbidden-mechanism diff. Valid outcome — surfaces "this constraint is too tight for this case" cleanly.
 
@@ -177,8 +188,9 @@ Variants are *intent specifications*, not hard bans. The default for every forbi
 
 **Two current applications.**
 
-- *Backend choice (default = inductor).* `backend="eager"` is M-tagged — it hides the Inductor noise floor (§2.1). Permitted only with a one-line declaration naming the Inductor numerics issue being sidestepped.
+- *Backend choice (default = inductor).* `backend="eager"` is M-tagged — it swaps the compile path entirely so accuracy + perf axes are not comparable across the rest of the variant matrix. Permitted only with a one-line declaration naming the Inductor numerics issue being sidestepped.
 - *Capture flags (`capture_scalar_outputs`, `capture_dynamic_output_shape_ops`).* These count as a strategy axis (§4.4 axis 4: `dynamo_config_changes`). Permitted only with a one-line declaration naming the specific data-dep op being guarded.
+- *Determinism overrides (`fallback_random=True`, `allow_tf32=False`).* These trade eager-vs-compile parity for performance. L-tagged when declared with rationale (e.g., dgb_V8_1's `DECLARED-OVERRIDE: fallback_random=True — Inductor reorders RNG consumption vs eager in fused kernels` is a sophisticated diagnosis, not a shortcut). S-tagged when used without declaration.
 
 **Why this beats hard bans.** A hard ban makes a variant unrunnable on cases where the forbidden mechanism is the only honest fix. The trial either fails (lost signal) or the agent silently violates (lost signal). Declared-fallback converts the variant from a syntactic gate into an intent probe: we see whether the agent reaches for the mechanism, AND we see how it justifies the reach. The classifier sorts the trials post-hoc; the agent never has to refuse to fix the case.
 
