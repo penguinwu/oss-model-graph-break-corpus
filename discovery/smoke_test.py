@@ -136,6 +136,30 @@ _BROKEN_MLP_CASE_SRC = textwrap.dedent('''\
         return {"x": torch.randn(2, 8, device="cuda")}
 ''')
 
+# REGRESSION TEST for the np.random determinism bug discovered 2026-04-27.
+# A model that uses np.random in forward + only torch.manual_seed (incomplete
+# reseed pattern) produces non-deterministic outputs across forwards. The
+# validator's seeding must use HF's full set_seed to cover this.
+_NPRANDOM_MODEL_CASE_SRC = textwrap.dedent('''\
+    import torch
+    import numpy as np
+    from pathlib import Path
+    WORK_DIR = Path("/tmp")
+    class _Mod(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.lin = torch.nn.Linear(8, 8)
+        def forward(self, x):
+            # np.random.uniform — not covered by torch.manual_seed alone.
+            # Mimics VITS layerdrop pattern (modeling_vits.py:1116).
+            scale = float(np.random.uniform(0.9, 1.1))
+            return self.lin(x) * scale
+    def make_model():
+        return _Mod().eval().cuda()
+    def make_inputs(model):
+        return {"x": torch.randn(2, 8, device="cuda")}
+''')
+
 
 def test_validator_clean_model() -> None:
     """Validator on a graph-break-free model: fix_status='general', gb_count=0,
@@ -186,6 +210,35 @@ def test_validator_broken_model() -> None:
     types_found = {s.get("type") for s in sites}
     assert types_found - {None}, f"no break types classified, got {types_found}"
     print(f"  ✓ test_validator_broken_model (gb_count={out['graph_break_count']}, types={types_found - {None}})")
+
+
+def test_validator_seeding_covers_nprandom() -> None:
+    """REGRESSION TEST for the np.random bug. Validator's reseed pattern MUST
+    cover np.random — otherwise a model that uses np.random in forward shows
+    eager_self_diff > 0 even with reseed-each-forward via the validator's path.
+    Caught the corpus-wide torch.manual_seed-only bug on 2026-04-27."""
+    from discovery.validate_runner import _run_canonical_check
+
+    class FakeCase:
+        case_id = "_smoke_nprandom"
+        watched_files: list = []
+
+    _install_fake_case_module("_smoke_nprandom", _NPRANDOM_MODEL_CASE_SRC)
+    try:
+        out = _run_canonical_check(FakeCase())
+    finally:
+        _cleanup_fake_case_module("_smoke_nprandom")
+
+    assert out["import_ok"] is True, out
+    assert out["eager_ok"] is True, out
+    assert out["eager_self_diff"] is not None, "eager_self_diff was None — _safe_max_diff couldn't compare"
+    assert out["eager_self_diff"] == 0.0, \
+        f"REGRESSION: validator's reseed pattern doesn't cover np.random. " \
+        f"eager_self_diff={out['eager_self_diff']} (expected 0.0). " \
+        f"This means validate_runner.py is using torch.manual_seed alone " \
+        f"instead of HF's set_seed (or equivalent that covers numpy + python.random)."
+    assert out["eager_deterministic"] is True, out
+    print("  ✓ test_validator_seeding_covers_nprandom (eager_self_diff=0.0 with np.random in forward)")
 
 
 def test_perf_happy_path() -> None:
@@ -312,6 +365,7 @@ def main() -> int:
         print("=== Layer 1: synthetic harness self-tests ===")
         for test_fn in (test_validator_clean_model,
                         test_validator_broken_model,
+                        test_validator_seeding_covers_nprandom,
                         test_perf_happy_path,
                         test_perf_runtime_failure_path,
                         test_perfresult_schema_completeness,

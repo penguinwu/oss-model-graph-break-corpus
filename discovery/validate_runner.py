@@ -49,6 +49,14 @@ import torch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sweep.explain import run_graph_break_analysis
 
+# HF's set_seed covers ALL RNG sources: torch (CPU+CUDA) + numpy + python random.
+# torch.manual_seed alone misses numpy/python.random, which causes intermittent
+# non-determinism for any model that uses np.random or python.random in forward
+# (e.g. VITS layerdrop uses np.random.uniform). Verified empirically: with full
+# set_seed, VITS train mode is bit-identical across forwards; with torch-only
+# seed, only 3-6 of 7 forwards match.
+from transformers.trainer_utils import set_seed
+
 
 def _extract_tensor(out):
     """Pull a comparable tensor out of a model output. Handles HuggingFace
@@ -126,27 +134,28 @@ def _run_canonical_check(case) -> dict:
         # (layerdrop, dropout, stochastic samplers) advance the global RNG state
         # during each call, so eager / explain / compile must each start from
         # the same seed for a deterministic apples-to-apples comparison.
-        torch.manual_seed(0)
+        set_seed(0)
         model = case_mod.make_model()
         inputs = case_mod.make_inputs(model)
 
-        torch.manual_seed(0)
+        set_seed(0)
         with torch.no_grad():
             eager_raw = model(**inputs)
         eager_out = _extract_tensor(eager_raw)
         out["eager_ok"] = True
 
-        # Second eager forward WITHOUT reseed — measures internal RNG drift.
-        # A non-zero diff means the model has stochastic ops that fire
-        # independently of the global manual_seed (e.g. dropout in train mode,
-        # stochastic routing). Lifted from perf.py:_eager_self_check so the
-        # determinism signal is available regardless of whether downstream
-        # perf measurement crashes. Clone inputs to preserve byte values
-        # against any in-place mutation by the first forward.
+        # Second eager forward WITH set_seed reseed (matching the first call).
+        # A non-zero diff here means HF's set_seed is INSUFFICIENT for this
+        # model — there's an RNG source set_seed doesn't cover (e.g. custom
+        # generator, hardware non-determinism, time-based ops). This is the
+        # diagnostic for "is our reseed pattern adequate?" rather than "does
+        # the model use RNG at all" (the latter is trivially yes for any HF
+        # model in train mode).
         inputs_b = {
             k: (v.detach().clone() if isinstance(v, torch.Tensor) else v)
             for k, v in inputs.items()
         }
+        set_seed(0)
         with torch.no_grad():
             eager_raw_b = model(**inputs_b)
         eager_out_b = _extract_tensor(eager_raw_b)
@@ -169,7 +178,7 @@ def _run_canonical_check(case) -> dict:
                 out["max_diff_vs_eager_baseline"] = md
 
         torch._dynamo.reset()
-        torch.manual_seed(0)
+        set_seed(0)
         # sweep.explain.run_graph_break_analysis is the corpus-canonical
         # methodology (TORCH_LOGS=graph_breaks + counting backend). Returns
         # a dict with graph_count, graph_break_count, and break_reasons
@@ -199,7 +208,7 @@ def _run_canonical_check(case) -> dict:
             ]
 
         torch._dynamo.reset()
-        torch.manual_seed(0)
+        set_seed(0)
         compiled = torch.compile(model)
         with torch.no_grad():
             compiled_raw = compiled(**inputs)
