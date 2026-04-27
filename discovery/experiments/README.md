@@ -17,6 +17,7 @@ Each experiment is a directory:
 Date prefix gives chronological order. Slug describes the path-finding goal — no opaque labels.
 
 ## Active experiments
+| `2026-04-2026-04-parallel-runner` | active | [plan.md](2026-04-2026-04-parallel-runner/plan.md) | #69 |
 
 | Slug | Status | Plan | Umbrella issue |
 |---|---|---|---|
