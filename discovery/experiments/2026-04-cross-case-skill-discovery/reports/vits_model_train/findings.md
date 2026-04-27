@@ -1,10 +1,13 @@
 # Findings — `vits_model_train` cross-case skill discovery
 
+> ⚠️ **2026-04-27 RETRACTION.** This document's "Inductor noise floor 2.0" framing is empirically incorrect. The 2.0 was caused by our validator using `torch.manual_seed` alone (missing numpy + python.random); VITS layerdrop's `np.random.uniform` produced different layer-drop patterns each forward → different sequence lengths → 2.0 max diff (saturation magnitude for [-1, 1] waveform). With HF's full `set_seed`, eager VITS is bit-identical across forwards. Validator now uses set_seed (commit `0cd779c`). The L/M/S/R taxonomy and the V8 "convergent failure" framing built on the noise-floor reasoning need to be revisited. Do not act on this document's L/M reclassifications without the corrected analysis. Full rewrite pending.
+
 **Run scope:** 30 trials across 5 variants × 2 skill arms × 3 seeds.
 - Original 24-trial run: `20260425-144345` (V0/V2/V4/V6 × {debug_graph_breaks, noskill} × 3)
 - V8 follow-up run: `20260426-014253` (V8 × {debug_graph_breaks, noskill} × 3)
+- V8 small re-run: `20260426-211715` (V8 × {debug_graph_breaks, noskill} × 3) — re-validated 2026-04-27 with new schema; ALL 6 trials show `perf_shape_sanity=ok` for both tiers (the original perf "failures" were the `_eager_self_check` shape-mismatch bug, not agent-edit failures).
 
-**Phase 0 audits:** trustworthy for fingerprinting on all 30 trials. Perf data partially unreliable (12/30 trials hit the known `_measure_case.py` infra bug). Audit docs: `phase0_audit.md`, `phase0_audit_v8.md`.
+**Phase 0 audits:** trustworthy for fingerprinting on all 30 trials. Perf data partially unreliable (12/30 trials hit the known `_measure_case.py` infra bug; ALSO 18/30 hit the `_eager_self_check` bug discovered 2026-04-27 — both fixes shipped in commits `4538580` and `f135b19`). Audit docs: `phase0_audit.md`, `phase0_audit_v8.md`.
 
 **Companion data:** `fingerprints.csv` (30 rows, full per-trial table).
 

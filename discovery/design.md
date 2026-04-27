@@ -1,8 +1,10 @@
-# Discovery Agent — Design Doc (v0.5, declared-fallback principle)
+# Discovery Agent — Design Doc (v0.6, harness-bug retraction + set_seed correction)
 
-**Status:** Phase 1 complete on Dbrx; cross-case skill discovery in progress (Mistral3, VitsModel). v0.5 introduces the variant-rule design principle and folds in the 2026-04-26 empirical findings.
+**Status:** Phase 1 complete on Dbrx; cross-case skill discovery in progress (Mistral3, VitsModel). v0.6 retracts the v0.5 "Inductor noise floor 2.0" attribution after empirical disproof, and corrects the corpus's reseed pattern.
 **Author:** Otter
-**Date:** 2026-04-26
+**Date:** 2026-04-27
+
+> ⚠️ **2026-04-27 retraction summary** — read this BEFORE acting on §2.1 / §4.3 / §4.7 below. The "Inductor noise floor 2.0" framing throughout v0.5 was empirically wrong. The actual root cause was our validator using `torch.manual_seed` alone, which doesn't seed numpy/python.random. Many HF models (VITS layerdrop) use `np.random` in forward — outputs were intermittently non-deterministic. With HF's full `set_seed` (torch + numpy + python.random + cuda), eager VITS is bit-identical across forwards. The 2.0 magnitude is the saturation max for [-1, 1]-bounded waveform output, not codegen drift. *V0.5's manual_seed-as-L-non-functional-defensive reclassification is therefore also wrong* — manual_seed insertions ARE incomplete, not non-functional. Full-rewrite of §2.1/§4.3/§4.7 deferred until next iteration; treat them as superseded.
 
 ## Revision Log
 
@@ -18,6 +20,20 @@
   1. **§2.1 sharpened with proof.** Inductor noise-floor magnitude and cause are now empirical, not estimated. A fixed-model eager-vs-inductor test produced `backend=eager → max_diff=0`, `backend=inductor → max_diff=2.0` on the same code path. Confirms the floor is *Inductor codegen numerical drift*, not RNG. Old "~1e-4" estimate replaced.
   2. **New §4.7 — Variant-rule design principle: "declared fallback with required justification."** Variants forbid escape hatches by default. Agent may use a forbidden mechanism *only if* declared + justified in the findings doc. Post-trial classifier sorts trials into "legit declared fallback" vs "undeclared shortcut." Applies uniformly to backend choice, capture_* flags, and any future agent-action category. Through-line confirmed by Peng three times this session.
   3. **§4.3 amended.** Canonical check now reseeds (`validate_runner.py:_run_canonical_check`) and per-case baselines reseed before each leg of the eager/compiled comparison. `manual_seed` insertions empirically reclassified as **L non-functional defensive** — they don't flatten anything because the noise floor is not RNG.
+- **v0.6 (2026-04-27, post-V8 deep-dive infra audit)** — methodology corrections after multiple harness bugs surfaced during V8 follow-up:
+  1. **§2.1 RETRACTED.** The "Inductor noise floor 2.0" attribution was incorrect. Confirmed empirically: with HF's full `set_seed` (torch + numpy + python.random + cuda) reseeded before each forward, VITS is bit-identical across 7/7 forwards in 4/4 fresh process runs. The original test that "proved" Inductor drift used `torch.manual_seed` alone, which left numpy and python.random adrift; VITS layerdrop's `np.random.uniform` produced different layer-drop patterns each forward → different output sequence lengths → 2.0 max diff (saturation magnitude for [-1, 1]-bounded waveform). The 2.0 was not Inductor codegen drift; it was un-reseeded numpy RNG.
+  2. **§4.3 RETRACTED partially.** `manual_seed` insertions are NOT "L non-functional defensive" — they're INCOMPLETE (cover only torch RNG, not numpy/python.random). Reclassification to L was wrong. Awaiting full rewrite.
+  3. **`_dynamo.explain` → `sweep.explain` migration.** Validator now uses corpus-canonical `sweep.explain.run_graph_break_analysis` (TORCH_LOGS-based) instead of deprecated `_dynamo.explain` (known to segfault on VITS in nightly). Methodology consistency restored across sweep + discovery.
+  4. **`_eager_self_check` shape-mismatch crash fixed.** Used `_safe_max_diff` prefix-clamp pattern, matching validate_runner. Stochastic-output models like VITS train no longer crash perf measurement.
+  5. **New schema fields** for distinguishing "model broken at perf shapes" from "measurement noise":
+     - `validation.details.gb_call_sites` — `[{reason, type, file, line, location}]` per break, classified by `sweep.explain` (Tensor.item() / data-dependent-branch / aten.nonzero / other)
+     - `validation.details.eager_self_diff`, `eager_deterministic` — lifted from perf to validator; now means "is set_seed sufficient for this model?" rather than "does the model use any RNG?"
+     - `perf.perf_shape_sanity` — `"ok" | "runtime_failure" | "unknown"`. Pre-timing forward at perf shapes catches model-broken-at-perf-shapes failures distinctly from measurement noise.
+     - `perf.runtime_failure_msg` — RuntimeError message when sanity fails
+     - `fix_survives_perf` (top-level on TrialResult) — `True | False | None`. Integrated verdict combining validator's fix_status with perf shape-sanity from both tiers.
+  6. **`smoke_test.py` added** — Layer 1 synthetic harness self-tests (tiny MLP + clean / broken / np.random patterns) + Layer 2 per-case smoke. Mandatory pre-launch check. Crucially includes the broken-PATH tests (perf RuntimeError, np.random regression) — the absence of these catches "happy path works, broken path silently fails" regressions like the `_eager_self_check` bug we discovered after multi-hour V8 wait.
+  7. **Validator now uses HF `set_seed`** at all reseed sites (was `torch.manual_seed`-only). Smoke test `test_validator_seeding_covers_nprandom` is the regression guard.
+  8. **Corpus-wide audit pending** — 5 other discovery cases, `experiments/scripts/run_eval.py`, `discovery/perf.py`'s `patch_torch_manual_seed`, and `sweep/worker.py`'s fallback all use incomplete reseed patterns. Filed in OPEN-LOOPS.
 
 ---
 
@@ -137,6 +153,34 @@ Per case, produces:
 - *Strategy table:* one row per unique strategy, all 4 axis scores, count of trials that produced it, exemplar diff
 - *Headline:* which strategy wins on which axis, where there's tension
 - *Catalog gap flag:* if any strategy isn't represented in the current skill catalog, flag explicitly
+
+### 4.7 Variant-rule design principle: declared fallback with required justification
+
+Variants are *intent specifications*, not hard bans. The default for every forbidden mechanism is forbidden — but the agent may override iff it declares the override and justifies why. This keeps variants honest about their purpose (probing what the agent reaches for and how it reasons about constraints) without refusing to produce a fix on cases where the forbidden mechanism is the only honest answer.
+
+**Three rules.**
+
+1. *Default = forbidden.* Each variant enumerates mechanisms it forbids. Without declaration, those mechanisms count as constraint violations.
+2. *Override = declared + justified.* The agent may use a forbidden mechanism by writing a one-line declaration in the trial output naming (a) the mechanism used and (b) the specific reason it was unavoidable. Format: `# DECLARED-OVERRIDE: <mechanism> — <reason>` either inline in the diff or in the agent's final summary.
+3. *Post-hoc classification.* Per-case Phase B (`per-case-analysis` skill) runs a classifier matching declarations against the diff. Every trial receives an L/M/S/R tag.
+
+**L/M/S/R taxonomy (per-trial post-hoc classification).**
+
+- *L (Legitimate)* — override was declared AND the diff matches the declaration. The agent honored the variant's intent: it knew it was breaking the constraint and named why. The fix is admissible into strategy aggregation.
+- *M (Measurement-affecting)* — override changes what the experiment is measuring. Example: `backend="eager"` hides Inductor's noise floor (§2.1) so the perf and accuracy axes mean something different from every other trial. M-tagged trials are reported separately; their numbers do not aggregate with the rest.
+- *S (Shortcut)* — the diff uses a forbidden mechanism with no matching declaration. Counts as an undeclared constraint violation. Surfaces in the strategy distribution as "agent routed around the constraint without acknowledging it" — itself a signal worth measuring.
+- *R (Refused)* — the agent declared it could not produce a fix under the constraint and exited cleanly without writing a forbidden-mechanism diff. Valid outcome — surfaces "this constraint is too tight for this case" cleanly.
+
+**Classifier sketch.** For each declared override in the trial's stream-final-summary or `# DECLARED-OVERRIDE:` comment in the diff, check the diff for the named mechanism. Match → L (or M if the mechanism is on the measurement-affecting list). Mechanism present in diff but no declaration → S. No fix attempted + clean refusal → R.
+
+**Two current applications.**
+
+- *Backend choice (default = inductor).* `backend="eager"` is M-tagged — it hides the Inductor noise floor (§2.1). Permitted only with a one-line declaration naming the Inductor numerics issue being sidestepped.
+- *Capture flags (`capture_scalar_outputs`, `capture_dynamic_output_shape_ops`).* These count as a strategy axis (§4.4 axis 4: `dynamo_config_changes`). Permitted only with a one-line declaration naming the specific data-dep op being guarded.
+
+**Why this beats hard bans.** A hard ban makes a variant unrunnable on cases where the forbidden mechanism is the only honest fix. The trial either fails (lost signal) or the agent silently violates (lost signal). Declared-fallback converts the variant from a syntactic gate into an intent probe: we see whether the agent reaches for the mechanism, AND we see how it justifies the reach. The classifier sorts the trials post-hoc; the agent never has to refuse to fix the case.
+
+**Through-line.** This principle applies uniformly to backend choice, capture_* flags, escape-hatch usage, future agent-action categories, and any variant V_n added after this date. New variants must specify their forbidden mechanism set + which mechanisms (if any) are M-tagged.
 
 ## 5. Output schema
 
