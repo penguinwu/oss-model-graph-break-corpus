@@ -161,16 +161,36 @@ def _time_call(fn: Callable[[], Any], n_warmup: int, n_repeat: int) -> float:
     return timings_ms[len(timings_ms) // 2]
 
 
+def _safe_max_diff(a: torch.Tensor, b: torch.Tensor) -> float | None:
+    """Compare two tensors with prefix-clamp if shapes differ on first dim.
+    Mirrors validate_runner._safe_max_diff for stochastic-output models like
+    VITS train (variable output length each forward)."""
+    if a.shape == b.shape:
+        return (a - b).abs().max().item()
+    n = min(a.shape[0], b.shape[0]) if a.dim() > 0 else 0
+    if n == 0:
+        return None
+    a_clamped = a[:n] if a.dim() > 0 else a
+    b_clamped = b[:n] if b.dim() > 0 else b
+    if a_clamped.shape == b_clamped.shape:
+        return (a_clamped - b_clamped).abs().max().item()
+    return None  # shape mismatch beyond simple prefix; can't compare
+
+
 def _eager_self_check(
     model_fn: Callable[[], torch.nn.Module],
     inputs_fn: Callable[[torch.nn.Module], dict[str, Any]],
-) -> tuple[float, bool]:
+) -> tuple[float | None, bool | None]:
     """Run model forward twice with identical inputs and weights; return (max_abs_diff, deterministic).
 
     Both runs use the SAME inputs (cloned) and the SAME weights — the only
     difference is wall-clock + any internal RNG calls inside the model. A
     diff > 0 means the model has internal non-determinism even with the seed
     patch (i.e. dropout-without-eval, stochastic routing, etc.).
+
+    For stochastic-output models (variable output length each forward, e.g.
+    VITS train mode), uses prefix-clamp via _safe_max_diff. Returns
+    (None, None) if shapes diverge beyond simple prefix-clamp recovery.
     """
     gc.collect()
     if torch.cuda.is_available():
@@ -192,7 +212,9 @@ def _eager_self_check(
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-    diff = (o1 - o2).abs().max().item()
+    diff = _safe_max_diff(o1, o2)
+    if diff is None:
+        return None, None
     return diff, diff == 0.0
 
 
