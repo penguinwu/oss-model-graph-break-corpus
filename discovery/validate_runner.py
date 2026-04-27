@@ -41,6 +41,12 @@ from pathlib import Path
 
 import torch
 
+# sweep.explain is the corpus-canonical TORCH_LOGS-based graph-break analysis.
+# Replaces deprecated torch._dynamo.explain (known to segfault on VITS in nightly,
+# per corpora/custom-models/repro_segfault_gptsovits.py).
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from sweep.explain import run_graph_break_analysis
+
 
 def _extract_tensor(out):
     """Pull a comparable tensor out of a model output. Handles HuggingFace
@@ -141,20 +147,33 @@ def _run_canonical_check(case) -> dict:
 
         torch._dynamo.reset()
         torch.manual_seed(0)
-        explanation = torch._dynamo.explain(model)(**inputs)
-        out["graph_count"] = explanation.graph_count
-        out["graph_break_count"] = explanation.graph_break_count
-        # Surface per-break (reason, file, line) so trial-to-trial GB identity
-        # is comparable. Lifted from the GraphCompileReason objects dynamo
-        # already returns; user_stack[-1] is the innermost user frame.
-        out["graph_break_call_sites"] = [
-            {
-                "reason": gb.reason,
-                "file": gb.user_stack[-1].filename if gb.user_stack else None,
-                "line": gb.user_stack[-1].lineno if gb.user_stack else None,
-            }
-            for gb in explanation.break_reasons
-        ]
+        # sweep.explain.run_graph_break_analysis is the corpus-canonical
+        # methodology (TORCH_LOGS=graph_breaks + counting backend). Returns
+        # a dict with graph_count, graph_break_count, and break_reasons
+        # already classified by type (Tensor.item() / data-dependent-branch /
+        # aten.nonzero / other).
+        analysis = run_graph_break_analysis(model, inputs, mode="eval")
+        if analysis["status"] == "ok":
+            out["graph_count"] = analysis["graph_count"]
+            out["graph_break_count"] = analysis["graph_break_count"]
+            out["graph_break_call_sites"] = [
+                {
+                    "reason": br.get("reason"),
+                    "type": br.get("type"),
+                    "file": br.get("file"),
+                    "line": br.get("line"),
+                    "location": br.get("location"),
+                }
+                for br in analysis["break_reasons"]
+            ]
+        else:
+            # explain crashed (e.g. PendingUnbackedSymbolNotFound). Surface the
+            # error in graph_break_call_sites so the validator's outer try/except
+            # doesn't swallow the methodology signal.
+            out["graph_break_call_sites"] = [
+                {"reason": f"explain_error: {analysis.get('error', 'unknown')}",
+                 "type": "explain_error", "file": None, "line": None}
+            ]
 
         torch._dynamo.reset()
         torch.manual_seed(0)
