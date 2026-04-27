@@ -162,18 +162,27 @@ def _time_call(fn: Callable[[], Any], n_warmup: int, n_repeat: int) -> float:
 
 
 def _safe_max_diff(a: torch.Tensor, b: torch.Tensor) -> float | None:
-    """Compare two tensors with prefix-clamp if shapes differ on first dim.
-    Mirrors validate_runner._safe_max_diff for stochastic-output models like
-    VITS train (variable output length each forward)."""
+    """Compare two tensors with prefix-clamp on first OR last dim if shapes
+    differ. First-dim clamp covers batch-variable models; last-dim clamp covers
+    seq2seq / TTS models (e.g. VITS waveform output) where sequence length
+    varies between calls.
+
+    Returns the max abs diff over the largest comparable region, or None if
+    no clamp pattern recovers a comparable shape."""
     if a.shape == b.shape:
         return (a - b).abs().max().item()
-    n = min(a.shape[0], b.shape[0]) if a.dim() > 0 else 0
-    if n == 0:
+    if a.dim() == 0 or a.dim() != b.dim():
         return None
-    a_clamped = a[:n] if a.dim() > 0 else a
-    b_clamped = b[:n] if b.dim() > 0 else b
-    if a_clamped.shape == b_clamped.shape:
-        return (a_clamped - b_clamped).abs().max().item()
+    # Try first-dim clamp.
+    if a.shape[1:] == b.shape[1:]:
+        n = min(a.shape[0], b.shape[0])
+        if n > 0:
+            return (a[:n] - b[:n]).abs().max().item()
+    # Try last-dim clamp (TTS / seq2seq with variable output length).
+    if a.shape[:-1] == b.shape[:-1]:
+        n = min(a.shape[-1], b.shape[-1])
+        if n > 0:
+            return (a[..., :n] - b[..., :n]).abs().max().item()
     return None  # shape mismatch beyond simple prefix; can't compare
 
 

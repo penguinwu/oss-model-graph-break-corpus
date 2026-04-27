@@ -212,6 +212,37 @@ def test_validator_broken_model() -> None:
     print(f"  ✓ test_validator_broken_model (gb_count={out['graph_break_count']}, types={types_found - {None}})")
 
 
+def test_validator_no_state_contamination_across_repeated_calls() -> None:
+    """Guard against in-process state contamination across repeated
+    _run_canonical_check calls.
+
+    Caveat: synthetic MLP doesn't reproduce the VITS-scale state contamination
+    bug (discovered 2026-04-27, subprocess fix in revalidate.py commit ed6a1ec).
+    This test catches in-process breakage for SIMPLE cases — useful as a
+    floor — but a VITS-scale regression test would require a heavier fixture
+    (transitive imports + dynamo cache + CUDA pressure). Diagnosis of the
+    VITS contamination is open in OPEN-LOOPS."""
+    from discovery.validate_runner import _run_canonical_check
+
+    class FakeCase:
+        case_id = "_smoke_clean"
+        watched_files: list = []
+
+    _install_fake_case_module("_smoke_clean", _CLEAN_MLP_CASE_SRC)
+    try:
+        # Call N times in-process; every call should give a real gb_count.
+        results = [_run_canonical_check(FakeCase()) for _ in range(4)]
+    finally:
+        _cleanup_fake_case_module("_smoke_clean")
+
+    for i, out in enumerate(results, start=1):
+        assert out["graph_break_count"] == 0, \
+            f"REGRESSION: call {i}/4 in-process returned graph_break_count={out['graph_break_count']} " \
+            f"(expected 0). State contamination across repeated _run_canonical_check calls. " \
+            f"out={out}"
+    print(f"  ✓ test_validator_no_state_contamination_across_repeated_calls (4 calls × clean_mlp = consistent gb_count=0)")
+
+
 def test_validator_seeding_covers_nprandom() -> None:
     """REGRESSION TEST for the np.random bug. Validator's reseed pattern MUST
     cover np.random — otherwise a model that uses np.random in forward shows
@@ -365,6 +396,7 @@ def main() -> int:
         print("=== Layer 1: synthetic harness self-tests ===")
         for test_fn in (test_validator_clean_model,
                         test_validator_broken_model,
+                        test_validator_no_state_contamination_across_repeated_calls,
                         test_validator_seeding_covers_nprandom,
                         test_perf_happy_path,
                         test_perf_runtime_failure_path,
