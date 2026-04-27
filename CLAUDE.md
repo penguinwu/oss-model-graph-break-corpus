@@ -77,13 +77,16 @@ Multi-trial discovery experiments (skill-evaluation studies, agent-strategy stud
 
 Convention is documented in `discovery/experiments/README.md` and enforced by `tools/check_experiments.py` (run nightly via the daily brief).
 
-**Use the scaffold tools — do NOT hand-roll directories or issues:**
+**Use the scaffold tools — do NOT hand-roll directories:**
 
 | Tool | When |
 |---|---|
-| `tools/new_experiment.py "<slug>" --title "<Title>"` | Starting a new experiment |
-| `tools/new_case_issue.py <experiment-slug> <case_id> "<Model name>"` | Adding a case to an existing experiment |
+| `tools/new_experiment.py "<slug>" --title "<Title>"` | Starting a new experiment (LIGHTWEIGHT default — plan.md + dir + README row, no GitHub issue) |
+| `tools/new_experiment.py "<slug>" --title "<Title>" --with-umbrella-issue` | Same, but ALSO files an umbrella GitHub issue + adds to project board #1 |
+| `tools/new_case_issue.py <experiment-slug> <case_id> "<Model name>"` | (optional) Per-case GitHub issue for an experiment that warrants per-case tracking |
 | `tools/queue_task.py "<title>" [--umbrella N]` | Deferring work — creates a Backlog card on project board #1 so the commitment survives session end |
+
+*Issue-filing is ORTHOGONAL to scaffolding an experiment.* Most local experiments don't need GitHub-issue tracking — flooding the repo with issues nobody tracks defeats the point. Use `--with-umbrella-issue` only when the experiment warrants team-visible tracking (cross-case studies that produce shipped findings, work needing cross-team comments / status visibility).
 
 The board is the canonical source of "agreed but not started" work. TodoWrite is in-conversation only; OPEN-LOOPS.md is project-level facts; the board is indefinite-lifetime and visible without local access. When you commit to deferred work, queue it.
 

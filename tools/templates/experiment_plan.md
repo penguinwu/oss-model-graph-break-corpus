@@ -5,7 +5,7 @@
 **Type:** TBD (Discovery / Validation / Elimination — pick one)
 **Owner:** Otter
 **Workstream:** TBD (WS1 / WS2 / WS3 / WS4)
-**Umbrella issue:** #{umbrella_issue}
+**Umbrella issue:** {umbrella_issue}
 **Status:** active
 **Created:** {created}
 **Last updated:** {created}
