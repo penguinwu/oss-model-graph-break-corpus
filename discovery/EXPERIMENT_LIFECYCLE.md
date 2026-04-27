@@ -1,8 +1,23 @@
 # Discovery Experiment Lifecycle — 5 Gates
 
-**Status:** mandatory for all discovery-harness experiments (multi-trial runs, harness changes, schema changes, case additions).
+**Status:** mandatory for all discovery EXPERIMENTS (multi-trial investigations using the harness).
 **Owner:** Otter
 **Last revised:** 2026-04-27
+
+## When this lifecycle does NOT apply
+
+The lifecycle is for INVESTIGATIONS that use the harness — "I want to learn X about model Y by running M variants × N trials." It is NOT for engineering work on the harness itself.
+
+The following are NOT experiments and do NOT need this lifecycle (no plan.md scaffold, no umbrella issue, no Gate 0 framing):
+
+- *Building or modifying harness code* (`runner.py`, `validate_runner.py`, `perf.py`, `revalidate.py`, `run_config.py`, `launch_parallel.py`, `merge_results.py`, `_lifecycle_gate.py`). These are Tier B/C engineering changes — apply ordinary code review + `discovery/smoke_test.py` discipline.
+- *Adding or refactoring case files* (in `discovery/cases/`). These are configuration changes — apply smoke_test (Layer 2 catches per-case schema regressions).
+- *Documentation rewrites* (this doc, design.md, findings.md). Tier C.
+- *Refactors that don't change behavior.* Tier C.
+
+The line: ask "what investigation am I doing? what hypothesis am I testing?" If the honest answer is "I'm building / modifying the tool," it's not an experiment — don't scaffold one.
+
+The first time you USE the new harness against a real case to investigate something, THAT is when an experiment dir + Gate 0 plan.md is appropriate. Different question (about the model / break shape / variant), different framing, different gates.
 
 ## Why this exists
 
