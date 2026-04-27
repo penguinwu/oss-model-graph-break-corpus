@@ -69,6 +69,12 @@ class TrialResult:
     perf: dict | None                          # tier-1 (fast)
     perf_tier2: dict | None = None             # tier-2 (realistic) — None if case opted out
     flags: list[str] = field(default_factory=list)
+    # fix_survives_perf integrates validator + perf signals:
+    #   True  — validator says fix happened AND both perf tiers' shape sanity OK
+    #   False — at least one perf tier raised RuntimeError at perf inputs
+    #           (model is broken at perf shapes, regardless of validator's view)
+    #   None  — no fix to evaluate (fix_status="none"), or perf wasn't run
+    fix_survives_perf: bool | None = None
     error: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -306,6 +312,22 @@ def run_trial(
     # 8. Restore again for next trial (defense in depth).
     _restore_watched_files(case.watched_files)
 
+    # 9. Integrate validator + perf signals into fix_survives_perf.
+    # `fix_status` (canonical-input view) doesn't catch agent edits that pass
+    # canonical but break at perf shapes. Combining with perf_shape_sanity
+    # gives the verdict that matches what a downstream user would see.
+    fix_status = (validation or {}).get("fix_status")
+    perf_sanity = (perf or {}).get("perf_shape_sanity")
+    perf_tier2_sanity = (perf_tier2 or {}).get("perf_shape_sanity")
+    if fix_status in ("none", None):
+        fix_survives_perf: bool | None = None  # no fix to evaluate
+    elif perf_sanity == "runtime_failure" or perf_tier2_sanity == "runtime_failure":
+        fix_survives_perf = False
+    elif perf_sanity == "ok" and (perf_tier2 is None or perf_tier2_sanity == "ok"):
+        fix_survives_perf = True
+    else:
+        fix_survives_perf = None  # perf didn't run / sanity unknown
+
     result = TrialResult(
         case_id=case.case_id,
         variant_id=variant.id,
@@ -318,6 +340,7 @@ def run_trial(
         perf=perf,
         perf_tier2=perf_tier2,
         flags=flags,
+        fix_survives_perf=fix_survives_perf,
     )
     (out_dir / "result.json").write_text(json.dumps(result.to_dict(), indent=2))
     return result

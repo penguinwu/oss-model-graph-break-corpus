@@ -73,6 +73,16 @@ class PerfResult:
     compiled_warm_peak_mem_mb: float | None = None
     eager_self_diff: float | None = None  # max_abs_diff between two eager runs (None if not checked)
     eager_deterministic: bool | None = None
+    # perf_shape_sanity: did the model successfully forward at perf inputs once,
+    # before timing began? Three values:
+    #   "ok"               — single sanity forward succeeded; timing followed
+    #   "runtime_failure"  — sanity forward raised RuntimeError (model is broken
+    #                        at perf inputs even though it may pass at canonical)
+    #   "unknown"          — sanity check wasn't reached (construction error, etc.)
+    # Distinguishes "model is broken at perf shapes" from "timing measurement was
+    # noisy/crashed" (the latter goes to the existing `error` field).
+    perf_shape_sanity: str = "unknown"
+    runtime_failure_msg: str | None = None
     error: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -235,6 +245,49 @@ def measure_perf(
     compile_kwargs = compile_kwargs or {}
 
     try:
+        # ----- perf-shape sanity check (runs FIRST — cheapest gate) -----
+        # Does the model's forward pass actually work at perf inputs? Validation
+        # may have passed at canonical (small) inputs while the model is broken
+        # at perf-tier inputs (different shapes). Catch RuntimeError specifically
+        # — that's the "model is broken at perf shapes" signal we care about.
+        # Other exceptions (OOM, compile errors) fall through to the outer
+        # try/except as measurement-time failures.
+        # Order matters: this must run BEFORE _eager_self_check, since that
+        # helper's diff-of-two-outputs trips on stochastic-output models like
+        # VITS train mode, surfacing a measurement crash that has nothing to
+        # do with whether the model is broken at perf shapes.
+        perf_shape_sanity = "unknown"
+        runtime_failure_msg: str | None = None
+        try:
+            sanity_model = model_fn()
+            sanity_inputs = inputs_fn(sanity_model)
+            with torch.no_grad():
+                sanity_model(**sanity_inputs)
+            perf_shape_sanity = "ok"
+        except RuntimeError as e:
+            perf_shape_sanity = "runtime_failure"
+            runtime_failure_msg = f"{type(e).__name__}: {e}"
+            return PerfResult(
+                eager_ms=float("nan"),
+                compiled_ms=float("nan"),
+                speedup=float("nan"),
+                eager_peak_mem_mb=float("nan"),
+                compiled_peak_mem_mb=float("nan"),
+                n_warmup=n_warmup,
+                n_repeat=n_repeat,
+                device=device,
+                perf_shape_sanity=perf_shape_sanity,
+                runtime_failure_msg=runtime_failure_msg,
+            )
+        finally:
+            try:
+                del sanity_model, sanity_inputs
+            except NameError:
+                pass
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
         # ----- eager_self_check (optional, off by default in tight loops) -----
         eager_self_diff: float | None = None
         eager_deterministic: bool | None = None
@@ -320,9 +373,14 @@ def measure_perf(
             compiled_warm_peak_mem_mb=compiled_warm_peak,
             eager_self_diff=eager_self_diff,
             eager_deterministic=eager_deterministic,
+            perf_shape_sanity=perf_shape_sanity,
+            runtime_failure_msg=runtime_failure_msg,
         )
 
     except Exception as e:
+        # `perf_shape_sanity` is unset if we crashed before the sanity block;
+        # otherwise it's "ok" and the failure was during measurement. Caller
+        # disambiguates by inspecting both `perf_shape_sanity` and `error`.
         return PerfResult(
             eager_ms=float("nan"),
             compiled_ms=float("nan"),
@@ -332,6 +390,8 @@ def measure_perf(
             n_warmup=n_warmup,
             n_repeat=n_repeat,
             device=device,
+            perf_shape_sanity=locals().get("perf_shape_sanity", "unknown"),
+            runtime_failure_msg=locals().get("runtime_failure_msg"),
             error=f"{type(e).__name__}: {e}",
         )
 
