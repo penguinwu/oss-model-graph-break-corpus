@@ -144,6 +144,12 @@ Please:
    Do NOT edit shared infrastructure outside these files (e.g. import_utils.py, conv.py).
 4. Verify by re-running the script: graph_break_count should drop (ideally to 0 so fullgraph=True works) and the model output (waveform) should still match the original eager output within 1e-3.
 
+Methodology rules (declared-fallback — see design.md §4.7):
+- Backend: default is `inductor` (the existing torch.compile call). `backend="eager"` is permitted ONLY with a one-line declaration in your final summary or as a `# DECLARED-OVERRIDE: backend=eager — <inductor numerics issue>` comment in the diff. Eager hides Inductor's noise floor; switching is a measurement-affecting change and will be tagged M post-hoc.
+- Capture flags (`torch._dynamo.config.capture_scalar_outputs`, `capture_dynamic_output_shape_ops`): permitted ONLY with a one-line declaration naming the specific data-dependent op the flag is guarding (e.g. `# DECLARED-OVERRIDE: capture_scalar_outputs=True — guards u0<1 in conv1d output_padding_mask`). Undeclared flag flips will be tagged S (shortcut) post-hoc.
+
+Both rules are intent specifications, not hard bans — declare and proceed if the override is genuinely needed.
+
 The python interpreter is `python` (already on PATH at /home/pengwu/envs/torch211/bin/python). Do NOT use conda. Do NOT try to fetch external documentation — diagnose from inline output only.
 
 When you have a fix you believe is correct, save it (in place — modify the existing files, do not write new files) and exit."""

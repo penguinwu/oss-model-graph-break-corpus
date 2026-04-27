@@ -53,6 +53,18 @@ Plus per-trial: `files_touched`, `diff_lines`, `turns`, `agent_claim` (one phras
 
 ### Phase B — Aggregations
 
+**Pre-aggregation: declared-fallback classifier (per design.md §4.7).** Before computing any aggregates, tag each trial L/M/S/R based on whether the agent's declarations match the diff:
+
+- For each declared override (in stream-final-summary or `# DECLARED-OVERRIDE: <mech> — <reason>` comments in the diff), check the diff for the named mechanism.
+- *L (Legitimate)* — declaration present, diff matches, mechanism is NOT on the measurement-affecting list.
+- *M (Measurement-affecting)* — declaration present, diff matches, mechanism IS on the measurement-affecting list. Current measurement-affecting mechanisms: `backend="eager"` (swaps the entire compile path — no codegen, no fused kernels, no Inductor RNG-order divergence — so accuracy + perf axes are not comparable with the rest of the variant matrix; per design.md v0.6 §4.7).
+- *S (Shortcut)* — forbidden mechanism in the diff with no matching declaration.
+- *R (Refused)* — no fix attempted, agent declared infeasibility cleanly.
+
+Forbidden-mechanism set (default; per-variant overrides apply): non-default backends; capture flags (`capture_scalar_outputs`, `capture_dynamic_output_shape_ops`); escape hatches (`custom_op`, `disable`, `cond`, `allow_in_graph`, `nonstrict_trace`, `leaf_function`, `is_compiling`); `torch._dynamo.config` mutations not covered by capture-flag list.
+
+Add an `lmsr_tag` column to `fingerprints.csv`. M-tagged trials are reported separately in all aggregations below — their numbers do NOT pool with L-tagged trials.
+
 From the fingerprint CSV + result.json data, compute:
 
 - `fix_status × variant × skill` 3D table

@@ -87,9 +87,14 @@ V8 = Variant(
         "files. Setup-layer edits — changing input shapes, swapping numpy for torch "
         "in the runner, adjusting random-seed patterns, modifying the torch.compile "
         "call site, restructuring how the model is invoked — are NOT acceptable. "
-        "The model itself must be made to trace cleanly under the existing setup."
+        "The model itself must be made to trace cleanly under the existing setup. "
+        "EXCEPTION: `torch._dynamo.config.X = ...` flips at the top of the baseline "
+        "script ARE permitted, provided you include a one-line declaration naming "
+        "the specific data-dependent op being guarded (format: "
+        "`# DECLARED-OVERRIDE: <flag> — <reason>`). A config flip is a runtime "
+        "knob, not a setup reshape — it does not restructure the harness."
     ),
-    rationale="Added 2026-04-25 for VitsModel case 3b. V0/V2/V4 produced 12/12 setup-required (agent escapes via baseline edits). V6 (no config flags) was the only variant that surfaced model-layer fixes (4/6 general). V8 closes the setup-edit escape route directly to test whether the agent can produce model-layer fixes consistently when forced.",
+    rationale="Added 2026-04-25 for VitsModel case 3b. V0/V2/V4 produced 12/12 setup-required (agent escapes via baseline edits). V6 (no config flags) was the only variant that surfaced model-layer fixes (4/6 general). V8 closes the harness-reshape escape route while leaving config flips open under the declared-fallback rule (design.md §4.7) — the door V8 closes is harness reshape, not config flips, since forcing config flips into model source is artificial and would distort the data.",
 )
 
 # Recommended starting set for Phase 1.
