@@ -21,6 +21,7 @@ Date prefix gives chronological order. Slug describes the path-finding goal — 
 | Slug | Status | Plan | Umbrella issue |
 |---|---|---|---|
 | `2026-04-cross-case-skill-discovery` | active | [plan.md](2026-04-cross-case-skill-discovery/plan.md) | #60 |
+| `2026-04-parallel-runner-vits-validation` | active | [plan.md](2026-04-parallel-runner-vits-validation/plan.md) | — |
 
 ## Closed experiments
 
