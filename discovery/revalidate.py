@@ -417,7 +417,23 @@ def main() -> int:
                    help="Also re-run perf subprocesses (default off; ~5min/trial)")
     p.add_argument("--legacy-only", action="store_true",
                    help="Skip canonical re-run; reuse legacy validation field (back-compat)")
+    p.add_argument("--plan", default=None,
+                   help=("Path to experiment plan.md — required for the lifecycle "
+                         "gate when --rerun-perf is set OR more than 1 trial dir is being "
+                         "re-validated. See discovery/EXPERIMENT_LIFECYCLE.md."))
+    from discovery._lifecycle_gate import add_lifecycle_args, check_or_die
+    add_lifecycle_args(p)
     args = p.parse_args()
+
+    # Tier-A lifecycle gate. Single-trial revalidation without --rerun-perf is
+    # cheap inspection (Tier C) — skip the gate. Anything heavier (full perf
+    # re-run, or batch mode) goes through the gate.
+    is_heavy = args.rerun_perf or (args.case and args.run_id)
+    if is_heavy:
+        plan_path = Path(args.plan) if args.plan else (
+            REPO / "discovery" / "experiments" / "_default_plan.md"
+        )
+        check_or_die(plan_path, args, launcher="discovery/revalidate.py")
 
     rerun_canonical = not args.legacy_only
 

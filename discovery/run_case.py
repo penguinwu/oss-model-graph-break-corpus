@@ -83,7 +83,23 @@ def main() -> None:
         "--timeout", type=int, default=1800,
         help="per-trial agent timeout in seconds (default 1800 = 30 min)",
     )
+    parser.add_argument(
+        "--plan", default=None,
+        help=(
+            "Path to the experiment plan.md — required for the lifecycle gate "
+            "(unless --lifecycle-bypass). Plan must have a '## Pre-launch gates' "
+            "section with all checkboxes ticked. See discovery/EXPERIMENT_LIFECYCLE.md."
+        ),
+    )
+    from discovery._lifecycle_gate import add_lifecycle_args, check_or_die
+    add_lifecycle_args(parser)
     args = parser.parse_args()
+
+    # Tier-A lifecycle gate — refuses to launch without smoke_test pass + plan gates ticked.
+    plan_path = Path(args.plan) if args.plan else (
+        Path(__file__).resolve().parents[1] / "discovery" / "experiments" / "_default_plan.md"
+    )
+    check_or_die(plan_path, args, launcher="discovery/run_case.py")
 
     case_mod = importlib.import_module(f"discovery.cases.{args.case}")
     case = case_mod.get_case_spec()

@@ -36,6 +36,37 @@ Every new sweep adds a *dimension* — correctness, dynamic shapes, a new compil
 
 *Why:* The Phase 3 correctness sweep produced 169 `create_error` results vs 16 in the pt2.11 graph-break baseline a few days earlier; the 169 were `full_graph` in baseline. The Phase 3 worker had a model-creation bug in the wrapper-variant path that smoke testing didn't cover. We almost reported 12 verification failures that weren't trustworthy.
 
+## Experimentation Discipline (3 tiers)
+
+The corpus runs different kinds of experiments at different cadences and stakes. The discipline scales accordingly. Pick the tier that matches what you're doing — don't apply Tier A ceremony to a one-off, don't skip Tier A gates for discovery work.
+
+| Experiment type | Tier | Smoke test | Plan.md gates | Launcher gate | Lifecycle doc |
+|---|---|---|---|---|---|
+| Discovery (multi-trial, harness change, schema change) | **A** — full | mandatory | mandatory | mandatory | `discovery/EXPERIMENT_LIFECYCLE.md` |
+| Sweep / correctness / AutoDev / `tools/run_experiment.py` | **B** — lighter | mandatory (`tools/smoke_test.py`) | n/a (cron-scheduled) | recommended on schema change | "Validate Invariants" section above |
+| One-off ad-hoc analysis | **C** — informal | recommended | n/a | n/a | universal floor below |
+
+### Universal floor (applies to all tiers)
+
+> Before launching any new run, every loose end from prior runs is CLOSED with verified fix or EXPLICITLY DEFERRED with written reason. No silent drops. No "I'll fix it on the next run."
+
+This rule was hardened on 2026-04-27 after a chain of V8 discovery experiments cascaded multi-hour failures because each "next run" papered over an unresolved loose end from the prior. The pattern: launch → bug surfaces → "I'll fix it next run" → re-launch → same bug surfaces → repeat. The closure rule is the antidote.
+
+### Tier A — Discovery experiments
+
+Read `discovery/EXPERIMENT_LIFECYCLE.md` and walk through Gates 0-4 in strict order. The launchers (`discovery/run_case.py`, `discovery/revalidate.py`) enforce a hard gate — they refuse to start unless `discovery/smoke_test.py` exits 0 and the experiment's `plan.md` has a complete `## Pre-launch gates` section. Bypass requires `--lifecycle-bypass --reason "<text>"` which writes the reason to `plan.md`.
+
+### Tier B — Sweep + correctness + AutoDev
+
+Lighter discipline (cron handles framing, tests are well-established):
+- Pre-change: run `tools/smoke_test.py` (3-model infra check)
+- Schema-changing PRs: include a regression test
+- Existing "Validate Invariants Before Reporting New Experiments" section above is the Tier B doctrine
+
+### Tier C — Ad-hoc analysis
+
+No formal gates. The universal floor still applies: if you change a script, run it before reporting results.
+
 ## Discovery Experiments
 
 Multi-trial discovery experiments (skill-evaluation studies, agent-strategy studies) are tracked under `discovery/experiments/<YYYY-MM-slug>/`. Each experiment has:
