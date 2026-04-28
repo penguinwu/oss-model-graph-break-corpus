@@ -181,16 +181,18 @@ synced_gpus = self._synced_gpus  # plain Python attribute; no find_spec call
 
 ## Phase B — fix_status distribution under corrected validator
 
-[TABLE TO FILL FROM BATCH2 RESULTS]
+| Variant | Constraint | SKILL arm | noskill arm |
+|---|---|---|---|
+| V0 | bare | *general* (wave1a, exit=124) | *general* (smoke, 1.63x speedup) |
+| V2 | bitwise equivalent | *none* (wave1a; agent_gb=2 likely validator regex bug — see open loop) | *general* (waveA, 2.05x speedup, bitwise-equal at eager) |
+| V4 | no escape hatches | *general* (wave1a, 979s, 1.90x) | *none* (waveA, timed out 1800s, edits both files) |
+| V6 | no config flags | TBD (waveA SKILL in flight) | *none* (waveA, timed out, edits both files) |
+| V8 | model-layer + declared overrides allowed | *none* (parallel-runner step3) | *none* (parallel-runner step2/step3, 2 trials) |
+| V9 | no setup at all | TBD (waveA SKILL in flight + waveB seed=2) | *general* (smoke, 1.53x) + TBD (waveB seed=2) |
 
-| Variant | SKILL arm | noskill arm |
-|---|---|---|
-| V0 | TBD | general (smoke) |
-| V2 | none (wave1a) | TBD |
-| V4 | general (wave1a) | TBD |
-| V6 | TBD | TBD |
-| V8 | none (parallel-runner step3) | none (parallel-runner step2/step3, 2 trials) |
-| V9 | TBD | general (smoke) + TBD seed=2 |
+*Headline pattern emerging:* under corrected validator, V4 and V6 noskill flip from prior `setup-required` → `none`. Same constraint, different verdict — likely because prior validator's permissiveness let "agent's own setup" pass for "fix" even when canonical_gb > 0. V4 + V6 noskill agents BOTH edited baseline.py + modeling_vits.py but still couldn't reach canonical_gb=0 in 1800s. The constraints (no escape hatches; no config flags) are genuinely binding under the new validator.
+
+*V2 noskill is the standout positive:* bitwise constraint produced general at 2.05x speedup. The agent converged on the SAME S7-static-cap + S8-is_compiling-guard bundle as V9 noskill smoke. This reveals: when the agent finds a model-only fix that doesn't reorder ops, it's automatically bitwise-equivalent. V2 (harder bitwise constraint) is *subsumed* by V9 (no-setup-at-all) in this case.
 
 **Cross-validator deltas (prior vs corrected):**
 
