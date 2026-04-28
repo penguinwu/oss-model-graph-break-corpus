@@ -8,7 +8,7 @@
 **Umbrella issue:** #60
 **Status:** active
 **Created:** 2026-04-24
-**Last updated:** 2026-04-25 (V8 added — "model-layer fix only" — shipped + launched on case 3b; methodology framing "shut the door to shortcuts" elevated to organizing principle)
+**Last updated:** 2026-04-28 (vits_model_train findings complete — all 15 corrected-validator trials in; S7 confirmed convergent; skill-trap finding documented)
 
 ---
 
