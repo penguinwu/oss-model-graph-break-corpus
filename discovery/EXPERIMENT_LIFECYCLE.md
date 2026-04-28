@@ -28,6 +28,17 @@ Concrete bug list this would have caught (2026-04-27 V8 work):
 - State contamination in repeated `_run_canonical_check` → Gate 3 small-batch reproducibility check
 - Incomplete `set_seed` reseed (torch-only, missed numpy / python.random) → Gate 2 single-trial validation (eager_self_diff != 0 with np.random in forward)
 - `_dynamo.explain` deprecated in corpus → Gate 0 forced "what's the corpus-canonical alternative?" check
+- *Filesystem-contamination class (2026-04-28):* agents in batch2 issued `Edit`/`Write` tool calls against the SHARED site-packages `modeling_vits.py` after reading the case source and discovering the absolute path. Validation results stayed sound (per-trial sandbox + PYTHONPATH redirect protected validate.py imports) but filesystem hygiene was broken. Now caught automatically by the 3-layer protection wired into `run_config.py` — see "Built-in contamination protections" below.
+
+## Built-in contamination protections (active in `run_config.py` since 2026-04-28)
+
+Every trial run via `discovery/run_config.py` automatically gets three independent layers of protection against the agent modifying shared filesystem state. Experiments don't need to opt in — these run unconditionally.
+
+- *Layer A — Detection (~5s/trial).* `discovery/filesystem_integrity.py` snapshots all monitored site-packages dirs (mtime+size) at trial start, plants canary files, and re-walks at trial end. Any change → `result.json.filesystem_integrity.contamination_detected: true` → trial auto-excluded by `merge_results.py`.
+- *Layer B — Prevention (~50ms/trial).* The case's watched site-packages files (e.g. `modeling_vits.py`) are `chmod 444` at trial start, restored at trial end. Atexit + SIGTERM/SIGINT handlers ensure restoration on crash.
+- *Layer C — Intent (~negligible).* `stream.jsonl` is parsed post-trial for any Edit/Write tool call to a path outside `(sandbox + out_dir + /tmp/discovery-runs/<case>)`. Catches blocked-write *attempts* (chmod refused) AND out-of-scope writes detection misses.
+
+If a trial fires `agent-wrote-outside-sandbox:N` flag, investigate the prompt — the case body may be inadvertently encouraging the agent to discover shared paths. If a trial fires `shared_filesystem_touched`, it's auto-excluded; either re-run with same setup or investigate why chmod-RO was bypassed (sudo, perm change, etc.).
 
 ## The 5 gates (non-skippable, in order)
 

@@ -1,11 +1,20 @@
 ---
 plan: 2026-04-vits-corrected-validator-rerun
-status: active
+status: done
 owner: Otter
 created: 2026-04-28
-last_check: 2026-04-28
+last_check: 2026-04-28  # closed 17:05 ET — see Resolution below
 forcing_function: tools/check_plan.py + lifecycle gate
 ---
+
+> **Resolution (2026-04-28 17:05 ET).** All 15 corrected-validator trials complete.
+> 3 of 15 (V4_1, V6_1, SKILL_V9_1 waveB) flagged filesystem-contaminated by
+> post-hoc audit; re-launched in PARALLEL under chmod-RO + Layer A/B/C
+> protections; all 3 came back clean. Findings folded at commit `739af75`.
+> Headline finding strengthens: skill-trap reproducible at TWO constraint
+> levels (V6+V9 noskill 3/3 general vs SKILL 0/3 general). The 3-layer
+> contamination prevention (detection + chmod-RO + intent-check) shipped at
+> commits `5ba1b80`, `dc8e1c1`, `bb6c854`, `ec92224`. Plan closed.
 
 # Experiment Plan: VITS Skill Discovery Re-run with Corrected Validator + V9
 
