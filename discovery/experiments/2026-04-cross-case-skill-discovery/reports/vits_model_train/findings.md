@@ -25,17 +25,33 @@
 
 ## Headline
 
-> **The VITS model-layer fix is convergent across all corrected-validator trials, but the door we close shapes the strategy the agent reaches for — and reveals a skill-document trap.** Under V0/V2/V4/V6 noskill, and under V9 noskill (no setup edits at all), agents converge on genuinely model-only rewrites and reach `fix_status = general`. Under V8 (declared `_dynamo.config` flips allowed), all 3 corrected trials land `none` — the declared override survives in the agent's run but fails the canonical check.
+> **The skill catalog has a measurable cost: it suppresses discovery of S7 (static-cap for data-dependent `arange.size`) — the only known model-layer fix that survives the strictest constraint variants.**
 >
-> *Sharpest finding — skill-trap, now reproducible at two constraint levels:*
-> - V6 (no config flags): noskill **1/1 general**, SKILL **0/1 general**
-> - V9 (no setup edits at all): noskill **2/2 general** (S7 static-cap strategy), SKILL **0/2 general**
+> *The crispest finding (data-grounded, see [Phase A](#phase-a--strategy-adoption-matrix-data-grounded)):*
 >
-> Combined V6+V9: noskill **3/3 general**, SKILL **0/3 general**. The skill document's escape-hatch-and-override bias becomes a liability the moment the constraint forbids those mechanisms — bare agents invest in model-only fixes; skill-armed agents stay anchored on configs and don't pivot.
+> - *S7 (or its inline variant) appears in 4 of 8 general trials* — every one of them is *noskill*
+> - *Zero of 7 SKILL-armed trials apply S7 in any form* — the catalog is a perfect anti-correlation
+> - When the variant forbids the catalog's preferred `_dynamo.config` escape (V6, V9), the SKILL arm fails (0/3 general) while the noskill arm invents S7 (3/3 general)
+> - When the variant allows the escape (V0, V2, V4 SKILL, V8), agents in either arm reach for S6 first; SKILL never pivots to S7 even when S6 fails the canonical check
 >
-> *Note on the V4/V6 noskill flip:* the original `noskill_V4_1` and `noskill_V6_1` trials read `none`, but their replacements (`noskill_V4_parallel`, `noskill_V6_parallel`, run 2026-04-28 16:00 ET under chmod-RO + the explicit no-rogue-write prompt fix) both read `general`. Possible explanations: (a) the prompt fix nudged agents away from rogue-write attempts and toward sandbox-internal fixes; (b) chmod-RO physically blocked the rogue path, forcing focus on the model edit; (c) LLM non-determinism. Most likely a combination of all three. The replacements are kept as the canonical record (chronologically newer, methodologically cleaner).
+> *Headline distribution (15 corrected-validator trials):*
 >
-> The deliverable is the [Strategies discovered](#strategies-discovered) catalog below — 11 distinct fix patterns catalogued across 45 trials, 15 of which are corrected-validator-grade.
+> | Variant | Constraint | SKILL | noskill |
+> |---|---|---|---|
+> | V0 | bare | gen 1/1 | gen 1/1 |
+> | V2 | bitwise equiv | none 1/1 | gen 1/1 |
+> | V4 | no escape hatches | gen 1/1 (S6 path) | gen 1/1 (S7 path) |
+> | V6 | no config flags | none 1/1 | gen 1/1 (S7 path) |
+> | V8 | declared overrides allowed | none 1/1 | none 2/2 |
+> | V9 | no setup at all | none 2/2 | gen 2/2 (S7 path) |
+>
+> Combined where SKILL ≠ noskill: noskill **4/4 general**, SKILL **0/4 general**. The skill catalog is a liability whenever the constraint forces a strategy that's *not in the catalog*.
+>
+> *Door-closing is generative.* V9 (the strictest variant) doesn't just exclude bad fixes — it surfaces a strategy that the baseline variant would never reveal. Without V9 in the experiment design, S7 stays invisible.
+>
+> *V8 is fully degenerate under canonical-input check.* All 3 V8 trials use S6 (declared override); all 3 fail. The declared override compiles in the agent's run but doesn't survive the canonical validator's check (which doesn't apply the agent's `_dynamo.config` flips). This is a measurement-side discovery: V8 → 6/6 general under prior validator → 0/3 general under corrected validator.
+>
+> The deliverable is the [Strategies discovered](#strategies-discovered) catalog below + the [Phase A strategy adoption matrix](#phase-a--strategy-adoption-matrix-data-grounded) — 11 distinct fix patterns catalogued across 15 corrected-validator trials, with measured per-strategy adoption rates and the SKILL-vs-noskill divergence quantified.
 
 ---
 
@@ -194,11 +210,52 @@ synced_gpus = self._synced_gpus  # plain Python attribute; no find_spec call
 
 ---
 
-## Phase A — Strategy fingerprint convergence (model-layer fix)
+## Phase A — Strategy adoption matrix (data-grounded)
 
-S1–S5 are universal: 100% of corrected-validator trials that reached `fix_status = general` applied all five. No exceptions. The variation is entirely in which strategy handles the residual data-dep `arange` break — S6 (V8 class), S7 (V9 noskill class), or neither (fix_status = none because the agent couldn't clear that final break cleanly).
+Rather than narrative claims, this section walks the actual diffs. Each cell is "did the agent's `agent_diff.patch` apply this strategy?" — detected by regex/substring match against the strategy's signature in the diff. Source: `/tmp/strategy_matrix.py` against all 15 trials' patches.
 
-The prior 30-trial batch supports the same conclusion for S1–S5 despite the old validator's permissiveness — those rewrites are in the agent's diffs regardless of fix_status verdict.
+| Trial | Variant | Arm | fix | gb | sp | S1 | S2 | S3 | S4 | S5 | S6 | S7 | S8 | S10 | S11 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| smoke | V0 | noskill | gen | 0 | 1.63x | ✓ | ✓ | ✓ | ✓ | · | ✓ | · | ✓ | · | ✓ |
+| wave1a | V0 | SKILL | gen | 0 | — | ✓ | ✓ | ✓ | ✓ | · | ✓ | · | ✓ | ✓ | ✓ |
+| waveA | V2 | noskill | gen | 0 | 2.05x | ✓ | ✓ | ✓ | ✓ | · | ✓ | · | ✓ | · | ✓ |
+| wave1a | V2 | SKILL | none | 2 | — | ✓ | ✓ | · | ✓ | · | ✓ | · | · | ✓ | ✓ |
+| wave1a | V4 | SKILL | gen | 0 | 1.90x | ✓ | ✓ | ✓ | ✓ | · | ✓ | · | ✓ | · | ✓ |
+| parallel | V4 | noskill | gen | 0 | 1.84x | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | · | · |
+| waveA | V6 | SKILL | none | 10 | 1.57x | ✓ | ✓ | ✓ | ✓ | · | · | · | · | · | ✓ |
+| parallel | V6 | noskill | gen | 0 | 1.74x | ✓ | ✓ | ✓ | ✓ | · | · | (✓) | · | · | · |
+| step3 | V8 | SKILL | none | 1 | 1.20x | ✓ | ✓ | ✓ | ✓ | · | ✓ | · | · | · | ✓ |
+| step2 | V8 | noskill | none | 1 | 1.17x | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✓ | ✓ | ✓ |
+| step3 | V8 | noskill | none | 1 | 1.15x | ✓ | ✓ | ✓ | ✓ | · | ✓ | · | ✓ | · | · |
+| smoke s1 | V9 | noskill | gen | 0 | 1.53x | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✓ | ✓ | · | ✓ |
+| waveA s1 | V9 | SKILL | none | 17 | 1.05x | ✓ | · | · | · | · | · | · | · | · | · |
+| waveB s2 | V9 | noskill | gen | 0 | 2.07x | ✓ | ✓ | · | ✓ | · | · | ✓ | · | · | ✓ |
+| parallel | V9 | SKILL | none | 1 | 1.22x | ✓ | ✓ | · | ✓ | · | ✓ | · | ✓ | · | ✓ |
+
+(`V6/noskill/parallel` marked S7 with `(✓)` — used the static-cap pattern *inline* (`max_out = input_length * 128`) rather than as a named constant. Pattern-equivalent. Auto-detector missed; manual confirmation from diff inspection.)
+
+**Per-strategy adoption (15 trials, 8 general):**
+
+| | All trials | of which `general` | Used by SKILL only | Used by noskill only |
+|---|---|---|---|---|
+| S1 (jit-script remove) | 15/15 | 8/8 | — | — |
+| S2 (where + clamped inputs) | 14/15 | 8/8 | — | — |
+| S3 (np→math) | 11/15 | 7/8 | — | — |
+| S4 (drop torch_compilable_check) | 14/15 | 8/8 | — | — |
+| S5 (clamp discriminant) | 3/15 | 2/8 | — | 3/3 |
+| S6 (declared dynamo config flip) | 10/15 | 5/8 | 4/7 SKILL | 6/8 noskill |
+| **S7 (static cap on data-dep arange)** | **3/15 (+1 inline = 4)** | **3/8 (+1 inline = 4)** | **0/7 SKILL** | **4/8 noskill** |
+| S8 (compiler.is_compiling guard) | 8/15 | 5/8 | — | — |
+| S10 (torch._check unbacked) | 3/15 | 1/8 | — | — |
+| S11 (random.random vs np.random) | 11/15 | 6/8 | — | — |
+
+**Three corrections to the prior narrative:**
+
+1. *S5 is NOT universal — it's rare (3/15).* Original claim "S1-S5 universal in general trials" is wrong; only S1, S2, S4 are near-universal. S3 is common (11/15). S5 is opportunistic — only deployed when the agent encounters the discriminant-sqrt pattern in the spline code path.
+
+2. *S7 is the load-bearing skill-trap signal.* 4/4 trials that used S7 (or its inline variant) reached `general`. **Zero of 7 SKILL trials used S7 in any form.** The catalog actively suppresses discovery of this strategy.
+
+3. *Both V4 noskill parallel and V6 noskill parallel found S7-class fixes.* The original "S7 = V9-only discovery" framing was too narrow. S7 emerges in *any* noskill trial where the constraint is tight enough that S6 doesn't survive (V4/V6/V9), provided the agent isn't anchored on a catalog.
 
 ---
 
@@ -286,6 +343,26 @@ This is not a verdict that the skill is "bad" — it's a dataset-of-one finding 
 
 ---
 
+## Phase D.5 — Failure mode taxonomy (the 7 `none` trials)
+
+For each `none` trial, the failure has a structural cause. Three modes:
+
+| Mode | Description | Trials | Diagnostic signal |
+|---|---|---|---|
+| **A. Setup-dependent (S6 declared)** | Agent declares + flips `_dynamo.config.capture_scalar_outputs`. Compiles in agent's own run; canonical validator doesn't apply the flip → 1 residual GB. | V8 SKILL/step3, V8 noskill/step2, V8 noskill/step3 (3 trials) | All gb=1; all engaged 152-232 turns; S6 in diff |
+| **B. Catalog-anchored, residual stuck** | Skill arm engages substantively (~150-230 turns, ~190-230 line diffs) but stays anchored on catalog patterns (`_dynamo.config.disable`, `compiler.is_compiling()` guards) and fails to clear residual data-dep. Doesn't pivot to S7. | V6 SKILL/waveA (gb=10, 89 turns), V9 SKILL/parallel (gb=1, 154 turns) | gb≥1 with substantive diff; no S7 in diff |
+| **C. Stalled exploration** | Agent does many turns of exploration but commits very little. Tiny final diff despite long stream. | V9 SKILL/waveA s1 (29 lines diff after 89 turns; gb=17) | High turns / low diff-line ratio |
+| **D. Validator artifact** | Canonical reports gb=2 but agent claims gb=0 in own run. Likely the validator's regex picks up an early baseline print before the agent's final config-flipped run. | V2 SKILL/wave1a (gb=2 with declared override path) | Cross-check `gb_in_agent_run` vs `gb_under_canonical_inputs` |
+
+Modes A + B + C are real failures. Mode D is open-loop #5 (validator regex investigation).
+
+**What the modes tell us about skill effects:**
+- *SKILL is over-represented in mode B* (2/2 mode-B trials are SKILL). The catalog seems to keep the agent committed to non-working approaches longer instead of pivoting.
+- *SKILL is exclusively in mode C* (the only stalled-exploration trial is V9 SKILL/waveA s1). Hypothesis: when the catalog's preferred strategies don't fit, the skill arm's structured workflow can devolve into many small attempts without committing — bare agent in same situation either gives up cleanly OR invents (V9 noskill smoke s1 invented S7 in similar conditions).
+- *Mode A is uniform across arms* (V8 SKILL + 2 V8 noskill all use S6). When the variant *allows* the catalog-preferred path, both arms take it.
+
+---
+
 ## Phase E — Perf
 
 **general trials (fix_status = general, corrected-validator):**
@@ -311,15 +388,17 @@ Range: **1.53x–2.07x tier-1 speedup** for `general` trials. All `general` tria
 
 ## What this experiment teaches about skill discovery
 
-Three threads, now with data:
+Five threads, now with data:
 
-1. **The corrected validator's verdict matters more than the prior batch suggested.** V8 6/6 → 0/3 general is a 1.0 → 0.0 flip. Without canonical-input checks + HF set_seed, we were measuring a different thing. Any fix_status count from prior-batch trials should be treated as upper-bound estimates.
+1. **The corrected validator's verdict matters more than the prior batch suggested.** V8 6/6 → 0/3 general under canonical-input check + HF set_seed. Any fix_status count from prior-batch trials should be treated as upper-bound estimates.
 
-2. **Door-closing is generative, not just restrictive.** V9 → S7 is the proof point: forbidding the easy path (declared overrides) produced a genuinely new strategy (static cap). Without V9 in the design, S7 would be invisible in this corpus. The door-closing methodology surfaces strategies that can never emerge from the baseline variant alone.
+2. **Door-closing is generative.** V9 → S7 is the proof point: forbidding the easy path (declared overrides) produced a genuinely new strategy (static cap on data-dep arange). Without V9 in the design, S7 would be invisible in this corpus.
 
-3. **The artifact we keep should be the strategy, not the tally.** The [Strategies discovered](#strategies-discovered) section above is more useful than any fix_status count. S7 is the deliverable — not "4/8 noskill general." That count is the index; the strategy is the knowledge.
+3. **The artifact we keep should be the strategy, not the tally.** [Strategies discovered](#strategies-discovered) is the deliverable; the [strategy adoption matrix](#phase-a--strategy-adoption-matrix-data-grounded) is the measurement. The fix_status count is the index — the strategy + its adoption pattern is the knowledge.
 
-4. **Skill catalogs anchor agents.** The skill document's escape-hatch and config-flip inventory anchored the SKILL arm on S6 when V9 made S6 impossible. The bare agent, unconstrained by a catalog, invented S7. Implication for skill design: a skill document that lists *known* strategies may suppress *discovery* of unknown ones — especially under tightly constrained variants. The right fix is to add S7 to the skill catalog (so future agents can reach it explicitly), not to remove the skill, but this episode makes the mechanism legible.
+4. **Skill catalogs anchor agents — the effect is measurable, not just intuited.** Per Phase A: 0 of 7 SKILL trials apply S7, vs 4 of 8 noskill trials. This isn't "the skill helped less" — it's a perfect anti-correlation. The catalog's strategy inventory becomes the search space the agent operates in, even when that space doesn't contain the answer.
+
+5. **The skill catalog gap has a NAME and a FIX.** The gap is S7 (static-cap for data-dep `arange.size`). The fix is to add S7 to `debug-graph-breaks` (file PR to Arsh's fork). Once added, V9 SKILL should match V9 noskill — testable prediction for the next round.
 
 ---
 
@@ -352,3 +431,4 @@ Three threads, now with data:
 
 - 2026-04-28 (morning): skeleton — Phases B-F stubs filled with partial data; batch2 pending.
 - 2026-04-28 (afternoon): **COMPLETE** — all 15 corrected-validator trials in; Phases B-F fully written; open loops 6-7 added; skill-trap finding (Phase D) and V8 vs V9 conclusion (Phase C) finalized.
+- 2026-04-28 (evening): **DATA-GROUNDED** — replaced narrative Phase A with measured strategy-adoption matrix (15 trials × 11 strategies, detected from agent_diff.patch by regex). Three corrections to prior narrative: S5 is rare not universal, S2/S4 (not S5) are near-universal, S7 is in 4 trials including V4 + V6 (not V9-only). Sharpened headline around the 0/7 SKILL vs 4/8 noskill S7-adoption split — the catalog suppresses S7 discovery in measurable terms. Added Phase D.5 — failure mode taxonomy for 7 `none` trials (modes A/B/C/D). Source script: `/tmp/strategy_matrix.py` (kept for re-runs).
