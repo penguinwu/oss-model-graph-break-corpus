@@ -1817,6 +1817,21 @@ def main():
                            help="Skip auto-retry of timed-out/errored models")
     sub_sweep.add_argument("--identify-only", action="store_true",
                            help="Stop after identify pass (skip explain)")
+    # Compiler config passthrough — applied per-worker before each torch.compile
+    sub_sweep.add_argument("--compile-kwargs", default=None, metavar="JSON",
+                           help='JSON dict passed to torch.compile() '
+                                '(e.g. \'{"fullgraph": true, "dynamic": true}\')')
+    sub_sweep.add_argument("--dynamo-config", action="append", default=None,
+                           metavar="KEY=VAL",
+                           help="Set torch._dynamo.config.<key>=<val>. Repeatable.")
+    sub_sweep.add_argument("--inductor-config", action="append", default=None,
+                           metavar="KEY=VAL",
+                           help="Set torch._inductor.config.<key>=<val>. Repeatable.")
+    sub_sweep.add_argument("--setup-script", default=None, metavar="PATH",
+                           help="Python file exec'd in each worker before compile.")
+    sub_sweep.add_argument("--run-name", default=None, metavar="SLUG",
+                           help="Tag this run as experimental. Defaults output to "
+                                "sweep_results/experiments/<slug>-<date>/.")
 
     # ── explain ────────────────────────────────────────────────────────────
     sub_explain = subparsers.add_parser(

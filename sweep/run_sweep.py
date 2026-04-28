@@ -60,11 +60,84 @@ from orchestrator import (
 SWEEP_DIR = Path(__file__).resolve().parent
 CORPUS_FILE = SWEEP_DIR.parent / "corpus" / "corpus.json"
 DEFAULT_OUTPUT_DIR = SWEEP_DIR.parent / "sweep_results"
+EXPERIMENTS_OUTPUT_DIR = SWEEP_DIR.parent / "sweep_results" / "experiments"
 LARGE_MODELS_FILE = SWEEP_DIR / "large_models.json"
 
 
+def _parse_kv_overrides(items):
+    """Parse repeated KEY=VAL flags into a dict.
+
+    Values are decoded as JSON literals when possible (true/false/numbers/quoted
+    strings); fall back to the raw string. Empty list returns {}.
+    """
+    out = {}
+    for item in items or []:
+        if "=" not in item:
+            print(f"WARNING: ignoring config flag {item!r} (no '=')", file=sys.stderr)
+            continue
+        key, raw = item.split("=", 1)
+        try:
+            out[key] = json.loads(raw)
+        except json.JSONDecodeError:
+            out[key] = raw
+    return out
+
+
+def _build_extra_worker_args(args):
+    """Translate args namespace → list of CLI args appended to each worker invocation.
+
+    Returns [] when no compile-config flags are set, so default sweep behavior is
+    bit-for-bit identical to pre-redesign runs.
+    """
+    extras = []
+
+    # torch.compile() kwargs as JSON (worker reads with --compile-kwargs)
+    compile_kwargs_json = getattr(args, "compile_kwargs", None)
+    if compile_kwargs_json:
+        try:
+            json.loads(compile_kwargs_json)  # validate
+        except json.JSONDecodeError as e:
+            print(f"ERROR: --compile-kwargs is not valid JSON: {e}", file=sys.stderr)
+            sys.exit(1)
+        extras.extend(["--compile-kwargs", compile_kwargs_json])
+
+    # torch._dynamo.config overrides — worker accepts a JSON dict via --dynamo-flags
+    dynamo_overrides = _parse_kv_overrides(getattr(args, "dynamo_config", None))
+    if dynamo_overrides:
+        extras.extend(["--dynamo-flags", json.dumps(dynamo_overrides)])
+
+    # torch._inductor.config overrides
+    inductor_overrides = _parse_kv_overrides(getattr(args, "inductor_config", None))
+    if inductor_overrides:
+        extras.extend(["--inductor-flags", json.dumps(inductor_overrides)])
+
+    # User-supplied setup script exec'd in worker before each compile
+    setup_script = getattr(args, "setup_script", None)
+    if setup_script:
+        path = Path(setup_script).resolve()
+        if not path.exists():
+            print(f"ERROR: --setup-script not found: {path}", file=sys.stderr)
+            sys.exit(1)
+        extras.extend(["--setup-script", str(path)])
+
+    return extras
+
+
+def _resolve_run_output_dir(args):
+    """Apply --run-name convention. --output-dir wins if explicitly given.
+
+    Returns the resolved Path. Mutates nothing.
+    """
+    run_name = getattr(args, "run_name", None)
+    if run_name and args.output_dir == str(DEFAULT_OUTPUT_DIR):
+        date = time.strftime("%Y-%m-%d")
+        return EXPERIMENTS_OUTPUT_DIR / f"{run_name}-{date}"
+    return Path(args.output_dir)
+
+
 def _execute_explain_pass(python_bin, specs, device, workers, timeout_s,
-                          output_dir, version_info, resume=False):
+                          output_dir, version_info, resume=False,
+                          extra_worker_args=None, run_name=None):
     """Run the explain pass and save results. Shared by sweep and standalone explain.
 
     Returns (explain_results, explain_time).
@@ -86,6 +159,7 @@ def _execute_explain_pass(python_bin, specs, device, workers, timeout_s,
         python_bin, specs, pass_num=2, device=device, modes=modes,
         workers=workers, timeout_s=timeout_s * 2,  # 2x for explain
         checkpoint_file=explain_ckpt, resume_from=resume_from,
+        extra_worker_args=extra_worker_args,
     )
     explain_time = time.perf_counter() - explain_start
 
@@ -100,6 +174,10 @@ def _execute_explain_pass(python_bin, specs, device, workers, timeout_s,
     }
     if version_info:
         explain_meta["versions"] = version_info
+    if extra_worker_args:
+        explain_meta["worker_extras"] = extra_worker_args
+    if run_name:
+        explain_meta["run_name"] = run_name
     explain_output = {
         "metadata": explain_meta,
         "results": explain_results,
@@ -189,8 +267,9 @@ def _log_versions(python_bin, output_dir):
 def run_sweep(args):
     """Main sweep logic."""
     python_bin = _resolve_python(args)
-    output_dir = Path(args.output_dir).resolve()
+    output_dir = _resolve_run_output_dir(args).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+    extra_worker_args = _build_extra_worker_args(args)
 
     # ── Write early state file so watchdog can detect us immediately ──
     state_file = output_dir / "sweep_state.json"
@@ -373,7 +452,7 @@ def run_sweep(args):
         workers=args.workers, timeout_s=args.timeout,
         checkpoint_file=identify_ckpt, resume_from=resume_from,
         dynamic=dynamic, timeout_overrides=timeout_overrides,
-        skip_models=skip_models,
+        skip_models=skip_models, extra_worker_args=extra_worker_args,
         result_callback=_on_result,
     )
 
@@ -387,7 +466,7 @@ def run_sweep(args):
             workers=1, timeout_s=args.timeout,
             checkpoint_file=identify_ckpt, resume_from=resume_from,
             dynamic=dynamic, timeout_overrides=timeout_overrides,
-            skip_models=skip_models,
+            skip_models=skip_models, extra_worker_args=extra_worker_args,
             result_callback=_on_result,
         )
         identify_results.extend(single_results)
@@ -409,6 +488,10 @@ def run_sweep(args):
     }
     if version_info:
         identify_metadata["versions"] = version_info
+    if args.run_name:
+        identify_metadata["run_name"] = args.run_name
+    if extra_worker_args:
+        identify_metadata["worker_extras"] = extra_worker_args
     identify_output = {
         "metadata": identify_metadata,
         "results": identify_results,
@@ -449,6 +532,7 @@ def run_sweep(args):
             timeout_s=timeout_large,
             checkpoint_file=None,  # don't mix with main checkpoint
             dynamic=dynamic, timeout_overrides=retry_overrides,
+            extra_worker_args=extra_worker_args,
         )
         retry_time = time.perf_counter() - retry_start
 
@@ -538,7 +622,7 @@ def run_sweep(args):
             timeout_s=args.timeout,
             checkpoint_file=None,
             dynamic=dynamic, timeout_overrides=timeout_overrides,
-            skip_models=skip_models,
+            skip_models=skip_models, extra_worker_args=extra_worker_args,
         )
         retry_err_time = time.perf_counter() - retry_err_start
 
@@ -607,6 +691,8 @@ def run_sweep(args):
             workers=args.workers, timeout_s=args.timeout,
             output_dir=output_dir, version_info=version_info,
             resume=args.resume,
+            extra_worker_args=extra_worker_args,
+            run_name=args.run_name,
         )
     else:
         explain_results = []
@@ -646,7 +732,7 @@ def run_explain(args):
     results. This avoids lossy spec reconstruction from identify JSON.
     """
     python_bin = _resolve_python(args)
-    output_dir = Path(args.output_dir).resolve()
+    output_dir = _resolve_run_output_dir(args).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Detect versions
@@ -701,6 +787,8 @@ def run_explain(args):
         workers=args.workers, timeout_s=args.timeout,
         output_dir=output_dir, version_info=version_info,
         resume=args.resume,
+        extra_worker_args=_build_extra_worker_args(args),
+        run_name=getattr(args, "run_name", None),
     )
 
 
@@ -765,7 +853,7 @@ def _print_summary(corpus):
 def run_validation(args):
     """Run two-shape validation sweep (pass 3) on clean models."""
     python_bin = _resolve_python(args)
-    output_dir = Path(args.output_dir)
+    output_dir = _resolve_run_output_dir(args)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Load models to validate
@@ -870,7 +958,7 @@ def run_correctness(args):
     Eval mode only (train is V2 per design Section 8).
     """
     python_bin = _resolve_python(args)
-    output_dir = Path(args.output_dir)
+    output_dir = _resolve_run_output_dir(args)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Load specs
@@ -1277,6 +1365,22 @@ def main():
                             help="Output directory (default: sweep_results/)")
     run_parent.add_argument("--resume", action="store_true",
                             help="Resume from JSONL checkpoint")
+    # Compiler config passthrough — applied per-worker before each torch.compile
+    run_parent.add_argument("--compile-kwargs", default=None, metavar="JSON",
+                            help='JSON dict passed to torch.compile() '
+                                 '(e.g. \'{"fullgraph": true, "dynamic": true}\')')
+    run_parent.add_argument("--dynamo-config", action="append", default=None, metavar="KEY=VAL",
+                            help="Set torch._dynamo.config.<key>=<val>. Repeatable. "
+                                 "Value parsed as JSON literal (true/false/123/'str').")
+    run_parent.add_argument("--inductor-config", action="append", default=None, metavar="KEY=VAL",
+                            help="Set torch._inductor.config.<key>=<val>. Repeatable.")
+    run_parent.add_argument("--setup-script", default=None, metavar="PATH",
+                            help="Python file exec'd in each worker before compile. "
+                                 "For multi-line config (e.g. logging suppression).")
+    run_parent.add_argument("--run-name", default=None, metavar="SLUG",
+                            help="Tag this run as experimental. Defaults output to "
+                                 "sweep_results/experiments/<slug>-<date>/. "
+                                 "Tagged into result metadata.")
 
     # ── sweep subcommand ──
     sweep_parser = subparsers.add_parser(

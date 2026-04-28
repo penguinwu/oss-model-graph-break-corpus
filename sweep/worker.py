@@ -3151,7 +3151,12 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
         if dynamic == "mark":
             input_type = spec.get("input_type", "auto")
             _mark_dynamic_dims(inputs_dict, inputs_tuple, spec["source"], input_type)
-        compiled = torch.compile(model, dynamic=compile_dynamic, **effective_kwargs)
+        # User-supplied compile_kwargs win — they may explicitly set `dynamic`
+        # via --compile-kwargs (e.g. fullgraph runs that want dynamic=True regardless
+        # of the CLI --dynamic flag).
+        if "dynamic" not in effective_kwargs:
+            effective_kwargs["dynamic"] = compile_dynamic
+        compiled = torch.compile(model, **effective_kwargs)
         with ctx:
             if inputs_tuple:
                 compiled(*inputs_tuple)
@@ -3757,6 +3762,11 @@ def main():
                         help="Dynamic shapes: 'true' = all dims symbolic, 'mark' = realistic dims only")
     parser.add_argument("--dynamo-flags", default=None,
                         help="JSON dict of torch._dynamo.config flags to set before compilation")
+    parser.add_argument("--inductor-flags", default=None,
+                        help="JSON dict of torch._inductor.config flags to set before compilation")
+    parser.add_argument("--setup-script", default=None,
+                        help="Python file exec'd once before pass dispatch. For multi-line "
+                             "setup that doesn't fit a key=val (e.g., logging suppression).")
     parser.add_argument("--compile-kwargs", default=None,
                         help="JSON dict of torch.compile() kwargs (backend, fullgraph, etc.)")
     args = parser.parse_args()
@@ -3772,6 +3782,34 @@ def main():
                 print(f"DYNAMO_FLAG: {flag_name} = {flag_value}", file=sys.stderr, flush=True)
             else:
                 print(f"WARNING: Unknown dynamo config flag: {flag_name}", file=sys.stderr, flush=True)
+
+    # Apply inductor config flags if provided
+    if args.inductor_flags:
+        import torch._inductor
+        inductor_flags = json.loads(args.inductor_flags)
+        for flag_name, flag_value in inductor_flags.items():
+            if hasattr(torch._inductor.config, flag_name):
+                setattr(torch._inductor.config, flag_name, flag_value)
+                print(f"INDUCTOR_FLAG: {flag_name} = {flag_value}", file=sys.stderr, flush=True)
+            else:
+                print(f"WARNING: Unknown inductor config flag: {flag_name}", file=sys.stderr, flush=True)
+
+    # Run user setup script (multi-line config that doesn't fit key=val).
+    # Run as a fresh module-like scope: empty globals, so the script does its
+    # own imports. Pre-populating `torch` collides with `import torch._dynamo`
+    # at the script top, which the bytecode compiler treats as a local rebind.
+    if args.setup_script:
+        script_path = args.setup_script
+        try:
+            with open(script_path) as f:
+                script_src = f.read()
+            exec_globals = {"__name__": "__setup__", "__file__": script_path}
+            exec(compile(script_src, script_path, "exec"), exec_globals)
+            print(f"SETUP_SCRIPT: ran {script_path}", file=sys.stderr, flush=True)
+        except Exception as e:
+            print(f"ERROR: --setup-script {script_path} failed: {type(e).__name__}: {e}",
+                  file=sys.stderr, flush=True)
+            sys.exit(2)
 
     # Convert dynamic arg: None→False, "true"→True, "mark"→"mark"
     dynamic_val = {"true": True, "mark": "mark"}.get(args.dynamic, False)

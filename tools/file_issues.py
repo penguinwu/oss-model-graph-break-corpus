@@ -1093,7 +1093,19 @@ def cmd_sweep_report(args):
         print(f"ERROR: {identify_path} not found")
         sys.exit(1)
 
+    # Refuse experimental sweeps unless explicitly allowed
+    with open(explain_path) as f:
+        explain_meta = json.load(f).get("metadata", {})
+    run_name = explain_meta.get("run_name")
+    if run_name and not getattr(args, "allow_experimental", False):
+        print(f"ERROR: this sweep is tagged experimental (run_name={run_name!r}).")
+        print("Issue tracker is only fed by official baseline (cron) sweeps.")
+        print("Pass --allow-experimental to override (you'll need to clean up later).")
+        sys.exit(2)
+
     plan = build_sweep_report(explain_path, identify_path)
+    if run_name:
+        plan.setdefault("metadata", {})["run_name"] = run_name
     print_sweep_report(plan)
 
     plan_out = explain_path.parent / "sweep-report.json"
@@ -1142,6 +1154,14 @@ def cmd_correctness_apply(args):
 
 def cmd_sweep_update(args):
     plan_path = Path(args.plan)
+    if plan_path.exists():
+        with open(plan_path) as f:
+            plan_meta = json.load(f).get("metadata", {})
+        run_name = plan_meta.get("run_name")
+        if run_name and not getattr(args, "allow_experimental", False):
+            print(f"ERROR: this plan came from an experimental sweep (run_name={run_name!r}).")
+            print("Pass --allow-experimental to apply anyway.")
+            sys.exit(2)
     if not plan_path.exists():
         print(f"ERROR: {plan_path} not found")
         sys.exit(1)
@@ -1174,6 +1194,10 @@ def main():
     sub_report.add_argument(
         "--identify", required=True, metavar="IDENTIFY_JSON",
         help="Path to identify_results.json")
+    sub_report.add_argument(
+        "--allow-experimental", action="store_true",
+        help="Permit running on a sweep tagged with run_name (experimental). "
+             "By default, only baseline (cron) sweeps may update issue tracker.")
 
     sub_update = subparsers.add_parser(
         "sweep-update",
@@ -1181,6 +1205,9 @@ def main():
     sub_update.add_argument(
         "--plan", required=True, metavar="PLAN_JSON",
         help="Path to sweep-report.json plan file")
+    sub_update.add_argument(
+        "--allow-experimental", action="store_true",
+        help="Permit applying a plan generated from an experimental sweep.")
 
     sub_corr_report = subparsers.add_parser(
         "correctness-report",
