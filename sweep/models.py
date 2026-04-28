@@ -60,7 +60,15 @@ def enumerate_hf():
     models = []
     seen = set()
 
-    for name, obj in sorted(inspect.getmembers(transformers)):
+    # NOTE: We use dir() + per-attribute getattr instead of inspect.getmembers()
+    # because transformers exposes lazy-import attributes; a broken environment
+    # (missing torchvision, etc.) makes a single class raise ModuleNotFoundError
+    # at attribute access time, and inspect.getmembers() aborts the entire walk.
+    for name in sorted(dir(transformers)):
+        try:
+            obj = getattr(transformers, name)
+        except (ModuleNotFoundError, ImportError, RuntimeError):
+            continue
         if not inspect.isclass(obj):
             continue
         if not issubclass(obj, transformers.PreTrainedModel):
@@ -266,7 +274,12 @@ def enumerate_diffusers():
     }
 
     models = []
-    for name, obj in sorted(inspect.getmembers(diffusers)):
+    # See enumerate_hf for rationale — tolerate broken lazy imports.
+    for name in sorted(dir(diffusers)):
+        try:
+            obj = getattr(diffusers, name)
+        except (ModuleNotFoundError, ImportError, RuntimeError):
+            continue
         if not inspect.isclass(obj):
             continue
         if not issubclass(obj, ModelMixin):
