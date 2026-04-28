@@ -118,6 +118,9 @@ stage_clone() {
     # git config inside the sudo shell so every child inherits it.
     if is_agent; then
         sudo bash -c "cd $PYTORCH_DIR && git -c http.proxy=http://fwdproxy:8080 -c https.proxy=http://fwdproxy:8080 submodule update --init --recursive"
+        # Submodule files just got created by root — chown back so subsequent
+        # build steps (run as agent) can write into them.
+        sudo chown -R "$(whoami)" "$PYTORCH_DIR"
     else
         cd "$PYTORCH_DIR"
         git -c http.proxy=http://fwdproxy:8080 -c https.proxy=http://fwdproxy:8080 submodule update --init --recursive
@@ -200,11 +203,21 @@ stage_fixup() {
         log "  WARN: no libgomp source found — torch import may fail"
     fi
 
-    # Fix 2: torchaudio/torchvision compiled against cu128, our build is cu124.
+    # Fix 2: torchvision/torchaudio pip wheels are ABI-locked to a specific
+    # pre-built torch (built once against pytorch.org's nightly toolchain). Our
+    # source-built torch ships a different ABI (Meta's platform010 toolchain)
+    # AND torch's HEAD moves daily — so any installed torchvision wheel ends
+    # up unable to register `torchvision::nms`, and Python imports cascade-fail
+    # anywhere transformers eagerly resolves attributes (FuyuProcessor etc.).
+    #
+    # Tradeoff: uninstall both, accept losing models that hard-require torchvision.
+    # As of 2026-04-28 that's exactly 1 model in the corpus: HiggsAudioV2TokenizerModel.
+    # The corpus enumerator (sweep/models.py) tolerates broken lazy imports, so
+    # the rest of the 855 models enumerate and run fine.
     pip uninstall torchaudio -y 2>/dev/null || true
     pip uninstall torchvision -y 2>/dev/null || true
-    pip install torchvision --no-deps --index-url https://download.pytorch.org/whl/cpu 2>&1 | tail -2
-    log "  OK: torchvision reinstalled (CPU-only)"
+    log "  OK: torchaudio/torchvision uninstalled (ABI mismatch w/ source-built torch)"
+    log "       lost: 1 model (HiggsAudioV2TokenizerModel) — corpus tolerates absence"
 
     echo "fixup" > "$CHECKPOINT_FILE"
     log "Post-build fixes applied"
@@ -233,6 +246,31 @@ print(f'torch.compile OK: {out.shape}')
         fail "torch.compile test failed: $compile_ok"
     fi
     log "  $compile_ok"
+
+    # Verify the venv can actually enumerate the corpus end-to-end. This is the
+    # real downstream check — it caught the torchvision-poisons-enumeration trap
+    # of 2026-04-28 (where torch alone was fine but the corpus walk crashed on
+    # FuyuProcessor's lazy torchvision import). If a future env regression
+    # silently breaks enumeration, this fails the build instead of failing the
+    # sweep 3 hours later.
+    local repo_root
+    repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+    local enum_ok
+    enum_ok=$(python -c "
+import sys
+sys.path.insert(0, '$repo_root/sweep')
+from models import enumerate_hf, enumerate_diffusers, enumerate_custom
+hf = enumerate_hf()
+df = enumerate_diffusers()
+cu = enumerate_custom()
+total = len(hf) + len(df) + len(cu)
+assert total > 700, f'corpus enumeration too small ({total}); env may be broken'
+print(f'corpus enumerable: {total} models (hf:{len(hf)} diffusers:{len(df)} custom:{len(cu)})')
+" 2>&1 | tail -3)
+    if [ $? -ne 0 ]; then
+        fail "corpus enumeration failed: $enum_ok"
+    fi
+    log "  $enum_ok"
 
     rm -f "$CHECKPOINT_FILE"
     log "=== BUILD FROM SOURCE COMPLETE ==="
