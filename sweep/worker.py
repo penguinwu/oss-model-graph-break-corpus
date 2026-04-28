@@ -3665,12 +3665,17 @@ def run_validate(spec, device, mode, dynamic=False):
 
 # ─── Explain: detailed analysis ─────────────────────────────────────────────
 
-def run_explain(spec, device, mode):
+def run_explain(spec, device, mode, dynamic=False, compile_kwargs=None):
     """Analyze graph breaks using shared methodology (TORCH_LOGS + counting backend).
 
     Core analysis is delegated to run_graph_break_analysis() from explain.py,
     which is the canonical implementation shared across all suites (HF, diffusers,
     timm, custom). This wrapper handles model creation, TORCH_TRACE, and GPU memory.
+
+    `dynamic` and `compile_kwargs` are forwarded so the explain pass exercises the
+    same dynamo path as identify. The analysis function will override `fullgraph`
+    (must be False to count breaks) and `backend` (must be the counting backend),
+    but kwargs like `dynamic` flow through.
     """
     result = {
         "name": spec["name"],
@@ -3695,9 +3700,12 @@ def run_explain(spec, device, mode):
 
     # Core graph break analysis — shared with all suites
     inputs = inputs_tuple if inputs_tuple else inputs_dict
-    analysis = run_graph_break_analysis(model, inputs, mode=mode)
+    analysis = run_graph_break_analysis(model, inputs, mode=mode,
+                                         dynamic=dynamic, compile_kwargs=compile_kwargs)
 
     result["explain_time_s"] = analysis["explain_time_s"]
+    if "effective_compile_kwargs" in analysis:
+        result["compile_kwargs"] = analysis["effective_compile_kwargs"]
     if analysis["status"] == "ok":
         result["status"] = "ok"
         result["graph_count"] = analysis["graph_count"]
@@ -3820,12 +3828,23 @@ def main():
     if args.pass_num == 1:
         result = run_identify(spec, args.device, args.mode, dynamic=dynamic_val,
                               compile_kwargs=compile_kwargs)
+    elif args.pass_num == 2:
+        # Thread compile_kwargs to explain pass too — break_reasons captured here
+        # feed the per-issue plan, so they must reflect the user's actual config
+        # (dynamic-shapes path, etc.). The explain pass will override `fullgraph`
+        # to False (it must count breaks, not hard-fail) and `backend` to its own
+        # counting backend, but other kwargs (dynamic, mode hints) flow through.
+        result = run_explain(spec, args.device, args.mode,
+                             dynamic=dynamic_val, compile_kwargs=compile_kwargs)
     elif args.pass_num == 3:
         result = run_validate(spec, args.device, args.mode, dynamic=dynamic_val)
     elif args.pass_num == 4:
         result = run_correctness(spec, args.device, args.mode)
     else:
-        result = run_explain(spec, args.device, args.mode)
+        # Defensive — pass_num is constrained to {1,2,3,4}. If we're here it's
+        # equivalent to pass 2 (legacy behavior).
+        result = run_explain(spec, args.device, args.mode,
+                             dynamic=dynamic_val, compile_kwargs=compile_kwargs)
 
     # Output single JSON line to stdout
     print(json.dumps(result))

@@ -89,7 +89,8 @@ class _BreakCollector:
         return reasons
 
 
-def run_graph_break_analysis(model, inputs, mode="eval"):
+def run_graph_break_analysis(model, inputs, mode="eval",
+                              dynamic=False, compile_kwargs=None):
     """Analyze graph breaks using TORCH_LOGS + counting backend.
 
     This is the single, canonical way to analyze graph breaks across all
@@ -101,6 +102,11 @@ def run_graph_break_analysis(model, inputs, mode="eval"):
         model: The model (already on the right device, already in eval/train mode).
         inputs: dict of kwargs, tuple of args, or single tensor.
         mode: "eval" or "train" — controls torch.no_grad() context.
+        dynamic: matches sweep/worker `--dynamic` semantics. True / "mark" / False.
+        compile_kwargs: user-supplied torch.compile() kwargs (e.g. from
+            `--compile-kwargs`). `fullgraph` and `backend` are forced — the
+            counting backend can't run under fullgraph and must be _counting_backend.
+            Other kwargs (notably `dynamic`) are honored.
 
     Returns:
         dict with keys:
@@ -111,6 +117,7 @@ def run_graph_break_analysis(model, inputs, mode="eval"):
             ops_per_graph: list of op counts per subgraph
             compile_times: list of compile time per subgraph
             explain_time_s: total wall time
+            effective_compile_kwargs: the kwargs actually passed to torch.compile()
             error?: error message if status is "explain_error"
     """
     result = {}
@@ -138,8 +145,24 @@ def run_graph_break_analysis(model, inputs, mode="eval"):
     # data-dependent shapes (VL models, Funnel, etc.). The explain pass should
     # report scalar ops as graph breaks, not try to trace through them.
 
+    # Build effective compile_kwargs:
+    # - Start from user-supplied (so dynamic=True etc. flow through)
+    # - Force backend = counting backend (graph break count requires it)
+    # - Force fullgraph = False (counting needs to continue past breaks)
+    # - Default `dynamic` from the explicit `dynamic` arg if user didn't set it
+    effective_kwargs = dict(compile_kwargs) if compile_kwargs else {}
+    effective_kwargs["backend"] = _counting_backend
+    effective_kwargs["fullgraph"] = False
+    if "dynamic" not in effective_kwargs:
+        # mirror worker's dynamic semantics: True = all dims symbolic, "mark" = realistic dims, False = static
+        effective_kwargs["dynamic"] = True if dynamic is True else None
+    # Record what we actually used (excluding the backend function — not JSON-friendly)
+    result["effective_compile_kwargs"] = {
+        k: v for k, v in effective_kwargs.items() if k != "backend"
+    }
+
     try:
-        compiled = torch.compile(model, backend=_counting_backend)
+        compiled = torch.compile(model, **effective_kwargs)
         with ctx:
             if isinstance(inputs, dict):
                 compiled(**inputs)
