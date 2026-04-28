@@ -80,10 +80,14 @@ from typing import Iterable
 
 # ---------- defaults ----------
 
+# Monitor only Python site-packages — the actual threat surface is shared
+# Python imports. Trials don't write to the corpus repo or myclaw-shared in
+# observed practice; Layer C (agent-intent stream parse in run_config.py)
+# catches any agent attempt regardless of monitored scope, so we don't need
+# to fold those dirs into Layer A's expensive walk + the false-positive
+# band-aids that came with them (e.g. .feedback_monitor_state.json churn).
 DEFAULT_MONITORED_GLOBS: list[str] = [
     "/home/pengwu/envs/*/lib/python*/site-packages",
-    "/home/pengwu/projects/oss-model-graph-break-corpus",
-    "/home/pengwu/.myclaw-shared",
 ]
 
 # Subtree names to skip during walk (cuts false positives + scan time).
@@ -93,13 +97,10 @@ SKIP_DIRNAMES = {
     ".mypy_cache", ".ruff_cache", "*.egg-info",
 }
 
-# Filenames that legitimately churn during normal operation (state files,
-# log files, cache files written by side-process tooling). Add to this list
-# when a real false-positive surfaces; never broaden to a glob unless we know
-# the class is safe (agents rarely edit dotfiles, but they CAN).
-SKIP_FILENAMES = {
-    ".feedback_monitor_state.json",  # tools/feedback_monitor.py state
-}
+# (formerly: SKIP_FILENAMES for legitimate-churn files like
+# `.feedback_monitor_state.json`. Removed when we descoped monitoring to
+# site-packages only — no more false positives from corpus-repo state files.)
+SKIP_FILENAMES: set[str] = set()
 
 
 # ---------- dataclasses ----------
