@@ -159,10 +159,35 @@ Validate after updating:
 python3 tools/validate.py
 ```
 
+## Customizing the compile config
+
+The sweep CLI accepts custom `torch.compile()` configuration directly. No need to spin up an experiment for one-off compiler tests:
+
+| Flag | Purpose | Example |
+|---|---|---|
+| `--compile-kwargs JSON` | passed to `torch.compile()` | `--compile-kwargs '{"fullgraph": true, "dynamic": true, "backend": "inductor"}'` |
+| `--dynamo-config KEY=VAL` (repeatable) | sets `torch._dynamo.config.<key>` | `--dynamo-config recompile_limit=128` |
+| `--inductor-config KEY=VAL` (repeatable) | sets `torch._inductor.config.<key>` | `--inductor-config max_autotune=true` |
+| `--setup-script PATH` | Python file `exec()`'d in each worker before compile | `--setup-script configs/my-prep.py` (for multi-line config that doesn't fit `KEY=VAL`) |
+| `--run-name SLUG` | tags the run as experimental; defaults output to `sweep_results/experiments/<slug>-<date>/` and tags `metadata.run_name` | `--run-name my-experiment` |
+
+Example — fullgraph + dynamic shapes + a custom suppression patch:
+
+```bash
+python3 sweep/run_sweep.py sweep \
+    --compile-kwargs '{"fullgraph": true, "dynamic": true, "backend": "eager"}' \
+    --setup-script sweep/configs/animesh-logging-suppress.py \
+    --run-name animesh-fullgraph
+```
+
+Defaults are bit-for-bit identical when no compile-config flags are passed — the cron baseline is unaffected.
+
+**Issue tracker safety.** `tools/file_issues.py sweep-report` and `sweep-update` refuse to operate on plans tagged with `run_name` (i.e. experimental sweeps). Pass `--allow-experimental` to override; the issue tracker is normally fed only by the official cron baseline.
+
 ## Conventions
 
 - Batch size must be >= 2 (PyTorch specializes on 0 and 1)
-- Default backend is `eager` with `fullgraph=True` (tests Dynamo tracing). Other backends (e.g., `aot_eager`, `inductor`) can be tested via [experiments](running-experiments.md) with custom `compile_kwargs`
+- Default backend is `eager` with `fullgraph=True` (tests Dynamo tracing). Override via `--compile-kwargs` (above) or run a multi-config [experiment](running-experiments.md)
 - Never use 0 or 1 as input dimensions for dynamic shape testing
 - Default sources: `hf diffusers custom` (TIMM/dynamic require explicit request)
 

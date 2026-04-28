@@ -33,6 +33,15 @@ Usage:
 
   # Pre-sweep version check
   python run_sweep.py sweep --check-env
+
+  # Custom compile config (writes to sweep_results/experiments/<slug>-<date>/)
+  python run_sweep.py sweep \\
+      --compile-kwargs '{"fullgraph": true, "dynamic": true, "backend": "eager"}' \\
+      --dynamo-config recompile_limit=128 \\
+      --setup-script sweep/configs/my-prep.py \\
+      --run-name my-experiment
+
+See docs/running-sweeps.md for the full flag reference.
 """
 import argparse
 import json

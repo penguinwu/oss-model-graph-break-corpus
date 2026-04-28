@@ -1,8 +1,10 @@
 # Sweep CLI Redesign — Generic Compiler-Config Passthrough
 
-**Status:** Proposal, awaiting Peng review
-**Author:** Otter, 2026-04-27
+**Status:** SHIPPED 2026-04-27 (commits `1cd495a`, `d14bdd8` — closes #72)
+**Author:** Otter
 **Motivation:** Animesh's #70 ask exposed that the sweep is hard-coded to one compile config. Future corpus users (compiler researchers, perf engineers, internal teams) will want to test their own settings without forking the harness.
+
+**User docs:** [docs/running-sweeps.md](../docs/running-sweeps.md#customizing-the-compile-config) covers the shipped flags.
 
 ---
 

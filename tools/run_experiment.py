@@ -31,6 +31,12 @@ Usage:
   # Full production sweep
   python run_experiment.py sweep --source hf diffusers custom
 
+  # Sweep with custom compile config (writes to sweep_results/experiments/<slug>-<date>/)
+  python run_experiment.py sweep \\
+      --compile-kwargs '{"fullgraph": true, "dynamic": true}' \\
+      --setup-script sweep/configs/my-prep.py \\
+      --run-name my-experiment
+
   # Build corpus from experiment results
   python run_experiment.py corpus experiments/results/my-run/
 
