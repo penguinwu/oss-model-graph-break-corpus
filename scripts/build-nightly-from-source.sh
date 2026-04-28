@@ -113,7 +113,15 @@ stage_clone() {
         fi
         cd "$PYTORCH_DIR"
     fi
-    git submodule update --init --recursive
+    # `git submodule update` spawns one git child per submodule; the simple
+    # HTTPS_PROXY env may not propagate to all of them. Force the proxy via
+    # git config inside the sudo shell so every child inherits it.
+    if is_agent; then
+        sudo bash -c "cd $PYTORCH_DIR && git -c http.proxy=http://fwdproxy:8080 -c https.proxy=http://fwdproxy:8080 submodule update --init --recursive"
+    else
+        cd "$PYTORCH_DIR"
+        git -c http.proxy=http://fwdproxy:8080 -c https.proxy=http://fwdproxy:8080 submodule update --init --recursive
+    fi
     echo "clone" > "$CHECKPOINT_FILE"
     log "Clone complete — $(git log -1 --format='%h %s')"
 }
