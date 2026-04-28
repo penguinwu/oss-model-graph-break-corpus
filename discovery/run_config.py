@@ -389,13 +389,35 @@ def main() -> int:
     fs_diff = diff_against_snapshot(fs_snapshot, allowed_roots=[args.out_dir])
     canary_result = verify_canaries(canary_record)
     contamination_detected = fs_diff.has_changes or not canary_result.intact
+    # Build backups dict from each watched file's .original (if it exists in
+    # site-packages — i.e. the watched file was a shared file the agent
+    # rogue-edited). Lets deep_inspect compute md5+line-count vs pristine.
+    watched_backups: dict[str, Path] = {}
+    for wf in case.watched_files:
+        if wf.original_backup.exists():
+            watched_backups[str(wf.path)] = wf.original_backup
     if contamination_detected:
-        # Tier 2: deep inspect (md5 + line counts) for forensic record.
-        # We don't have backups for arbitrary site-packages files, so this
-        # records the new state only (no diff vs original).
-        fs_diff = deep_inspect(fs_diff, backups={})
+        fs_diff = deep_inspect(fs_diff, backups=watched_backups)
         flags.append("shared_filesystem_touched")
     fs_verify_elapsed = time.time() - t_fs_end
+
+    # 10c. Layer B — restoration. Restore any shared file the trial mutated
+    # back to its `.original` pristine state, so the next trial starts clean.
+    # Pairs with detection: detection caught it; restoration cleans up.
+    # Idempotent + cheap: only restores if hash differs.
+    import filecmp
+    restored_paths: list[str] = []
+    for wf in case.watched_files:
+        if not wf.original_backup.exists():
+            continue
+        if not wf.path.exists():
+            continue
+        if not filecmp.cmp(str(wf.path), str(wf.original_backup), shallow=False):
+            shutil.copyfile(wf.original_backup, wf.path)
+            restored_paths.append(str(wf.path))
+    if restored_paths:
+        print(f"[{args.trial_label}] Layer B restored {len(restored_paths)} mutated file(s) to pristine",
+              file=sys.stderr)
     fs_report_path = args.out_dir / "_filesystem_contamination.json"
     fs_report = {
         "tier1_baseline_path": str(fs_snapshot_path),
@@ -437,6 +459,7 @@ def main() -> int:
             "n_changed_files": len(fs_diff.changes),
             "n_canary_failures": len(canary_result.failures),
             "report_path": str(fs_report_path),
+            "layer_b_restored_paths": restored_paths,
         },
     }
     (args.out_dir / "result.json").write_text(json.dumps(result, indent=2))

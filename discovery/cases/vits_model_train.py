@@ -140,8 +140,14 @@ Please:
    - data-dependent F.conv1d guard from output_padding_mask in the flow + decoder
 3. Fix them. You may edit any of:
    - {BASELINE_SCRIPT} (the test script — e.g. shape constraints, replace np with torch)
-   - {VITS_SRC} (the VitsModel source)
+   - {VITS_SRC} (the VitsModel source — this is a per-trial sandbox copy)
    Do NOT edit shared infrastructure outside these files (e.g. import_utils.py, conv.py).
+   IMPORTANT — sandbox isolation: edit ONLY the path I gave you above for
+   modeling_vits.py. NEVER edit any path under `/home/pengwu/envs/...` even
+   if you discover one in the case source or via `python -c "import X; print(X.__file__)"`.
+   The sandbox path is the only edit target the validator reads from. Edits
+   to `/home/pengwu/envs/...` paths have no effect on the trial verdict and
+   will flag the trial as filesystem-contaminated (excluded from analysis).
 4. Verify by re-running the script: graph_break_count should drop (ideally to 0 so fullgraph=True works) and the model output (waveform) should still match the original eager output within 1e-3.
 
 IMPORTANT — what counts as a real fix: graph_break_count from your own {BASELINE_SCRIPT} is NOT the trial verdict. The trial uses a canonical-input check that loads VitsModel with stock test inputs and runs torch.compile WITHOUT your {BASELINE_SCRIPT} setup overrides applied (no `torch._dynamo.config` flips, no `backend=` swap from your baseline). Run `/home/pengwu/envs/torch211/bin/python /tmp/discovery-runs/vits_model_train/validate.py` to see the canonical `gb_under_canonical_inputs` count after any model edit you make. The trial only earns `fix_status: general` if canonical gb == 0. If canonical gb > 0, your fix relies on setup-script overrides — that's `setup-required` (or `none` under V8/V9 which forbid setup edits).
