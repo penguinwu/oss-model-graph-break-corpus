@@ -288,10 +288,15 @@ def main() -> int:
     setup_elapsed = time.time() - t_setup_start
     print(f"[{args.trial_label}] sandbox setup took {setup_elapsed:.1f}s", file=sys.stderr)
 
-    # 2b. Filesystem-integrity baseline (Tier 1 + Tier 3 canaries).
-    # Detects post-trial that any monitored dir (site-packages, corpus repo,
-    # myclaw-shared) was modified. Sandbox + out_dir are allowed write roots.
+    # 2b. Filesystem-integrity baseline + lockdown.
+    # Layer A (detection): Tier 1 mtime+size baseline + Tier 3 canaries — catches
+    #   any modification regardless of mechanism (post-trial diff/canary verify).
+    # Layer B (prevention via OS): chmod the agent's edit-target shared files to
+    #   READ-ONLY (444). The OS rejects rogue writes with EPERM at the kernel
+    #   level — no race condition, no recovery code needed. Restored to original
+    #   perms at trial end.
     # See discovery/filesystem_integrity.py for design rationale.
+    import stat
     from discovery.filesystem_integrity import (
         DEFAULT_MONITORED_GLOBS, take_snapshot, plant_canaries,
         _resolve_monitored_roots,
@@ -307,9 +312,54 @@ def main() -> int:
         monitored_dirs=_resolve_monitored_roots(DEFAULT_MONITORED_GLOBS),
         trial_id=args.trial_label,
     )
+    # Layer B: chmod each watched file's SHARED SITE-PACKAGES PATH to read-only.
+    # `wf.path` is the agent's edit target (the absolute site-packages path the
+    # case file declares). `wf.original_backup` is a /tmp pristine snapshot —
+    # we DON'T chmod that. Saves the original mode for restore at trial end.
+    locked_files: dict[Path, int] = {}
+    for wf in case.watched_files:
+        target = wf.path
+        if not target.exists():
+            continue
+        # Only chmod files that live under monitored roots (i.e. site-packages).
+        # The case may have additional watched files in /tmp (e.g. baseline_*.py)
+        # which are per-trial scratch and not shared.
+        if not any(str(target).startswith(str(r)) for r in fs_snapshot.monitored_roots):
+            continue
+        try:
+            orig_mode = target.stat().st_mode
+            locked_files[target] = orig_mode
+            # 444 = r--r--r-- — owner can no longer write
+            target.chmod(stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
+        except OSError as e:
+            print(f"[{args.trial_label}] WARN: chmod -w {target} failed: {e}",
+                  file=sys.stderr)
+
+    # Defense in depth: register atexit + SIGTERM/SIGINT handlers so chmod-RO
+    # can NEVER leak past trial end, even on crash. Idempotent (chmod is safe
+    # to call repeatedly with the same mode).
+    import atexit
+    import signal
+
+    def _restore_modes_idempotent():
+        for tgt, mode in list(locked_files.items()):
+            try:
+                tgt.chmod(mode)
+            except OSError:
+                pass
+
+    atexit.register(_restore_modes_idempotent)
+
+    def _signal_restore_then_exit(signum, frame):
+        _restore_modes_idempotent()
+        sys.exit(128 + signum)
+
+    signal.signal(signal.SIGTERM, _signal_restore_then_exit)
+    signal.signal(signal.SIGINT, _signal_restore_then_exit)
     fs_setup_elapsed = time.time() - t_fs_start
     print(f"[{args.trial_label}] filesystem baseline: {len(fs_snapshot.files)} files, "
-          f"{len(canary_record.canaries)} canaries, took {fs_setup_elapsed:.1f}s",
+          f"{len(canary_record.canaries)} canaries, "
+          f"{len(locked_files)} shared files locked RO, took {fs_setup_elapsed:.1f}s",
           file=sys.stderr)
 
     # 3. Compose prompt
@@ -401,22 +451,22 @@ def main() -> int:
         flags.append("shared_filesystem_touched")
     fs_verify_elapsed = time.time() - t_fs_end
 
-    # 10c. Layer B — restoration. Restore any shared file the trial mutated
-    # back to its `.original` pristine state, so the next trial starts clean.
-    # Pairs with detection: detection caught it; restoration cleans up.
-    # Idempotent + cheap: only restores if hash differs.
-    import filecmp
-    restored_paths: list[str] = []
-    for wf in case.watched_files:
-        if not wf.original_backup.exists():
-            continue
-        if not wf.path.exists():
-            continue
-        if not filecmp.cmp(str(wf.path), str(wf.original_backup), shallow=False):
-            shutil.copyfile(wf.original_backup, wf.path)
-            restored_paths.append(str(wf.path))
-    if restored_paths:
-        print(f"[{args.trial_label}] Layer B restored {len(restored_paths)} mutated file(s) to pristine",
+    # 10c. Layer B teardown — restore original file modes (un-chmod -w).
+    # Files were locked RO at step 2b; restore the mode we captured.
+    unlocked_count = 0
+    for target, orig_mode in locked_files.items():
+        try:
+            target.chmod(orig_mode)
+            unlocked_count += 1
+        except OSError as e:
+            # File was deleted or perm denied — surface as a flag so the trial
+            # is investigated; the `monitored_roots` snapshot will catch the
+            # delete via Tier 1.
+            print(f"[{args.trial_label}] WARN: chmod restore for {target} failed: {e}",
+                  file=sys.stderr)
+            flags.append(f"chmod-restore-failed:{target.name}")
+    if unlocked_count:
+        print(f"[{args.trial_label}] Layer B unlocked {unlocked_count} shared file(s) back to original mode",
               file=sys.stderr)
     fs_report_path = args.out_dir / "_filesystem_contamination.json"
     fs_report = {
@@ -459,7 +509,8 @@ def main() -> int:
             "n_changed_files": len(fs_diff.changes),
             "n_canary_failures": len(canary_result.failures),
             "report_path": str(fs_report_path),
-            "layer_b_restored_paths": restored_paths,
+            "layer_b_locked_files": [str(p) for p in locked_files],
+            "layer_b_unlocked_count": unlocked_count,
         },
     }
     (args.out_dir / "result.json").write_text(json.dumps(result, indent=2))

@@ -93,6 +93,14 @@ SKIP_DIRNAMES = {
     ".mypy_cache", ".ruff_cache", "*.egg-info",
 }
 
+# Filenames that legitimately churn during normal operation (state files,
+# log files, cache files written by side-process tooling). Add to this list
+# when a real false-positive surfaces; never broaden to a glob unless we know
+# the class is safe (agents rarely edit dotfiles, but they CAN).
+SKIP_FILENAMES = {
+    ".feedback_monitor_state.json",  # tools/feedback_monitor.py state
+}
+
 
 # ---------- dataclasses ----------
 
@@ -204,6 +212,7 @@ def _walk_files(
     roots: list[Path],
     allowed_roots: list[Path],
     skip_dirnames: set[str] = SKIP_DIRNAMES,
+    skip_filenames: set[str] = SKIP_FILENAMES,
 ) -> dict[str, tuple[int, int]]:
     """Walk monitored roots, return `{abspath_str: (mtime_ns, size)}`.
 
@@ -213,6 +222,7 @@ def _walk_files(
       - symlinks (avoid loops + we only care about real on-disk state)
       - canary files (`CANARY_PREFIX`-prefixed) so canary planting/verification
         is independent of Tier 1 baseline tracking
+      - filenames in `skip_filenames` (legitimate churn from side-process tooling)
     """
     out: dict[str, tuple[int, int]] = {}
     for root in roots:
@@ -225,7 +235,7 @@ def _walk_files(
             # Prune by skip names.
             dirnames[:] = [d for d in dirnames if d not in skip_dirnames]
             for fn in filenames:
-                if fn.startswith(CANARY_PREFIX):
+                if fn.startswith(CANARY_PREFIX) or fn in skip_filenames:
                     continue
                 fp = dp / fn
                 try:
