@@ -204,23 +204,75 @@ stage_fixup() {
     fi
 
     # Fix 2: torchvision/torchaudio pip wheels are ABI-locked to a specific
-    # pre-built torch (built once against pytorch.org's nightly toolchain). Our
-    # source-built torch ships a different ABI (Meta's platform010 toolchain)
-    # AND torch's HEAD moves daily — so any installed torchvision wheel ends
-    # up unable to register `torchvision::nms`, and Python imports cascade-fail
-    # anywhere transformers eagerly resolves attributes (FuyuProcessor etc.).
+    # pre-built torch. Our source-built torch ships a different ABI (Meta's
+    # platform010 toolchain), and torch's HEAD moves daily — pip wheels can't
+    # register their custom ops (`torchvision::nms` etc.), and Python imports
+    # cascade-fail anywhere transformers eagerly resolves attributes.
     #
-    # Tradeoff: uninstall both, accept losing models that hard-require torchvision.
-    # As of 2026-04-28 that's exactly 1 model in the corpus: HiggsAudioV2TokenizerModel.
-    # The corpus enumerator (sweep/models.py) tolerates broken lazy imports, so
-    # the rest of the 855 models enumerate and run fine.
+    # Uninstall the pip wheels here — they get rebuilt from source in
+    # stage_build_torchvision / stage_build_torchaudio below.
     pip uninstall torchaudio -y 2>/dev/null || true
     pip uninstall torchvision -y 2>/dev/null || true
-    log "  OK: torchaudio/torchvision uninstalled (ABI mismatch w/ source-built torch)"
-    log "       lost: 1 model (HiggsAudioV2TokenizerModel) — corpus tolerates absence"
+    log "  OK: torchaudio/torchvision pip wheels uninstalled (will rebuild from source)"
 
     echo "fixup" > "$CHECKPOINT_FILE"
     log "Post-build fixes applied"
+}
+
+# ─── Stage 5b: Build torchvision from source ───────────────────────────
+#
+# We must build from source (not pip wheel) because:
+#   1. pip torchvision wheels are ABI-locked to one specific pytorch.org
+#      pre-built torch; our source torch has a different ABI (Meta toolchain)
+#      and a daily-moving SHA. Wheels silently fail to register ops.
+#   2. Building from source binds the C++ extension to *this* torch's
+#      symbols, so torchvision::nms et al. resolve cleanly.
+#
+# Critical env: CC/CXX must point at /usr/local/bin/clang.par (Meta's clang
+# wrapper that understands `--platform platform010`). The default sysconfig CC
+# is `clang.par --platform platform010` as a single string, but ccache strips
+# the prefix and falls through to /usr/bin/c++ (system gcc) which rejects the
+# `--platform` flag — so we set CC/CXX explicitly to bypass ccache.
+build_torch_extension_from_source() {
+    local repo="$1"; local url="$2"; local label="$3"
+    local src_dir="/tmp/${label}-source"
+    log "Cloning ${label}..."
+    if [ -d "$src_dir/.git" ]; then
+        log "  using existing clone at $src_dir"
+    else
+        run_git "git clone --depth 1 $url $src_dir"
+        if is_agent; then sudo chown -R "$(whoami)" "$src_dir"; fi
+    fi
+    log "Building ${label} from source (CC=clang.par, no ccache)..."
+    (
+        source "$VENV/bin/activate"
+        cd "$src_dir"
+        export CC=/usr/local/bin/clang.par
+        export CXX=/usr/local/bin/clang++.par
+        export CUDA_HOME="$CUDA_HOME"
+        export FORCE_CUDA=1 USE_CUDA=1
+        export TORCHVISION_USE_VIDEO_CODEC=0 TORCHVISION_USE_FFMPEG=0
+        export USE_FFMPEG=0 USE_SOX=0
+        export NO_CCACHE=1
+        "$VENV/bin/pip" install --no-build-isolation --no-deps -e . 2>&1 | tail -15
+    )
+    if [ ${PIPESTATUS[0]} -ne 0 ]; then
+        fail "${label} source build failed — see output above"
+    fi
+}
+
+stage_build_torchvision() {
+    log "=== STAGE 5b: Build torchvision from source ==="
+    build_torch_extension_from_source "vision" "https://github.com/pytorch/vision.git" "torchvision"
+    echo "torchvision" > "$CHECKPOINT_FILE"
+    log "torchvision build complete"
+}
+
+stage_build_torchaudio() {
+    log "=== STAGE 5c: Build torchaudio from source ==="
+    build_torch_extension_from_source "audio" "https://github.com/pytorch/audio.git" "torchaudio"
+    echo "torchaudio" > "$CHECKPOINT_FILE"
+    log "torchaudio build complete"
 }
 
 # ─── Stage 6: Verify ──────────────────────────────────────────────────
@@ -290,15 +342,17 @@ main() {
     preflight
 
     case "$checkpoint" in
-        "")       stage_clone; stage_deps; stage_canary; stage_build; stage_fixup; stage_verify ;;
-        "clone")  stage_deps; stage_canary; stage_build; stage_fixup; stage_verify ;;
-        "deps")   stage_canary; stage_build; stage_fixup; stage_verify ;;
-        "canary") stage_build; stage_fixup; stage_verify ;;
-        "build")  stage_fixup; stage_verify ;;
-        "fixup")  stage_verify ;;
+        "")             stage_clone; stage_deps; stage_canary; stage_build; stage_fixup; stage_build_torchvision; stage_build_torchaudio; stage_verify ;;
+        "clone")        stage_deps; stage_canary; stage_build; stage_fixup; stage_build_torchvision; stage_build_torchaudio; stage_verify ;;
+        "deps")         stage_canary; stage_build; stage_fixup; stage_build_torchvision; stage_build_torchaudio; stage_verify ;;
+        "canary")       stage_build; stage_fixup; stage_build_torchvision; stage_build_torchaudio; stage_verify ;;
+        "build")        stage_fixup; stage_build_torchvision; stage_build_torchaudio; stage_verify ;;
+        "fixup")        stage_build_torchvision; stage_build_torchaudio; stage_verify ;;
+        "torchvision")  stage_build_torchaudio; stage_verify ;;
+        "torchaudio")   stage_verify ;;
         *) log "Unknown checkpoint '$checkpoint' — starting fresh"
            rm -f "$CHECKPOINT_FILE"
-           stage_clone; stage_deps; stage_canary; stage_build; stage_fixup; stage_verify ;;
+           stage_clone; stage_deps; stage_canary; stage_build; stage_fixup; stage_build_torchvision; stage_build_torchaudio; stage_verify ;;
     esac
 }
 
