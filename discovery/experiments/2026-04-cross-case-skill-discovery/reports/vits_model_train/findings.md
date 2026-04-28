@@ -1,8 +1,35 @@
 # Findings — `vits_model_train` skill discovery
 
-**Status:** COMPLETE (2026-04-28). All 15 corrected-validator trials in.
+**Status:** COMPLETE (2026-04-28); annotated 2026-04-28 14:35 ET with filesystem-contamination audit.
 **Author:** Otter
 **Prior version archived as:** `findings_v1_archived_20260428.md` (do not load — its noise-floor reasoning is wrong; superseded by this rewrite).
+
+> **⚠ Filesystem-contamination audit (2026-04-28 14:35 ET).** Stream-log inspection
+> of all 9 batch2+smoke trials shows that 3 trials issued `Edit`/`Write` tool calls
+> against the SHARED `transformers/models/vits/modeling_vits.py` in site-packages,
+> in addition to writing to their per-trial sandbox copy:
+>
+> - `waveA_noskill/noskill_V4_1`
+> - `waveA_noskill/noskill_V6_1`
+> - `waveB_v9_seed2/SKILL_V9_1`
+>
+> **Validation results are still sound for all 9 trials** because `_setup_sandbox`
+> overlays the watched file with the pristine `.original` at trial start, and
+> `validate.py` imports the sandbox copy via PYTHONPATH (verified — `agent_diff.patch`
+> headers reference the sandbox path).
+>
+> **Conservative call:** the 3 contaminated trials are EXCLUDED from headline
+> counts in this annotation. Effect on findings:
+> - **S7 convergent (V9 noskill 2/2 general):** unchanged — both clean trials.
+> - **Skill-trap (V9 SKILL 0/2 → 0/1 general):** direction holds, N halved. The
+>   clean waveA SKILL_V9 trial was `none`; rogue waveB also `none` but excluded.
+> - **V0/V2/V4/V6:** V4 noskill (rogue) excluded; V0 general, V2 noskill general,
+>   V6 SKILL none all hold.
+>
+> The detection mechanism shipped at commit `5ba1b80`
+> (`discovery/filesystem_integrity.py`) catches this bug class going forward.
+> Future runs flagging `filesystem_integrity.contamination_detected: true` are
+> auto-excluded by `merge_results.py`.
 
 ---
 
