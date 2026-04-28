@@ -231,6 +231,15 @@ def main():
 
     print(f"Running torch.compile(fullgraph=True, backend='eager'{dynamic_label})...")
     torch._dynamo.reset()
+    # Skip logging methods that are pure side effects
+    import logging
+    for method_name in (
+        "debug", "info", "warning", "warn", "error", "critical",
+        "fatal", "log", "exception", "warning_once",
+    ):
+        method = getattr(logging.Logger, method_name, None)
+        if method is not None:
+            torch._dynamo.config.ignore_logging_functions.add(method)
     compiled = torch.compile(model, fullgraph=True, backend="eager", dynamic=compile_dynamic)
     try:
         with ctx:
