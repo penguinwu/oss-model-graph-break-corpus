@@ -121,7 +121,51 @@ The `output_padding_mask` zeros out positions beyond the real predicted length �
 **First surfaced:** 2026-04-28 V9 smoke (noskill_V9_1, smoke). **NOT in prior 30-trial findings.** This strategy was invisible until V9 closed the declared-override door.
 **Trade-off:** soft constraint (cap of 50). For TTS this is fine; for other models with unbounded data-dep arange, the agent would need to invent something else (e.g., dynamic padding to `MAX_PHONEMES * MAX_FRAMES`, or restructure the architecture).
 
-### (more strategies pending from batch2 trials)
+### S8 — `torch.compiler.is_compiling()` guard for data-dep branches
+**Problem:** Branches that should not fire under compile (layerdrop, distributed checks, debug-only `torch_compilable_check` calls) trigger data-dependent ops (e.g. `np.random.uniform` for layerdrop, `find_spec` for distributed detection).
+**Fix:** Wrap with `if torch.compiler.is_compiling():` — branch is constant during trace, so Dynamo specializes correctly.
+```python
+# Before:
+skip_the_layer = self.training and (np.random.uniform() < self.layerdrop)
+# After:
+if torch.compiler.is_compiling():
+    skip_the_layer = False
+else:
+    skip_the_layer = self.training and (random.random() < self.layerdrop)
+```
+**Convergence:** V0 noskill, V0 SKILL, V4 SKILL (3+ trials so far). Used in conjunction with `random.random()` swap (S11).
+**Generalization:** any "compile-skippable" code path where eager-time behavior differs from compile-time desired behavior.
+**First surfaced:** corrected re-run, smoke + wave1a (2026-04-28).
+**Trade-off:** during compile, the branch is permanently disabled — if the model relies on layerdrop semantics during compile (rare, since dropout is usually eval-mode only), this is wrong. For VITS train-mode the agent justified that compiled training is unusual; layerdrop disabled in compile is acceptable.
+
+### S9 — Pre-compute as `__init__` cached attribute
+**Problem:** Same as S8 — `find_spec` calls fire during forward.
+**Fix:** Move the check to `__init__` time; cache result as a Python attribute. Forward reads the cached attr (constant under compile).
+```python
+# In VitsEncoder.__init__:
+self._synced_gpus = is_deepspeed_zero3_enabled() or is_fsdp_managed_module(self)
+# In forward:
+synced_gpus = self._synced_gpus  # plain Python attribute; no find_spec call
+```
+**Convergence:** V9 noskill smoke (1 trial so far).
+**Generalization:** any check whose value is constant for the lifetime of the module.
+**First surfaced:** V9 noskill smoke (2026-04-28).
+**Versus S8:** S9 is cleaner when the check is module-lifetime-constant; S8 is needed when the check has runtime value but should be skipped under compile.
+
+### S10 — `torch._check` / `torch._check_is_size` to constrain unbacked symints
+**Problem:** Same as S6 — data-dep `arange` size produces unbacked symint.
+**Fix:** Add `torch._check(max_len >= 2); torch._check(max_len <= 100000)` after the `.item()` call to give Dynamo bounds.
+**Convergence:** V0 SKILL, V2 SKILL (2 trials).
+**Status:** **Apparent fix only.** `gb_under_canonical_inputs == 0` BUT `compile_ok: false` (Inductor `LoweringException` on unbacked symint `u0` in conv stride hints). `torch._check` informs Dynamo but doesn't help Inductor lower the conv. Final fix still requires `backend="eager"` declared override.
+**Generalization:** *necessary* but not *sufficient* for unbacked-symint paths through Inductor conv lowering. Should be combined with S6 (declared overrides) for full V8-class fix.
+**First surfaced:** V0 SKILL (2026-04-28).
+
+### S11 — `random.random()` instead of `np.random.uniform`
+**Problem:** numpy RNG calls untraceable under Dynamo.
+**Fix:** Use stdlib `random.random()` for compile-safe pseudo-randomness. Combined with S8 (gate the branch entirely under compile so RNG isn't invoked anyway).
+**Convergence:** V0 noskill, V0 SKILL, V4 SKILL (3 trials).
+**First surfaced:** prior 30-trial batch (combined w/ S8).
+
 
 ---
 
@@ -203,10 +247,13 @@ Three threads to develop here:
 
 ## Open loops surfaced
 
-1. **Apparent-fix correctness audit.** `general` trials with `max_diff_compiled_vs_eager == 2.0` (the VITS layerdrop noise floor) — are they truly correct, or are they masking a real error? The 2.0 is now properly characterized but should still get a per-strategy correctness check.
+1. **Apparent-fix correctness audit.** `general` trials with `max_diff_compiled_vs_eager == 2.0` (the VITS layerdrop noise floor) — are they truly correct, or are they masking a real error? The 2.0 is now properly characterized but should still get a per-strategy correctness check. *Important:* V0 noskill smoke reports `backend='eager': max_diff = 0.0 (exact)` and `backend='inductor': max_diff = 2.0` — the 2.0 is *Inductor* numerics, not RNG noise. Confirms Inductor float32 numerics on chained exp/log/tanh/spline are the real noise source.
 2. **S7 generalization probe.** Does the static-cap pattern work for non-TTS data-dep `arange.size`? Worth a follow-up case to test.
 3. **Negative-discovery extraction.** stream.jsonl per trial contains the agent's abandoned attempts. Building a tool to extract those would reveal what the agent considers and rejects — high signal for understanding strategy space.
 4. **`debug_graph_breaks_V8_2` perf-skip edge case** (carried from prior findings) — different failure mode from canonical perf-infra bug.
+5. **V2 SKILL discrepancy: agent self-reports 0 GBs but validator reports `agent_gb=2`.** Agent says "Final result: 0 graph breaks". Validator's `_run_agent_baseline` parses `graph_break_count=2` from the same baseline_vits.py output. Likely the regex picks up an early `graph_break_count=2` print before the agent's final test run with declared overrides applied. Worth investigating in `validate_runner.py` `_run_agent_baseline`.
+6. **Possible PyTorch issue: `torch._check_tensor_all` `as_proxy()` failure on lambda msg arg.** V9 noskill smoke explicitly identified: "torch._check_tensor_all is supposed to be the compile-safe check API but it still causes as_proxy() failures for the msg lambda" (PyTorch 2.11). Worth confirming on current nightly + filing upstream issue if reproduces. Distinct from VITS — would benefit any model using `torch._check_tensor_all_with`.
+
 
 ---
 
