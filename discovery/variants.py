@@ -97,11 +97,28 @@ V8 = Variant(
     rationale="Added 2026-04-25 for VitsModel case 3b. V0/V2/V4 produced 12/12 setup-required (agent escapes via baseline edits). V6 (no config flags) was the only variant that surfaced model-layer fixes (4/6 general). V8 closes the harness-reshape escape route while leaving config flips open under the declared-fallback rule (design.md §4.7) — the door V8 closes is harness reshape, not config flips, since forcing config flips into model source is artificial and would distort the data.",
 )
 
+V9 = Variant(
+    id="V9",
+    name="no_setup_at_all",
+    constraint=(
+        "IMPORTANT CONSTRAINT — no setup edits at all: "
+        "all V8 rules apply, AND the V8 EXCEPTION for declared `torch._dynamo.config` "
+        "flips is REVOKED. The fix must work with stock `torch.compile(model)` (Inductor "
+        "backend, default config). Specifically forbidden anywhere in the test/baseline "
+        "script: any `torch._dynamo.config.<flag>` write, any `torch._inductor.config.<flag>` "
+        "write, any `backend=` argument other than the default on `torch.compile()`. "
+        "If no model-source-only fix exists in current PyTorch — i.e. the break is an "
+        "irreducible PyTorch limitation — accept failure and document the limitation in "
+        "your final summary. Document briefly so we can capture the limitation as signal."
+    ),
+    rationale="Added 2026-04-28 after V8 trials revealed agents reliably reach for declared-override escape hatches (capture_scalar_outputs + backend=eager) on VitsModel — V8's EXCEPTION clause was the door agents walked through. V9 closes that door entirely. Predicted outcome on VitsModel: agent either (a) discovers a model-layer rewrite that eliminates predicted_lengths.max() data-dep (e.g. fixed-length pad to MAX_PHONEMES) or (b) cannot fix it and documents the Inductor unbacked-symbolic-shape conv limitation. Both outcomes are signal.",
+)
+
 # Recommended starting set for Phase 1.
 DEFAULT_VARIANTS: tuple[Variant, ...] = (V0, V1, V2, V4, V6)
 
 # Lookup by id.
-ALL_VARIANTS: dict[str, Variant] = {v.id: v for v in (V0, V1, V2, V4, V6, V8)}
+ALL_VARIANTS: dict[str, Variant] = {v.id: v for v in (V0, V1, V2, V4, V6, V8, V9)}
 
 
 def compose_prompt(case_body: str, variant: Variant) -> str:

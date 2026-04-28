@@ -17,6 +17,7 @@ Each experiment is a directory:
 Date prefix gives chronological order. Slug describes the path-finding goal — no opaque labels.
 
 ## Active experiments
+| `2026-04-2026-04-vits-corrected-validator-rerun` | active | [plan.md](2026-04-2026-04-vits-corrected-validator-rerun/plan.md) | — |
 
 | Slug | Status | Plan | Umbrella issue |
 |---|---|---|---|
