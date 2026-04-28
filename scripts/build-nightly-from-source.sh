@@ -173,6 +173,13 @@ stage_build() {
     export CMAKE_CUDA_COMPILER="$CUDA_HOME/bin/nvcc"
     export PATH="$CUDA_HOME/bin:$PATH"
     export USE_CUDA=1 USE_CUDNN=1 USE_NCCL=0
+    # USE_LAPACK=1 (added 2026-04-28): pip-wheel torch links against LAPACK so
+    # `torch.geqrf` / `torch.lstsq` / etc. work on CPU tensors. Without this, the
+    # source build silently produces a torch where any LAPACK-using model fails
+    # at create time. The Animesh sweep on 2026-04-28 had RwkvModel +
+    # RwkvForCausalLM (eval+train, 4 work items) flip from `timeout` → `create_error`
+    # on this exact failure mode. Picks up the system LAPACK from CMAKE's auto-find.
+    export USE_LAPACK=1
     export BUILD_TYPE=Release MAX_JOBS=$(nproc)
     export CMAKE_PREFIX_PATH="${VENV}"
 
@@ -289,6 +296,21 @@ SITECUSTOMIZE_EOF
     else
         log "  WARN: could not detect torch CUDA version — skipping nvidia-cuda-* install + sitecustomize"
     fi
+
+    # Fix 5 (2026-04-28): install Python deps that several corpus models import
+    # at create time (timm, natten). Pip-wheel torch venvs typically have these
+    # already because the venv was bootstrapped via `pip install torch
+    # transformers diffusers timm`. Source-built torch venvs don't pull them, so
+    # ~30 corpus models fail with `<X>Model requires the timm/natten library`
+    # at create time. Same class as the nvrtc bug — venv parity with pip-wheel.
+    # detectron2 (2 corpus models: LayoutLMv2*) is heavier and may need a wheel
+    # index — defer unless it bites recurrently.
+    log "  Installing corpus-required Python deps (timm, natten)..."
+    pip install --no-deps timm 2>&1 | tail -3 || \
+        log "  WARN: timm install failed — ~28 TimmWrapper/TimmBackbone models will create_error"
+    pip install --no-deps natten 2>&1 | tail -3 || \
+        log "  WARN: natten install failed — DinatModel will create_error"
+    log "  OK: corpus-required deps installed"
 
     echo "fixup" > "$CHECKPOINT_FILE"
     log "Post-build fixes applied"
