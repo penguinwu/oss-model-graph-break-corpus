@@ -68,12 +68,12 @@ Total: ~80 min wall, ~30 min Otter active time (rest is agent runs in background
 ## Pre-launch gates
 
 - [x] Gate 0: question + done criteria + loose ends listed (above)
-- [ ] Gate 1: smoke_test exit 0 (will re-run immediately before launch)
-- [ ] Gate 2: single-trial validation — inspect result.json end-to-end; assert sandbox paths in agent_diff.patch + gb_call_sites
-- [ ] Gate 3: 2-trial parallel — sandboxes isolated, no cross-trial contamination, schemas consistent
-- [ ] All loose ends from prior runs CLOSED or DEFERRED with reason (see above)
-- [ ] Estimated wall time documented (above)
-- [ ] Gate 4 launch authorized (this experiment IS the Gate 4 — full-scale = 2 trials at 2-way parallel; sufficient for validation purposes)
+- [x] Gate 1: smoke_test exit 0 (re-run 2026-04-27 19:19 ET — all 9 Layer-1 tests passed including test_parallel_runs_isolated)
+- [x] Gate 2: single-trial validation — inspect result.json end-to-end; assert sandbox paths in agent_diff.patch + gb_call_sites
+- [x] Gate 3: 2-trial parallel — sandboxes isolated, no cross-trial contamination, schemas consistent
+- [x] All loose ends from prior runs CLOSED or DEFERRED with reason (see above)
+- [x] Estimated wall time documented (above)
+- [x] Gate 4 launch authorized (this experiment IS the Gate 4 — full-scale = 2 trials at 2-way parallel; sufficient for validation purposes)
 
 ---
 
