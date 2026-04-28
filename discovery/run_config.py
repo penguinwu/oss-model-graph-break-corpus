@@ -288,6 +288,30 @@ def main() -> int:
     setup_elapsed = time.time() - t_setup_start
     print(f"[{args.trial_label}] sandbox setup took {setup_elapsed:.1f}s", file=sys.stderr)
 
+    # 2b. Filesystem-integrity baseline (Tier 1 + Tier 3 canaries).
+    # Detects post-trial that any monitored dir (site-packages, corpus repo,
+    # myclaw-shared) was modified. Sandbox + out_dir are allowed write roots.
+    # See discovery/filesystem_integrity.py for design rationale.
+    from discovery.filesystem_integrity import (
+        DEFAULT_MONITORED_GLOBS, take_snapshot, plant_canaries,
+        _resolve_monitored_roots,
+    )
+    t_fs_start = time.time()
+    fs_snapshot = take_snapshot(
+        monitored_globs=DEFAULT_MONITORED_GLOBS,
+        allowed_roots=[args.out_dir],
+    )
+    fs_snapshot_path = args.out_dir / "_filesystem_baseline.json"
+    fs_snapshot_path.write_text(json.dumps(fs_snapshot.to_dict()))
+    canary_record = plant_canaries(
+        monitored_dirs=_resolve_monitored_roots(DEFAULT_MONITORED_GLOBS),
+        trial_id=args.trial_label,
+    )
+    fs_setup_elapsed = time.time() - t_fs_start
+    print(f"[{args.trial_label}] filesystem baseline: {len(fs_snapshot.files)} files, "
+          f"{len(canary_record.canaries)} canaries, took {fs_setup_elapsed:.1f}s",
+          file=sys.stderr)
+
     # 3. Compose prompt
     prompt = compose_prompt(sandboxed_case.case_body, variant)
     (args.out_dir / "prompt.txt").write_text(prompt)
@@ -354,6 +378,43 @@ def main() -> int:
     fix_status = (validation or {}).get("fix_status")
     fix_survives_perf = _derive_fix_survives_perf(fix_status, perf, perf_tier2)
 
+    # 10b. Filesystem-integrity verification.
+    # Compare post-trial state to the pre-trial baseline + verify canaries.
+    # Any contamination flags the trial as `EXCLUDED_CONTAMINATED` for
+    # downstream merge_results aggregation.
+    from discovery.filesystem_integrity import (
+        diff_against_snapshot, deep_inspect, verify_canaries,
+    )
+    t_fs_end = time.time()
+    fs_diff = diff_against_snapshot(fs_snapshot, allowed_roots=[args.out_dir])
+    canary_result = verify_canaries(canary_record)
+    contamination_detected = fs_diff.has_changes or not canary_result.intact
+    if contamination_detected:
+        # Tier 2: deep inspect (md5 + line counts) for forensic record.
+        # We don't have backups for arbitrary site-packages files, so this
+        # records the new state only (no diff vs original).
+        fs_diff = deep_inspect(fs_diff, backups={})
+        flags.append("shared_filesystem_touched")
+    fs_verify_elapsed = time.time() - t_fs_end
+    fs_report_path = args.out_dir / "_filesystem_contamination.json"
+    fs_report = {
+        "tier1_baseline_path": str(fs_snapshot_path),
+        "monitored_roots": fs_snapshot.monitored_roots,
+        "allowed_roots": fs_snapshot.allowed_roots,
+        "contamination_detected": contamination_detected,
+        "tier1_diff": fs_diff.to_dict(),
+        "tier3_canaries": canary_result.to_dict(),
+        "tier3_canary_paths": list(canary_record.canaries.keys()),
+        "verify_elapsed_s": fs_verify_elapsed,
+    }
+    fs_report_path.write_text(json.dumps(fs_report, indent=2))
+    print(f"[{args.trial_label}] filesystem integrity: "
+          f"{'CONTAMINATED' if contamination_detected else 'clean'}, "
+          f"{len(fs_diff.changes)} file changes, "
+          f"{'canaries OK' if canary_result.intact else f'{len(canary_result.failures)} canary failures'}, "
+          f"verify took {fs_verify_elapsed:.1f}s",
+          file=sys.stderr)
+
     # 11. Assemble + write result.json
     result = {
         "case_id": args.case,
@@ -371,6 +432,12 @@ def main() -> int:
         "fix_survives_perf": fix_survives_perf,
         "sandbox_dir": str(sandbox),
         "sandbox_setup_s": setup_elapsed,
+        "filesystem_integrity": {
+            "contamination_detected": contamination_detected,
+            "n_changed_files": len(fs_diff.changes),
+            "n_canary_failures": len(canary_result.failures),
+            "report_path": str(fs_report_path),
+        },
     }
     (args.out_dir / "result.json").write_text(json.dumps(result, indent=2))
     print(f"[{args.trial_label}] result written to {args.out_dir / 'result.json'}", file=sys.stderr)
