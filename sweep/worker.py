@@ -20,6 +20,33 @@ import traceback
 import warnings
 
 
+# ─── Error recording ─────────────────────────────────────────────────────────
+# 2026-04-28: bumped from 500 → 8000 chars after the Animesh sweep nvrtc bug,
+# where the actionable error (`nvrtc: error: failed to open
+# libnvrtc-builtins.so.12.4`) was preceded by ~5KB of inline CUDA kernel source
+# and got truncated. 67% of that sweep's eager_errors lost their root cause to
+# the 500-char cap. 8KB captures realistic errors (CUDA codegen + traceback)
+# without bloating result.json beyond a few MB even for full sweeps.
+MAX_ERR_CHARS = 8000
+
+
+def _record_error(result: dict, e: Exception, context: str = "") -> None:
+    """Set `result["error"]` + `result["error_type"]` from `e`.
+
+    `context`, if provided, is prepended to the error string (e.g. "shape_a eager:").
+    Truncated at MAX_ERR_CHARS; flagged in `result["error_truncated"]` if so.
+    """
+    err_str = str(e)
+    err_type = type(e).__name__
+    full = f"{context}{err_str}" if context else err_str
+    if len(full) > MAX_ERR_CHARS:
+        result["error"] = full[:MAX_ERR_CHARS]
+        result["error_truncated"] = {"original_chars": len(full), "kept": MAX_ERR_CHARS}
+    else:
+        result["error"] = full
+    result["error_type"] = err_type
+
+
 # ─── Chaos mode fast path ────────────────────────────────────────────────────
 # Handle chaos mode BEFORE importing torch (saves 3-5s startup).
 # This makes stress tests fast and prevents chaos workers from being
@@ -3043,8 +3070,7 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
         model, inputs_dict, inputs_tuple = create_model(spec, device)
     except Exception as e:
         result["status"] = "create_error"
-        result["error"] = str(e)[:500]
-        result["error_type"] = type(e).__name__
+        _record_error(result, e)
         result["create_time_s"] = round(time.perf_counter() - t_start, 3)
         return result
     result["create_time_s"] = round(time.perf_counter() - t_start, 3)
@@ -3117,15 +3143,18 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
                         result["image_token_retry"] = need_features
                     except Exception as e2:
                         result["status"] = "eager_error"
-                        result["error"] = str(e2)[:500]
-                        result["error_type"] = type(e2).__name__
+                        _record_error(result, e2)
                         result["eager_time_s"] = round(time.perf_counter() - t_eager, 3)
                         result["image_token_retry_failed"] = need_features
                         _cleanup(model, device)
                         return result
         if not retried:
             result["status"] = "eager_error"
-            result["error"] = err_str[:500]
+            # Re-raise-style: synthesize a fake exception just to keep the
+            # helper's signature uniform. err_str/err_type were captured above.
+            result["error"] = err_str if len(err_str) <= MAX_ERR_CHARS else err_str[:MAX_ERR_CHARS]
+            if len(err_str) > MAX_ERR_CHARS:
+                result["error_truncated"] = {"original_chars": len(err_str), "kept": MAX_ERR_CHARS}
             result["error_type"] = err_type
             result["eager_time_s"] = round(time.perf_counter() - t_eager, 3)
             _cleanup(model, device)
@@ -3166,7 +3195,8 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
         if uses_fullgraph:
             result["fullgraph_ok"] = True
     except Exception as e:
-        err_str = str(e)[:500]
+        err_str_full = str(e)
+        err_str = err_str_full if len(err_str_full) <= MAX_ERR_CHARS else err_str_full[:MAX_ERR_CHARS]
         err_type = type(e).__name__
 
         if uses_fullgraph:
@@ -3191,17 +3221,18 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
             if is_infra_error:
                 result["status"] = "compile_error"
                 result["fullgraph_ok"] = False
-                result["error"] = err_str
-                result["error_type"] = err_type
+                _record_error(result, e)
             else:
                 result["status"] = "graph_break"
                 result["fullgraph_ok"] = False
                 result["fullgraph_error"] = err_str
+                if len(err_str_full) > MAX_ERR_CHARS:
+                    result["fullgraph_error_truncated"] = {
+                        "original_chars": len(err_str_full), "kept": MAX_ERR_CHARS}
         else:
             # Non-fullgraph mode: any exception is an error
             result["status"] = "error"
-            result["error"] = err_str
-            result["error_type"] = err_type
+            _record_error(result, e)
     result["compile_time_s"] = round(time.perf_counter() - t_compile, 3)
     result["phase"] = "done"
 
@@ -3437,8 +3468,7 @@ def run_correctness(spec, device, mode):
         model, inputs_dict, inputs_tuple = create_model(spec, device)
     except Exception as e:
         result["status"] = "create_error"
-        result["error"] = str(e)[:500]
-        result["error_type"] = type(e).__name__
+        _record_error(result, e)
         return result
     result["create_time_s"] = round(time.perf_counter() - t_start, 3)
 
@@ -3469,8 +3499,7 @@ def run_correctness(spec, device, mode):
                 out_eager = model(**inputs_dict)
     except Exception as e:
         result["status"] = "eager_error"
-        result["error"] = str(e)[:500]
-        result["error_type"] = type(e).__name__
+        _record_error(result, e)
         _cleanup(model, device)
         return result
 
@@ -3481,8 +3510,7 @@ def run_correctness(spec, device, mode):
         compiled = torch.compile(model, fullgraph=True, backend="eager")
     except Exception as e:
         result["status"] = "compile_error"
-        result["error"] = str(e)[:500]
-        result["error_type"] = type(e).__name__
+        _record_error(result, e)
         _cleanup(model, device)
         return result
 
@@ -3496,8 +3524,7 @@ def run_correctness(spec, device, mode):
                 out_compiled = compiled(**inputs_dict)
     except Exception as e:
         result["status"] = "compile_error"
-        result["error"] = str(e)[:500]
-        result["error_type"] = type(e).__name__
+        _record_error(result, e)
         _cleanup(model, device)
         return result
 
@@ -3557,8 +3584,7 @@ def run_validate(spec, device, mode, dynamic=False):
         model, inputs_dict_a, inputs_tuple_a = create_model(spec, device, batch_size=SHAPE_A_BATCH)
     except Exception as e:
         result["status"] = "create_error"
-        result["error"] = str(e)[:500]
-        result["error_type"] = type(e).__name__
+        _record_error(result, e)
         return result
     result["create_time_s"] = round(time.perf_counter() - t_start, 3)
 
@@ -3579,8 +3605,7 @@ def run_validate(spec, device, mode, dynamic=False):
                 _ = model(**inputs_dict_a)
     except Exception as e:
         result["status"] = "eager_error"
-        result["error"] = f"shape_a eager: {str(e)[:400]}"
-        result["error_type"] = type(e).__name__
+        _record_error(result, e, context="shape_a eager: ")
         _cleanup(model, device)
         return result
 
@@ -3600,8 +3625,7 @@ def run_validate(spec, device, mode, dynamic=False):
                 _ = compiled(**inputs_dict_a)
     except Exception as e:
         result["status"] = "compile_error"
-        result["error"] = str(e)[:500]
-        result["error_type"] = type(e).__name__
+        _record_error(result, e)
         _cleanup(model, device)
         return result
 
@@ -3611,8 +3635,7 @@ def run_validate(spec, device, mode, dynamic=False):
         inputs_dict_b, inputs_tuple_b = _create_inputs_only(spec, device, batch_size=SHAPE_B_BATCH)
     except Exception as e:
         result["status"] = "create_error_b"
-        result["error"] = f"shape_b create: {str(e)[:400]}"
-        result["error_type"] = type(e).__name__
+        _record_error(result, e, context="shape_b create: ")
         _cleanup(model, device)
         return result
 
@@ -3626,8 +3649,7 @@ def run_validate(spec, device, mode, dynamic=False):
                 compiled_out_b = compiled(**inputs_dict_b)
     except Exception as e:
         result["status"] = "compiled_shape_b_error"
-        result["error"] = str(e)[:500]
-        result["error_type"] = type(e).__name__
+        _record_error(result, e)
         _cleanup(model, device)
         return result
 
@@ -3643,8 +3665,7 @@ def run_validate(spec, device, mode, dynamic=False):
                 eager_out_b = eager_model(**inputs_dict_b)
     except Exception as e:
         result["status"] = "eager_shape_b_error"
-        result["error"] = str(e)[:500]
-        result["error_type"] = type(e).__name__
+        _record_error(result, e)
         _cleanup(model, device)
         return result
 
@@ -3688,8 +3709,7 @@ def run_explain(spec, device, mode, dynamic=False, compile_kwargs=None):
         model, inputs_dict, inputs_tuple = create_model(spec, device)
     except Exception as e:
         result["status"] = "create_error"
-        result["error"] = str(e)[:500]
-        result["error_type"] = type(e).__name__
+        _record_error(result, e)
         return result
 
     if mode == "train":
