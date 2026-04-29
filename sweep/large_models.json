@@ -41,6 +41,13 @@
     "timeout_tier": "large",
     "wall_time_s": 45.0
   },
+  "DonutSwinModel": {
+    "discovered": "2026-04-28",
+    "resolved_status": "full_graph",
+    "source": "hf",
+    "timeout_tier": "large",
+    "wall_time_s": 490.17
+  },
   "EdgeTamModel": {
     "discovered": "2026-04-01",
     "resolved_status": "create_error",
@@ -55,6 +62,13 @@
     "timeout_tier": "large",
     "wall_time_s": 570.02
   },
+  "Florence2ForConditionalGeneration": {
+    "discovered": "2026-04-28",
+    "resolved_status": "graph_break",
+    "source": "hf",
+    "timeout_tier": "large",
+    "wall_time_s": 160.1
+  },
   "Florence2Model": {
     "discovered": "2026-04-12",
     "resolved_status": "graph_break",
@@ -64,6 +78,12 @@
   },
   "Gemma3nForConditionalGeneration": {
     "discovered": "2026-04-15",
+    "phase_at_timeout": "compile",
+    "source": "hf",
+    "timeout_tier": "very_large"
+  },
+  "Gemma3nModel": {
+    "discovered": "2026-04-28",
     "phase_at_timeout": "compile",
     "source": "hf",
     "timeout_tier": "very_large"
@@ -165,6 +185,19 @@
   },
   "Sam2VisionModel": {
     "discovered": "2026-04-01",
+    "phase_at_timeout": "compile",
+    "source": "hf",
+    "timeout_tier": "very_large"
+  },
+  "SwinModel": {
+    "discovered": "2026-04-28",
+    "resolved_status": "full_graph",
+    "source": "hf",
+    "timeout_tier": "large",
+    "wall_time_s": 515.18
+  },
+  "Swinv2Model": {
+    "discovered": "2026-04-28",
     "phase_at_timeout": "compile",
     "source": "hf",
     "timeout_tier": "very_large"

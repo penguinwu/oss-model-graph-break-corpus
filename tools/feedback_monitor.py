@@ -44,6 +44,8 @@ AGENT_PREFIXES = (
     "[🦦 Otter]:",           # Otter's standard GChat prefix (with emoji)
     "[Otter]:",              # Otter prefix without emoji (GChat may strip it)
     "*Technical Report:",     # Technical report posts
+    "*Fullgraph sweep complete",  # Fullgraph sweep result posts
+    "*Fullgraph sweep",      # Other sweep report variants
     "Got it — logged as",
     "Thanks for the report!",
     "Full report:",
