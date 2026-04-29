@@ -170,6 +170,7 @@ The sweep CLI accepts custom `torch.compile()` configuration directly. No need t
 | `--inductor-config KEY=VAL` (repeatable) | sets `torch._inductor.config.<key>` | `--inductor-config max_autotune=true` |
 | `--setup-script PATH` | Python file `exec()`'d in each worker before compile | `--setup-script configs/my-prep.py` (for multi-line config that doesn't fit `KEY=VAL`) |
 | `--run-name SLUG` | tags the run as experimental; defaults output to `sweep_results/experiments/<slug>-<date>/` and tags `metadata.run_name` | `--run-name my-experiment` |
+| `--strict-known-errors` | exit non-zero if any unexpected `create_error` or `eager_error` appears (i.e. anything not pre-declared in `known_errors.json`) | use in CI / before shipping data downstream |
 
 Example — fullgraph + dynamic shapes + a custom suppression patch:
 
@@ -183,6 +184,47 @@ python3 sweep/run_sweep.py sweep \
 Defaults are bit-for-bit identical when no compile-config flags are passed — the cron baseline is unaffected.
 
 **Issue tracker safety.** `tools/file_issues.py sweep-report` and `sweep-update` refuse to operate on plans tagged with `run_name` (i.e. experimental sweeps). Pass `--allow-experimental` to override; the issue tracker is normally fed only by the official cron baseline.
+
+## Known errors gate (no silent infrastructure failures)
+
+The sweep skips models pre-declared in [`sweep/known_errors.json`](../sweep/known_errors.json) AND validates that no NEW gated failure (currently `create_error` or `eager_error`) appears outside that list. This prevents setup/build/dep/model bugs from quietly masking real graph-break improvements or regressions.
+
+**Workflow when a sweep flags an unexpected gated failure:**
+
+1. The sweep prints a loud warning naming each unexpected (model, mode, status, error head).
+2. Decide:
+   - **Fix the underlying issue** (e.g. install a missing dep, fix a build flag, update a config) — preferred when feasible.
+   - **Add an entry to `known_errors.json`** with a `reason` field if the failure is a stable known bug not worth fixing now.
+3. Re-run the sweep. With `--strict-known-errors`, an unresolved gated failure causes a non-zero exit (use this in CI / before shipping data downstream).
+
+**Entry shape:**
+
+```json
+{
+  "status": "create_error",        // or "eager_error"
+  "model": "ZambaForCausalLM",
+  "modes": ["eval", "train"],
+  "error_pattern": "tie_weights_keys",
+  "added": "2026-04-28",
+  "reason": "tie_weights_keys definition bug — see issue #XXX"
+}
+```
+
+The validator matches `(model, status, mode, error_pattern_substring)`. To remove an entry: delete it; the next sweep re-tests the model and surfaces the new status.
+
+## Tier-aware timeouts (large + very_large model registry)
+
+Models recorded in [`sweep/large_models.json`](../sweep/large_models.json) get extended timeouts based on their tier:
+
+| Tier | Timeout multiplier (vs `--timeout`) | Example models |
+|---|---|---|
+| (no tier; default) | 1× (the `--timeout` value) | most models — fast |
+| `large` | 3× | AlignModel, ConvNextV2Model, ... |
+| `very_large` | 9× | BltModel, Gemma3nModel, Gemma3nForConditionalGeneration, ... |
+
+With default `--timeout 180`, that's 540s for `large` and 1620s for `very_large`. The launch logs the count + per-tier timeout. The registry self-grows: when a model first hits a timeout in a sweep, the orchestrator promotes it to the next tier and writes the entry back to `large_models.json`.
+
+If a model in `very_large` still times out at 9× — that's a real PyTorch / model issue (e.g. a dynamo runaway during compile), worth filing upstream rather than just bumping the timeout further.
 
 ## Conventions
 
