@@ -3078,11 +3078,127 @@ def _synthesize_diffusers_inputs(model, model_cls, device, batch=1, latent_h=8, 
     return inputs
 
 
+def _load_diffusers_test_fixture(model_name):
+    """Try to load (init_dict, inputs_dict) from the diffusers test suite.
+
+    Each test file at /tmp/diffusers-src/tests/models/.../test_models_X.py
+    defines a class with `model_class = X` and a `prepare_init_args_and_inputs_for_common`
+    method that returns the canonical (init_dict, inputs_dict) tuple.
+
+    These fixtures are maintained by the diffusers team and reflect the actual
+    valid configs/shapes per model — way more reliable than heuristic forward-
+    signature introspection.
+
+    Returns (init_dict, inputs_dict) or None if unavailable.
+    """
+    import os, ast, textwrap, re
+    SRC_ROOT = "/tmp/diffusers-src/tests/models"
+    if not os.path.isdir(SRC_ROOT):
+        return None
+
+    # Build class→path mapping (memoize via function attr)
+    if not hasattr(_load_diffusers_test_fixture, "_mapping"):
+        mapping = {}
+        for root, _, files in os.walk(SRC_ROOT):
+            for f in files:
+                if not (f.startswith("test_models_") or f.startswith("test_modeling_")) or not f.endswith(".py"):
+                    continue
+                path = os.path.join(root, f)
+                try:
+                    src = open(path).read()
+                    tree = ast.parse(src)
+                except Exception:
+                    continue
+                for node in ast.walk(tree):
+                    if not isinstance(node, ast.ClassDef): continue
+                    for stmt in node.body:
+                        if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1:
+                            t = stmt.targets[0]
+                            if isinstance(t, ast.Name) and t.id == "model_class":
+                                if isinstance(stmt.value, ast.Name):
+                                    mapping[stmt.value.id] = path
+        _load_diffusers_test_fixture._mapping = mapping
+
+    test_path = _load_diffusers_test_fixture._mapping.get(model_name)
+    if not test_path:
+        return None
+
+    src = open(test_path).read()
+    tree = ast.parse(src)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef): continue
+        # Confirm this is the right test class
+        match = False
+        for stmt in node.body:
+            if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1:
+                t = stmt.targets[0]
+                if isinstance(t, ast.Name) and t.id == "model_class":
+                    if isinstance(stmt.value, ast.Name) and stmt.value.id == model_name:
+                        match = True
+        if not match: continue
+        # Extract all method bodies in this class
+        method_srcs = {}
+        for stmt in node.body:
+            if isinstance(stmt, ast.FunctionDef):
+                method_srcs[stmt.name] = textwrap.dedent(ast.get_source_segment(src, stmt))
+        if "prepare_init_args_and_inputs_for_common" not in method_srcs:
+            return None
+        # Build runnable namespace with stubs for common diffusers test helpers
+        helpers = """
+torch_device = 'cpu'
+def floats_tensor(shape, scale=1.0, rng=None, name=None):
+    return torch.randn(*shape) * scale
+def randn_tensor(shape, *args, **kwargs):
+    return torch.randn(*shape)
+def randint_tensor(shape, low=0, high=10):
+    return torch.randint(low, high, shape)
+def enable_full_determinism(): pass
+"""
+        full_src = helpers + "\n" + "\n\n".join(method_srcs.values())
+        # Strip @property and other decorators
+        full_src = re.sub(r"^\s*@property\s*\n", "", full_src, flags=re.MULTILINE)
+        full_src = re.sub(r"^\s*@\w+(\.\w+)*(\([^)]*\))?\s*\n", "", full_src, flags=re.MULTILINE)
+        ns = {"torch": torch}
+        try:
+            exec(full_src, ns)
+        except Exception:
+            return None
+        class _Self: pass
+        s = _Self()
+        for name in method_srcs:
+            if name in ns:
+                setattr(s, name, ns[name].__get__(s, _Self))
+        try:
+            if hasattr(s, "dummy_input"):
+                s.dummy_input = s.dummy_input()
+            return s.prepare_init_args_and_inputs_for_common()
+        except Exception:
+            return None
+    return None
+
+
 def create_diffusers_model(spec, device):
     import diffusers, inspect
 
     model_name = spec.get("hf_class") or spec["name"]
     model_cls = getattr(diffusers, model_name)
+
+    # Prefer test-suite fixture from the diffusers source repo (cloned at
+    # /tmp/diffusers-src). These are maintained by HF and reflect the canonical
+    # (init_dict, inputs_dict) per model — far more reliable than heuristic
+    # forward-signature introspection.
+    if not spec.get("constructor_args") and not spec.get("inputs"):
+        fixture = _load_diffusers_test_fixture(model_name)
+        if fixture is not None:
+            init_dict, inputs_dict = fixture
+            try:
+                model = model_cls(**init_dict).to(device)
+                inputs = {k: (v.to(device) if isinstance(v, torch.Tensor) else v)
+                          for k, v in inputs_dict.items()}
+                return model, inputs, None
+            except Exception:
+                # Fall through to existing path if the fixture-driven attempt fails
+                pass
 
     # Use provided config or try no-arg construction (most diffusers ModelMixin
     # subclasses register_to_config with all defaults, so cls() works directly).
