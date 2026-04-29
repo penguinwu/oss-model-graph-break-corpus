@@ -78,10 +78,29 @@ An issue qualifies for closing only when every model is accounted for.
 
 ## Labels
 
-Use `for:*` labels to route issues:
+### Routing labels (`for:*`)
+
+Where the fix is expected to land:
+
 - `for:dynamo-team` — PyTorch Dynamo compiler issues
 - `for:hf-transformers` — HuggingFace Transformers model/library fixes
 - `for:corpus-tooling` — corpus pipeline and tooling improvements
+- `for:corpus-team` — corpus content / data quality (model selection, configs, validators)
+
+### Disposition labels
+
+What kind of fix the break needs:
+
+- `needs-model-rewrite` — graph break we believe is best fixed by rewriting the model code (HF, model author, or via an agent skill), not by Dynamo improvements. Apply to data-dep branching patterns where the model could trivially be made branchless, control-flow patterns that don't fit Dynamo's tracing model, etc. Examples: layerdrop (#77), mamba mask all-ones fast-path (#78). The corpus uses this to differentiate Dynamo work vs model rewrites — these are also the prime candidates for the graph-break-skill discovery project.
+
+A single issue can carry both routing (`for:dynamo-team`) and disposition (`needs-model-rewrite`) — the disposition flags that even though we're surfacing it to Dynamo, the lever is on the model side. Useful when we want Dynamo eyes on the pattern even if the actual fix lives elsewhere.
+
+### Other taxonomy labels
+
+- `graph-break`, `create_error`, `eager_error`, `compile_error`, `timeout`, `worker_error` — failure status (matches sweep status enum)
+- `data-quality`, `flag-quality`, `dynamic-shapes`, `corpus-infra`, `explain-error` — finer-grained categorization
+- `high-impact` — manual flag for top-priority issues
+- `wontfix`, `duplicate`, `invalid` — standard GitHub housekeeping
 
 ## Next steps
 
