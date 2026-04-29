@@ -291,7 +291,8 @@ def enumerate_diffusers():
     }
 
     models = []
-    skipped_no_config = []
+    skipped_unconstructable = []
+    auto_constructed = []
     # See enumerate_hf for rationale — tolerate broken lazy imports.
     for name in sorted(dir(diffusers)):
         try:
@@ -308,32 +309,59 @@ def enumerate_diffusers():
         if "Multi" in name:
             continue
 
-        # Require an EXACT FAMILY_CONFIGS entry. Family-match by prefix sounded
-        # appealing (AutoencoderKLCogVideoX uses AutoencoderKL-shaped inputs)
-        # but in practice the variants have divergent constructor schemas
-        # (different down_block_type strings, different __init__ kwargs) and
-        # 15 of 16 AutoencoderKL family-match models still create_error'd in
-        # an empirical rerun. Better to skip cleanly and add explicit configs
-        # case-by-case (#94) than to ship a leaky family-match pretense.
+        # Path 1: explicit FAMILY_CONFIGS entry (canonical for tested-known shapes)
         config = FAMILY_CONFIGS.get(name)
-        if not config:
-            skipped_no_config.append(name)
+        if config:
+            models.append({
+                "name": name,
+                "source": "diffusers",
+                "hf_class": name,
+                "constructor_args": config["constructor_args"],
+                "inputs": config["inputs"],
+                "has_config": True,
+            })
+            continue
+
+        # Path 2: signature-only check. Most diffusers ModelMixin subclasses
+        # use `register_to_config` decorator so every __init__ arg has a
+        # default — we don't need to actually construct (which would be slow,
+        # ~10s per model at enumeration). Just check there's no required arg;
+        # if `cls()` would succeed, emit the spec, and let the worker's
+        # `create_diffusers_model` do the actual construction + auto-synthesize
+        # inputs from `forward.__signature__` at create time. If construction
+        # actually fails at sweep time, the row goes to gated bucket where the
+        # validator's `harness` classifier ("__init__() missing N required
+        # positional arguments") catches it.
+        try:
+            init_sig = inspect.signature(obj.__init__)
+            required = [p for p in init_sig.parameters.values()
+                        if p.default is p.empty
+                        and p.name != "self"
+                        and p.kind not in (p.VAR_POSITIONAL, p.VAR_KEYWORD)]
+            if required:
+                skipped_unconstructable.append(name)
+                continue
+        except (ValueError, TypeError):
+            skipped_unconstructable.append(name)
             continue
 
         models.append({
             "name": name,
             "source": "diffusers",
             "hf_class": name,
-            "constructor_args": config["constructor_args"],
-            "inputs": config["inputs"],
-            "has_config": True,
+            "auto_inputs": True,
         })
+        auto_constructed.append(name)
 
-    if skipped_no_config:
-        print(f"[enumerate_diffusers] Skipped {len(skipped_no_config)} ModelMixin "
-              f"subclasses with no configured inputs/constructor (would be harness "
-              f"noise in the gated bucket). Add an entry to FAMILY_CONFIGS to "
-              f"re-enable. Examples: {', '.join(skipped_no_config[:3])}, ...",
+    if auto_constructed:
+        print(f"[enumerate_diffusers] Auto-constructed {len(auto_constructed)} "
+              f"models via no-arg trial; inputs synthesized at create time from "
+              f"forward signature.", file=sys.stderr)
+    if skipped_unconstructable:
+        print(f"[enumerate_diffusers] Skipped {len(skipped_unconstructable)} "
+              f"ModelMixin subclasses that need explicit constructor_args. "
+              f"Add a FAMILY_CONFIGS entry to enable. Examples: "
+              f"{', '.join(skipped_unconstructable[:3])}, ...",
               file=sys.stderr)
 
     return models

@@ -2957,18 +2957,75 @@ def _detect_hf_input_type(model_name, config):
     return "text"
 
 
+def _synthesize_diffusers_inputs(model, model_cls, device, batch=1, latent_h=8, latent_w=8):
+    """Build a minimal valid `inputs` dict for `model.forward` by introspecting
+    the forward signature.
+
+    Diffusers models have well-known parameter name conventions
+    (`sample`, `hidden_states`, `timestep`, `encoder_hidden_states`, etc).
+    Map each name to a sensible-shaped tensor. Returns None if any required
+    parameter has an unrecognized name (caller should fall back).
+    """
+    import inspect
+    sig = inspect.signature(model_cls.forward)
+    params = [p for p in sig.parameters.values() if p.name != "self"]
+    required = [p for p in params if p.default is p.empty
+                and p.kind not in (p.VAR_POSITIONAL, p.VAR_KEYWORD)]
+
+    # Decide channel/latent geometry based on class name. Most diffusers
+    # autoencoders use 3-channel input; latent-space transformers use the
+    # configured latent_channels.
+    name = model_cls.__name__
+    is_3d = any(k in name for k in ("3D", "Video", "Allegro", "CogVideo", "Cosmos",
+                                     "HunyuanVideo", "LTXVideo", "Mochi", "Wan"))
+    in_ch = getattr(getattr(model, "config", None), "in_channels", None) or 3
+    latent_ch = getattr(getattr(model, "config", None), "latent_channels", None) or 4
+
+    inputs = {}
+    for p in required:
+        n = p.name.lower()
+        if n == "sample":
+            if is_3d:
+                inputs[p.name] = torch.randn(batch, in_ch, 4, 32, 32, device=device)
+            else:
+                inputs[p.name] = torch.randn(batch, in_ch, 64, 64, device=device)
+        elif n == "hidden_states":
+            # 4D for vision transformers, 3D for token-stream models
+            if any(k in name for k in ("Transformer2D", "DiTransformer", "Transformer3D")):
+                inputs[p.name] = torch.randn(batch, latent_ch, latent_h, latent_w, device=device)
+            else:
+                inputs[p.name] = torch.randn(batch, 32, 64, device=device)
+        elif n == "timestep":
+            inputs[p.name] = torch.randint(0, 1000, (batch,), device=device)
+        elif n in ("encoder_hidden_states", "context"):
+            inputs[p.name] = torch.randn(batch, 8, 32, device=device)
+        elif n == "class_labels":
+            num_cls = getattr(getattr(model, "config", None), "num_classes", 10) or 10
+            inputs[p.name] = torch.randint(0, num_cls, (batch,), device=device)
+        elif n == "controlnet_cond":
+            inputs[p.name] = torch.randn(batch, 3, 64, 64, device=device)
+        elif n == "conditioning_scale":
+            inputs[p.name] = torch.tensor(1.0, device=device)
+        elif n in ("attention_mask", "encoder_attention_mask"):
+            inputs[p.name] = torch.ones(batch, 8, device=device, dtype=torch.long)
+        else:
+            return None  # unrecognized required param
+    return inputs
+
+
 def create_diffusers_model(spec, device):
-    import diffusers
+    import diffusers, inspect
 
     model_name = spec.get("hf_class") or spec["name"]
     model_cls = getattr(diffusers, model_name)
 
-    # Use provided config or try minimal defaults
+    # Use provided config or try no-arg construction (most diffusers ModelMixin
+    # subclasses register_to_config with all defaults, so cls() works directly).
     constructor_args = spec.get("constructor_args", {})
     model = model_cls(**constructor_args).to(device)
 
-    # Use provided inputs or try to generate from spec
-    input_spec = spec.get("inputs", {})
+    # Use provided inputs or auto-synthesize from forward signature
+    input_spec = spec.get("inputs")
     if input_spec:
         inputs = {}
         for k, shape in input_spec.items():
@@ -2988,7 +3045,12 @@ def create_diffusers_model(spec, device):
             inputs["class_labels"] = torch.randint(0, num_classes, inputs["class_labels"].shape, device=device)
         return model, inputs, None
 
-    # Fallback: try positional args based on model type
+    # No explicit input spec — auto-synthesize from forward signature
+    inputs = _synthesize_diffusers_inputs(model, model_cls, device)
+    if inputs is not None:
+        return model, inputs, None
+
+    # Synthesizer didn't recognize a required param — caller will see eager_error
     return model, {}, None
 
 
