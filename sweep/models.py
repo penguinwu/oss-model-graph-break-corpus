@@ -383,15 +383,18 @@ def enumerate_custom():
 def enumerate_all():
     """Enumerate models from all sources.
 
-    Diffusers models without configs are auto-excluded (they'd fail to construct).
-    Use enumerate_diffusers() directly to include them.
+    Diffusers models are included if they either have an explicit
+    FAMILY_CONFIGS entry (has_config=True) OR pass the no-required-init-args
+    signature check (auto_inputs=True). Models that need explicit constructor
+    args but lack a FAMILY_CONFIGS entry are excluded.
     """
     models = []
     # HF first: smaller, more diverse, expose more problems early
     models.extend(enumerate_hf())
     models.extend(enumerate_timm())
-    # Only include diffusers models that have known constructor configs
-    models.extend([m for m in enumerate_diffusers() if m.get("has_config", False)])
+    # Include diffusers models with explicit configs OR auto-inputs introspection
+    models.extend([m for m in enumerate_diffusers()
+                   if m.get("has_config", False) or m.get("auto_inputs", False)])
     # Custom models (non-HF repos)
     models.extend(enumerate_custom())
     return models
