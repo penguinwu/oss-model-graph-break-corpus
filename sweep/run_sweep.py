@@ -400,7 +400,7 @@ def run_sweep(args):
     # create_error or eager_error bugs are skipped here so they don't pollute
     # output; any *new* failure of those classes during the sweep is flagged
     # loud post-identify (and with --strict-known-errors, exits non-zero).
-    known_error_models, known_error_map = _load_known_errors()
+    known_error_models, known_error_map = _load_known_errors(python_bin)
     skip_models = skip_models | known_error_models
 
     print()
@@ -1378,16 +1378,64 @@ def _load_skip_models():
     return set()
 
 
-def _load_known_errors():
-    """Load known-error entries from `known_errors.json`.
+def _torch_major_minor(python_bin=None):
+    """Return the active torch version's "major.minor" (e.g. "2.11").
+
+    If `python_bin` is given, query that interpreter (so we get the version of
+    the venv the sweep is targeting, not the orchestrator's venv). Falls back
+    to the current process's torch on import error or subprocess failure.
+    Returns None if torch isn't importable from either side — caller should
+    treat that as "no version filtering" (apply all entries).
+    """
+    if python_bin:
+        try:
+            out = subprocess.run(
+                [str(python_bin), "-c", "import torch; print(torch.__version__)"],
+                capture_output=True, text=True, timeout=15, check=True,
+            ).stdout.strip()
+            return ".".join(out.split(".")[:2])
+        except Exception:
+            pass
+    try:
+        import torch
+        return ".".join(torch.__version__.split(".")[:2])
+    except ImportError:
+        return None
+
+
+def _entry_applies_to_version(entry, active_mm):
+    """Decide whether a known_errors entry is in scope for the active torch version.
+
+    The entry's optional `applies_to_versions` field is a list of major.minor
+    strings (e.g. `["2.10", "2.11"]`) — the entry applies iff the active
+    `major.minor` is in that list. If the field is missing, the entry applies
+    universally (back-compat for entries filed before this gate).
+
+    `active_mm` of None (couldn't detect torch version) → apply all entries
+    so we never silently drop a skip in a degraded env.
+    """
+    versions = entry.get("applies_to_versions")
+    if not versions:
+        return True
+    if active_mm is None:
+        return True
+    return active_mm in versions
+
+
+def _load_known_errors(python_bin=None):
+    """Load known-error entries from `known_errors.json`, filtered by torch version.
 
     Each entry has a `status` (one of 'create_error' or 'eager_error') —
     declares that this model's failure of that class is a stable real bug
     (NOT an env issue) and should be skipped from the sweep.
 
+    Each entry MAY also have an `applies_to_versions` list of major.minor
+    strings; if present, the entry is only loaded when the active torch's
+    major.minor is in that list. This prevents bugs filed against PT 2.X
+    from silently skipping the model on PT 2.Y where the bug may be fixed.
+
     Returns: (skip_models, known_map)
-      - skip_models: set of model names to skip entirely (we don't want them
-        to even attempt creation; the failure is known + filed)
+      - skip_models: set of model names to skip entirely
       - known_map: {(model, status): {"modes": [...], "error_pattern": "...",
                                        "reason": "..."}}
         used by `_validate_no_unexpected_errors()` after identify pass.
@@ -1398,20 +1446,27 @@ def _load_known_errors():
         return set(), {}
     with open(KNOWN_ERRORS_FILE) as f:
         data = json.load(f)
-    entries = data.get("entries", [])
+    raw_entries = data.get("entries", [])
+    active_mm = _torch_major_minor(python_bin)
+
+    entries = [e for e in raw_entries if _entry_applies_to_version(e, active_mm)]
+    filtered_out = len(raw_entries) - len(entries)
+
     skip_models = {e["model"] for e in entries}
     known_map = {(e["model"], e["status"]): {"modes": e["modes"],
                                               "error_pattern": e["error_pattern"],
                                               "reason": e.get("reason", "")}
                  for e in entries}
-    if entries:
+    if raw_entries:
         by_status = {}
         for e in entries:
             by_status[e["status"]] = by_status.get(e["status"], 0) + 1
-        breakdown = ", ".join(f"{c} {s}" for s, c in sorted(by_status.items()))
-        print(f"Known errors: {len(entries)} entries "
+        breakdown = ", ".join(f"{c} {s}" for s, c in sorted(by_status.items())) or "0 active"
+        suffix = f" ({filtered_out} filtered out by version {active_mm})" if filtered_out else ""
+        print(f"Known errors: {len(entries)}/{len(raw_entries)} entries "
               f"({sum(len(e['modes']) for e in entries)} work items, {breakdown}) "
-              f"will be skipped (from {KNOWN_ERRORS_FILE.name}).")
+              f"will be skipped (from {KNOWN_ERRORS_FILE.name}, "
+              f"target torch={active_mm or '?'}){suffix}.")
     return skip_models, known_map
 
 

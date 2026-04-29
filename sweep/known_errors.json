@@ -2,9 +2,10 @@
   "_doc": "Models that legitimately fail with stable known unfixed bugs. The sweep skips these entirely AND validates that no NEW failure of the same class appears outside this list. New failures during a sweep MUST be either (a) added here with a reason, or (b) fixed at root. Goal: zero unexplained create_error/eager_error per sweep, so setup-side issues never mask real graph-break improvements/regressions.",
   "_workflow": [
     "1. To add an entry: append to `entries[]` with status (one of 'create_error' or 'eager_error'), model, modes, error_pattern (substring of the actual error message), added (ISO date), reason (one-line + issue link if applicable).",
-    "2. The sweep skips any (model, mode) pair listed here. Skip is logged.",
-    "3. After identify pass, the sweep validates: every create_error or eager_error in results must match a known entry's (model, mode, status, error_pattern). Unmatched ones print a loud warning and (with --strict-known-errors) cause a non-zero exit.",
-    "4. To remove an entry: when the underlying bug is fixed (or worked around), delete the line. Next sweep re-tests the model and surfaces the new status."
+    "2. (REQUIRED) Add `applies_to_versions`: a list of major.minor torch versions where the bug is observed (e.g. ['2.10', '2.11']). The entry only applies when the active torch's major.minor matches one of these. Without this field, the entry applies universally — DO NOT do that for new entries. Force re-verification on each new release so we learn when a bug is fixed.",
+    "3. The sweep skips any (model, mode) pair whose entry applies to the active torch version. Skip is logged.",
+    "4. After identify pass, the sweep validates: every create_error or eager_error in results must match a known entry's (model, mode, status, error_pattern). Unmatched ones print a loud warning and (with --strict-known-errors) cause a non-zero exit.",
+    "5. To remove an entry: when the underlying bug is fixed (or worked around), delete it. Next sweep re-tests the model and surfaces the new status. Alternatively, narrow `applies_to_versions` to exclude the fixed releases."
   ],
   "_status_field": "Each entry's `status` must be either 'create_error' (model build/config fails) or 'eager_error' (model builds but pure-eager forward fails). The validator gates both classes with the same per-class strictness.",
   "entries": [
@@ -13,14 +14,16 @@
       "model": "ZambaForCausalLM",
       "modes": ["eval", "train"],
       "error_pattern": "tie_weights_keys",
+      "applies_to_versions": ["2.11", "2.13"],
       "added": "2026-04-28",
-      "reason": "tie_weights_keys definition bug surfaced by Animesh fullgraph sweep. Real corpus or HF-side bug; not an env issue."
+      "reason": "tie_weights_keys definition bug confirmed on PT 2.11 baseline AND torch-181552 (PT 2.13-dev a0). Re-verify on PT 2.12, 2.14+ — drop the entry if the bug clears."
     },
     {
       "status": "create_error",
       "model": "ZambaModel",
       "modes": ["eval", "train"],
       "error_pattern": "tie_weights_keys",
+      "applies_to_versions": ["2.11", "2.13"],
       "added": "2026-04-28",
       "reason": "Same root cause as ZambaForCausalLM."
     },
@@ -29,38 +32,43 @@
       "model": "Qwen3OmniMoeTalkerModel",
       "modes": ["eval", "train"],
       "error_pattern": "Qwen3OmniMoeTalkerTextConfig",
+      "applies_to_versions": ["2.13"],
       "added": "2026-04-28",
-      "reason": "transformers config drift — Qwen3OmniMoeTalkerTextConfig missing 'shared_expert_intermediate_size' attribute. Real bug — likely a transformers version mismatch with the model's expected config. Surfaced by Animesh fullgraph sweep."
+      "reason": "transformers config drift — Qwen3OmniMoeTalkerTextConfig missing 'shared_expert_intermediate_size' attribute. Surfaced on torch-181552 (PT 2.13-dev). Not observed in PT 2.11 sweep — re-verify on PT 2.12, 2.14+."
     },
     {
       "status": "eager_error",
       "model": "PeAudioVideoModel",
       "modes": ["eval", "train"],
       "error_pattern": "None",
+      "applies_to_versions": ["2.11", "2.13"],
       "added": "2026-04-28",
-      "reason": "KeyError(None) in pure-eager forward — model's forward path does some_dict[None] somewhere. Surfaced by Animesh fullgraph sweep timm-cluster re-test (after pip install timm let it pass create-time). Real model bug, not env."
+      "reason": "KeyError(None) in pure-eager forward. Confirmed on PT 2.11 baseline and PT 2.13-dev (Animesh sweep, after timm install). Re-verify on PT 2.12, 2.14+."
     },
     {
       "status": "eager_error",
       "model": "MusicFlamingoForConditionalGeneration",
       "modes": ["eval", "train"],
       "error_pattern": "CUDA error: device-side assert triggered",
+      "applies_to_versions": ["2.11", "2.13"],
       "added": "2026-04-29",
-      "reason": "CUDA device-side assert in pure-eager forward (likely out-of-range index in embedding/scatter). Filed as #89. Skip pending repro with CUDA_LAUNCH_BLOCKING=1 to identify the kernel."
+      "reason": "CUDA device-side assert in pure-eager forward (likely out-of-range index in embedding/scatter). Observed on PT 2.11 baseline AND PT 2.13-dev. Filed as #89. Re-verify on PT 2.12, 2.14+."
     },
     {
       "status": "eager_error",
       "model": "Zamba2ForCausalLM",
       "modes": ["eval", "train"],
       "error_pattern": "1",
+      "applies_to_versions": ["2.11"],
       "added": "2026-04-29",
-      "reason": "Zamba2 eager forward crashes; worker.py error capture only retained '1' as the error message (worker capture bug). Filed as #90. Skip until both worker capture is fixed AND the Zamba2 bug is understood."
+      "reason": "Zamba2 eager forward crashes; worker.py error capture only retained '1' as the error message (worker capture bug). Observed on PT 2.11. Filed as #90. Re-verify on PT 2.12+ once worker capture is fixed."
     },
     {
       "status": "eager_error",
       "model": "Zamba2Model",
       "modes": ["eval", "train"],
       "error_pattern": "1",
+      "applies_to_versions": ["2.11"],
       "added": "2026-04-29",
       "reason": "Same as Zamba2ForCausalLM — see #90."
     },
@@ -69,8 +77,9 @@
       "model": "PI0Model",
       "modes": ["eval", "train"],
       "error_pattern": "'NoneType' object has no attribute 'get_seq_length'",
+      "applies_to_versions": ["2.11"],
       "added": "2026-04-29",
-      "reason": "KV cache contract mismatch — model expects a non-None Cache object, corpus harness passes None. Filed under #88 (corpus-harness escapee). Skip until create_model contract is corrected."
+      "reason": "KV cache contract mismatch — model expects a non-None Cache object, corpus harness passes None. Observed on PT 2.11. Filed under #88 (corpus-harness escapee). Re-verify on PT 2.12+ — likely persists until the harness is fixed."
     }
   ]
 }

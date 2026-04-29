@@ -52,7 +52,11 @@ Each unmatched gated failure is classified by `_classify_failure()` into one of 
 
 Rationale: the original gate flagged ALL unexpected gated failures as if they were equivalent — but env-bugs, harness-bugs, and real-model-bugs need different responses (re-build vs fix-tool vs file-issue). The classifier separates them so the gate's loud-warning path stays focused on what's actually a new model bug. Validated on PT 2.11 baseline data: 130 unexpected → 8 infra + 104 harness + 12 unknown — a 90% reduction in the loud-warning bucket.
 
-Workflow for a NEW *unknown* gated failure: either (a) fix at root, or (b) add to `known_errors.json` with a `reason` field. Old entries are deleted when the underlying bug is fixed; the next sweep re-tests the model and surfaces the new status. Goal: every gated failure per sweep is either *expected* (in the list), *infra* (env summary), *harness* (tooling summary), or *actionable* (loud warning).
+Workflow for a NEW *unknown* gated failure: either (a) fix at root, or (b) add to `known_errors.json` with a `reason` field AND an `applies_to_versions` list (e.g. `["2.11"]`). Without `applies_to_versions`, the entry applies universally — that's a regression risk (a real bug fixed in PT 2.13 would still skip the model on the next sweep). Always scope new entries to the version(s) where the bug was actually observed; force re-verification on every other release.
+
+The validator queries the active torch's `major.minor` from the target python at orchestrator startup (via subprocess), then filters entries whose `applies_to_versions` doesn't include it. Stderr summary reports `N/M entries (K filtered out by version X.Y)` so you can see what got dropped.
+
+Goal: every gated failure per sweep is either *expected* (in the list, in scope for the active version), *infra* (env summary), *harness* (tooling summary), or *actionable* (loud warning).
 
 ### Tier-aware timeouts
 
