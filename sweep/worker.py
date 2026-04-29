@@ -2963,53 +2963,112 @@ def _synthesize_diffusers_inputs(model, model_cls, device, batch=1, latent_h=8, 
 
     Diffusers models have well-known parameter name conventions
     (`sample`, `hidden_states`, `timestep`, `encoder_hidden_states`, etc).
-    Map each name to a sensible-shaped tensor. Returns None if any required
-    parameter has an unrecognized name (caller should fall back).
+    Map each name to a sensible-shaped tensor.
+
+    Returns None if any required parameter has an unrecognized name (caller
+    should fall back). Always synthesizes the well-known optional args
+    (encoder_hidden_states, timestep) when a class signals that it likely
+    needs them — many diffusers Transformer classes declare these as
+    `default=None` but access `.shape` internally, so skipping them produces
+    NoneType errors that look like model bugs but are really synthesis gaps.
     """
-    import inspect
-    sig = inspect.signature(model_cls.forward)
+    import inspect as _inspect
+    sig = _inspect.signature(model_cls.forward)
     params = [p for p in sig.parameters.values() if p.name != "self"]
     required = [p for p in params if p.default is p.empty
                 and p.kind not in (p.VAR_POSITIONAL, p.VAR_KEYWORD)]
 
-    # Decide channel/latent geometry based on class name. Most diffusers
-    # autoencoders use 3-channel input; latent-space transformers use the
-    # configured latent_channels.
     name = model_cls.__name__
-    is_3d = any(k in name for k in ("3D", "Video", "Allegro", "CogVideo", "Cosmos",
-                                     "HunyuanVideo", "LTXVideo", "Mochi", "Wan"))
-    in_ch = getattr(getattr(model, "config", None), "in_channels", None) or 3
-    latent_ch = getattr(getattr(model, "config", None), "latent_channels", None) or 4
+    cfg = getattr(model, "config", None)
+    in_ch = getattr(cfg, "in_channels", None) or 3
+    latent_ch = getattr(cfg, "latent_channels", None) or 4
+    # encoder_hidden_states width: the first projection the encoder hits.
+    # `caption_channels` (e.g. Allegro 4096) takes priority over
+    # `cross_attention_dim` (which is the AFTER-projection dim).
+    cross_attn_dim = (getattr(cfg, "caption_channels", None)
+                      or getattr(cfg, "cross_attention_dim", None)
+                      or getattr(cfg, "joint_attention_dim", None)
+                      or getattr(cfg, "caption_projection_dim", None)
+                      or 32)
+    # 2D image embed dim (e.g. CLIPImageProjection feeds 768-dim CLIP embeddings).
+    image_embed_dim = (getattr(cfg, "image_embed_dim", None)
+                       or getattr(cfg, "embed_dim", None)
+                       or 768)
 
-    inputs = {}
-    for p in required:
+    # 3D video models — match broadly. "HunyuanImageRefiner" (despite the
+    # "Image" name) takes 5D input because it operates on latent video frames.
+    is_3d = any(k in name for k in ("3D", "Video", "Allegro", "CogVideo", "Cosmos",
+                                     "HunyuanVideo", "HunyuanImageRefiner",
+                                     "LTXVideo", "Mochi", "Wan"))
+    is_audio = any(k in name for k in ("Audio", "Oobleck", "Speech"))
+    is_transformer_2d = any(k in name for k in ("Transformer2D", "DiTransformer"))
+    is_transformer_3d = "Transformer3D" in name
+
+    # Param names this synthesizer recognizes — used both for required AND
+    # for optional-but-likely-needed (when default is None).
+    KNOWN_NAMES = {"sample", "hidden_states", "timestep", "encoder_hidden_states",
+                   "context", "class_labels", "controlnet_cond",
+                   "conditioning_scale", "attention_mask", "encoder_attention_mask",
+                   "pooled_projections", "txt_ids", "img_ids",
+                   "x"}  # CLIPImageProjection forward(self, x: 2D embedding)
+
+    def _val_for(p):
         n = p.name.lower()
         if n == "sample":
-            if is_3d:
-                inputs[p.name] = torch.randn(batch, in_ch, 4, 32, 32, device=device)
+            if is_audio:
+                return torch.randn(batch, in_ch, 256, device=device)  # 3D for audio: [B, C, T]
+            elif is_3d:
+                return torch.randn(batch, in_ch, 4, 32, 32, device=device)
             else:
-                inputs[p.name] = torch.randn(batch, in_ch, 64, 64, device=device)
+                return torch.randn(batch, in_ch, 64, 64, device=device)
         elif n == "hidden_states":
-            # 4D for vision transformers, 3D for token-stream models
-            if any(k in name for k in ("Transformer2D", "DiTransformer", "Transformer3D")):
-                inputs[p.name] = torch.randn(batch, latent_ch, latent_h, latent_w, device=device)
+            if is_transformer_3d:
+                # 5D for 3D transformers: [B, C, T, H, W] — shapes vary, use small T
+                return torch.randn(batch, latent_ch, 4, latent_h, latent_w, device=device)
+            elif is_transformer_2d:
+                return torch.randn(batch, latent_ch, latent_h, latent_w, device=device)
             else:
-                inputs[p.name] = torch.randn(batch, 32, 64, device=device)
+                return torch.randn(batch, 32, 64, device=device)
         elif n == "timestep":
-            inputs[p.name] = torch.randint(0, 1000, (batch,), device=device)
+            return torch.randint(0, 1000, (batch,), device=device)
         elif n in ("encoder_hidden_states", "context"):
-            inputs[p.name] = torch.randn(batch, 8, 32, device=device)
+            return torch.randn(batch, 8, cross_attn_dim, device=device)
         elif n == "class_labels":
-            num_cls = getattr(getattr(model, "config", None), "num_classes", 10) or 10
-            inputs[p.name] = torch.randint(0, num_cls, (batch,), device=device)
+            num_cls = getattr(cfg, "num_classes", None) or 10
+            return torch.randint(0, num_cls, (batch,), device=device)
         elif n == "controlnet_cond":
-            inputs[p.name] = torch.randn(batch, 3, 64, 64, device=device)
+            return torch.randn(batch, 3, 64, 64, device=device)
         elif n == "conditioning_scale":
-            inputs[p.name] = torch.tensor(1.0, device=device)
+            return torch.tensor(1.0, device=device)
         elif n in ("attention_mask", "encoder_attention_mask"):
-            inputs[p.name] = torch.ones(batch, 8, device=device, dtype=torch.long)
-        else:
-            return None  # unrecognized required param
+            return torch.ones(batch, 8, device=device, dtype=torch.long)
+        elif n == "pooled_projections":
+            return torch.randn(batch, cross_attn_dim, device=device)
+        elif n in ("txt_ids", "img_ids"):
+            return torch.zeros(batch, 8, 3, device=device)
+        elif n == "x":
+            # CLIPImageProjection: 2D image embedding [B, image_embed_dim]
+            return torch.randn(batch, image_embed_dim, device=device)
+        return None
+
+    inputs = {}
+    # Pass 1: required args — fail to None if any are unrecognized
+    for p in required:
+        if p.name.lower() not in {n.lower() for n in KNOWN_NAMES}:
+            return None
+        v = _val_for(p)
+        if v is None: return None
+        inputs[p.name] = v
+
+    # Pass 2: optional but likely-needed — pass encoder_hidden_states and
+    # timestep even when default=None, since many transformer variants
+    # access them internally without nullity checks.
+    for p in params:
+        if p.name in inputs: continue
+        if p.name.lower() in {"encoder_hidden_states", "timestep", "context"}:
+            v = _val_for(p)
+            if v is not None: inputs[p.name] = v
+
     return inputs
 
 
@@ -3023,6 +3082,13 @@ def create_diffusers_model(spec, device):
     # subclasses register_to_config with all defaults, so cls() works directly).
     constructor_args = spec.get("constructor_args", {})
     model = model_cls(**constructor_args).to(device)
+
+    # Some VAEs default to non-tiled encoding which raises NotImplementedError
+    # at small input sizes (Allegro, etc.). Enable tiling when available so the
+    # model can handle our small synthesized inputs.
+    if hasattr(model, "enable_tiling"):
+        try: model.enable_tiling()
+        except Exception: pass
 
     # Use provided inputs or auto-synthesize from forward signature
     input_spec = spec.get("inputs")
