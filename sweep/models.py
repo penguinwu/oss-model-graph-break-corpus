@@ -102,6 +102,9 @@ def enumerate_hf():
             "EdgeTamVisionModel",   # Same timm dependency as EdgeTamModel
             "PI0ForConditionalGeneration",  # image_token_id (257152) == vocab_size; reduced model can't embed image tokens
             "ClvpModelForConditionalGeneration",  # CUDA assert: decoder embedding index out of range from speech encoder token coupling
+            # Models requiring deps not installable under our agent:claude_code BPF identity (#91)
+            "DinatModel",                   # Requires `natten` library — wheel build fails under our env
+            "LayoutLMv2Model",              # Requires `detectron2` from dl.fbaipublicfiles.com — domain not allowlisted
         }
         if name in _SKIP_MODELS:
             continue
@@ -274,6 +277,7 @@ def enumerate_diffusers():
     }
 
     models = []
+    skipped_no_config = []
     # See enumerate_hf for rationale — tolerate broken lazy imports.
     for name in sorted(dir(diffusers)):
         try:
@@ -290,30 +294,46 @@ def enumerate_diffusers():
         if "Multi" in name:
             continue
 
+        # Try to find a config — exact match, then family match (prefix).
+        # If a family matches, copy its constructor_args + inputs as a starting
+        # point. Variants may need adjustment but this is closer than nothing.
+        config = FAMILY_CONFIGS.get(name)
+        family_match = None
+        if not config:
+            for family_name, family_config in FAMILY_CONFIGS.items():
+                if name.startswith(family_name) and name != family_name:
+                    config = family_config
+                    family_match = family_name
+                    break
+
+        # Without a config, we have no way to construct the model OR call its
+        # forward(). Including such specs in the sweep guarantees a gated
+        # failure (`forward() missing N required positional arguments` or
+        # `__init__() missing ...`) — that's harness noise, not a real bug.
+        # Skip; track for visibility in the enumeration log.
+        if not config:
+            skipped_no_config.append(name)
+            continue
+
         spec = {
             "name": name,
             "source": "diffusers",
             "hf_class": name,
+            "constructor_args": config["constructor_args"],
+            "inputs": config["inputs"],
+            "has_config": True,
         }
-
-        # Check if we have a config for this model or its family
-        config = FAMILY_CONFIGS.get(name)
-        if not config:
-            # Try matching by prefix (e.g. AutoencoderKLCogVideoX → AutoencoderKL)
-            for family_name, family_config in FAMILY_CONFIGS.items():
-                if name.startswith(family_name) and name != family_name:
-                    # Family match — may need adjustment
-                    spec["family_match"] = family_name
-                    break
-
-        if config:
-            spec["constructor_args"] = config["constructor_args"]
-            spec["inputs"] = config["inputs"]
-            spec["has_config"] = True
-        else:
-            spec["has_config"] = False
+        if family_match:
+            spec["family_match"] = family_match
 
         models.append(spec)
+
+    if skipped_no_config:
+        print(f"[enumerate_diffusers] Skipped {len(skipped_no_config)} ModelMixin "
+              f"subclasses with no configured inputs/constructor (would be harness "
+              f"noise in the gated bucket). Add an entry to FAMILY_CONFIGS to "
+              f"re-enable. Examples: {', '.join(skipped_no_config[:3])}, ...",
+              file=sys.stderr)
 
     return models
 

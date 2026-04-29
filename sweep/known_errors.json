@@ -39,6 +39,38 @@
       "error_pattern": "None",
       "added": "2026-04-28",
       "reason": "KeyError(None) in pure-eager forward — model's forward path does some_dict[None] somewhere. Surfaced by Animesh fullgraph sweep timm-cluster re-test (after pip install timm let it pass create-time). Real model bug, not env."
+    },
+    {
+      "status": "eager_error",
+      "model": "MusicFlamingoForConditionalGeneration",
+      "modes": ["eval", "train"],
+      "error_pattern": "CUDA error: device-side assert triggered",
+      "added": "2026-04-29",
+      "reason": "CUDA device-side assert in pure-eager forward (likely out-of-range index in embedding/scatter). Filed as #89. Skip pending repro with CUDA_LAUNCH_BLOCKING=1 to identify the kernel."
+    },
+    {
+      "status": "eager_error",
+      "model": "Zamba2ForCausalLM",
+      "modes": ["eval", "train"],
+      "error_pattern": "1",
+      "added": "2026-04-29",
+      "reason": "Zamba2 eager forward crashes; worker.py error capture only retained '1' as the error message (worker capture bug). Filed as #90. Skip until both worker capture is fixed AND the Zamba2 bug is understood."
+    },
+    {
+      "status": "eager_error",
+      "model": "Zamba2Model",
+      "modes": ["eval", "train"],
+      "error_pattern": "1",
+      "added": "2026-04-29",
+      "reason": "Same as Zamba2ForCausalLM — see #90."
+    },
+    {
+      "status": "eager_error",
+      "model": "PI0Model",
+      "modes": ["eval", "train"],
+      "error_pattern": "'NoneType' object has no attribute 'get_seq_length'",
+      "added": "2026-04-29",
+      "reason": "KV cache contract mismatch — model expects a non-None Cache object, corpus harness passes None. Filed under #88 (corpus-harness escapee). Skip until create_model contract is corrected."
     }
   ]
 }
