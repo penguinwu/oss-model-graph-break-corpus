@@ -62,7 +62,7 @@ Each variant is a separate entry in the corpus, so you can compare compile quali
 
 ### corpus.json
 
-`corpus/corpus.json` contains all 734 models with eval + train results across static and dynamic configurations. Each model entry includes:
+`corpus/corpus.json` contains all 790 models with eval + train results across static and dynamic configurations. Each model entry includes:
 
 - Model name and source (hf, diffusers, custom)
 - Status per mode (eval, train)
@@ -82,11 +82,11 @@ This verifies the corpus matches the golden set and catches unintended status ch
 
 ### Sweep results by version
 
-Raw sweep data lives in `sweep_results/{pt2.8,pt2.9,pt2.10,pt2.11}/` as JSONL checkpoints. Human-readable summaries are in [`results/`](../results/).
+Raw sweep data lives in `sweep_results/baseline/{pt2.10,pt2.11,pt2.12}/` (current) and `sweep_results/archive/{pt2.8,pt2.9}/` (older) as JSONL checkpoints. Human-readable summaries are in [`results/`](../results/).
 
 ## Browsable dashboard
 
-A browsable HTML dashboard of all 734 models is available at `docs/index.html`:
+A browsable HTML dashboard of all 790 models is available at `docs/index.html`:
 
 ```bash
 python3 tools/generate_index.py    # generates docs/index.html
@@ -97,7 +97,7 @@ The dashboard shows each model's status, break count, root cause category, fixab
 
 ## Trace reports
 
-Pre-generated trace directories exist in `sweep_results/pt2.10/traces/`. To generate browsable HTML reports:
+Pre-generated trace directories exist in `docs/traces/`. To generate browsable HTML reports:
 
 ```bash
 # Generate reports for the top 30 models by break count

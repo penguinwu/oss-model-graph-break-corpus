@@ -126,18 +126,20 @@ The `--resume` flag reads the checkpoint file and skips already-completed models
 
 ## Output
 
-Results go to `sweep_results/<label>/`:
+Results go to `sweep_results/<label>/` (default: `sweep_results/nightly/<date>/` for cron, `sweep_results/experiments/<run-name>-<date>/` for `--run-name` runs):
 
 ```
-sweep_results/pt2.11/
-  identify_results.json   — pass/fail/error for each model
-  explain_results.json    — graph break details for breaking models
-  checkpoint.jsonl        — incremental checkpoint for crash recovery
+sweep_results/baseline/pt2.11/
+  identify_results.json          — pass/fail/error for each model
+  explain_results.json           — graph break details for breaking models
+  identify_checkpoint.jsonl      — incremental checkpoint for the identify pass
+  explain_checkpoint.jsonl       — incremental checkpoint for the explain pass
+  correctness_checkpoint.jsonl   — incremental checkpoint for the correctness pass (when run)
 ```
 
 ## Monitoring long sweeps
 
-For full sweeps (734 models, ~2-4 hours on A100):
+For full sweeps (~790 models × eval+train ≈ 1500 work items, ~4–6 hours on A100):
 
 ```bash
 python3 sweep/sweep_watchdog.py
@@ -149,8 +151,8 @@ The watchdog monitors progress and auto-restarts on failures.
 
 ```bash
 python3 tools/update_corpus.py \
-    --identify sweep_results/pt2.11/identify_results.json \
-    --explain sweep_results/pt2.11/explain_results.json
+    --identify sweep_results/baseline/pt2.11/identify_results.json \
+    --explain sweep_results/baseline/pt2.11/explain_results.json
 ```
 
 Validate after updating:

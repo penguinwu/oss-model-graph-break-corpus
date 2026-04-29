@@ -47,8 +47,8 @@ After a sweep:
 ```bash
 # Merge results into corpus.json
 python3 tools/update_corpus.py \
-    --identify sweep_results/pt2.11/identify_results.json \
-    --explain sweep_results/pt2.11/explain_results.json
+    --identify sweep_results/baseline/pt2.11/identify_results.json \
+    --explain sweep_results/baseline/pt2.11/explain_results.json
 
 # Validate integrity
 python3 tools/validate.py
@@ -83,7 +83,7 @@ The sweep uses process-group isolation, non-blocking polling, GPU pressure backo
 ## Conventions
 
 - Batch size must be >= 2 (PyTorch specializes on 0 and 1)
-- Backend is always `eager` (tests Dynamo tracing, not Inductor codegen)
+- Default backend is `eager` (tests Dynamo tracing, not Inductor codegen) — override via `--compile-kwargs '{"backend": "..."}'`
 - Default sources: `hf diffusers custom` (TIMM/dynamic require explicit request)
 - Never use 0 or 1 as input dimensions for dynamic shape testing
 - Sweep results go in `sweep_results/<label>/` (e.g., `sweep_results/nightly/2026-04-19/`)

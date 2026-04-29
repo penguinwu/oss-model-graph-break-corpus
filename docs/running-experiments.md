@@ -67,7 +67,7 @@ python3 tools/run_experiment.py run my-config.json --resume results/my-run/
 ```bash
 python3 tools/run_experiment.py merge \
     --from experiments/results/new-models/ \
-    --into sweep_results/pt2.11/
+    --into sweep_results/baseline/pt2.11/
 ```
 
 Merges source results into target. If a `(model, config, mode)` entry exists in both, source wins. Idempotent.
@@ -195,7 +195,7 @@ Status values depend on the compile configuration:
 {
   "name": "new-models-check",
   "description": "Sweep models not in the latest baseline",
-  "models": {"source": "new_since", "baseline": "sweep_results/pt2.11/"},
+  "models": {"source": "new_since", "baseline": "sweep_results/baseline/pt2.11/"},
   "configs": [{"name": "default", "dynamo_flags": {}}],
   "settings": {"device": "cuda", "modes": ["eval", "train"], "workers": 4, "timeout_s": 180, "pass_num": 1}
 }
@@ -206,7 +206,7 @@ Then merge into the main results:
 ```bash
 python3 tools/run_experiment.py merge \
     --from experiments/results/new-models-check-*/ \
-    --into sweep_results/pt2.11/
+    --into sweep_results/baseline/pt2.11/
 ```
 
 ### Test a backend on a random sample

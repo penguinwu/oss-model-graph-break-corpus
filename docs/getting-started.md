@@ -26,7 +26,7 @@ python3 tools/version_check.py
 
 ## Browse the corpus
 
-The corpus tracks 734 open-source models. Query it without a GPU:
+The corpus tracks 790 open-source models. Query it without a GPU:
 
 ```bash
 # Summary stats
