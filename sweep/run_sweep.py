@@ -379,6 +379,12 @@ def run_sweep(args):
 
     # ── Load skip list (toxic models) — auto-loaded from config ──
     skip_models = _load_skip_models()
+    # ── Load known create_errors — skip + post-identify validator ──
+    # See known_create_errors.json header for workflow. Models with stable,
+    # filed create_error bugs are skipped here so they don't pollute output;
+    # any *new* create_error during the sweep is flagged loud post-identify.
+    known_create_error_models, known_create_error_map = _load_known_create_errors()
+    skip_models = skip_models | known_create_error_models
 
     print()
 
@@ -518,6 +524,20 @@ def run_sweep(args):
     for status, count in sorted(by_status.items()):
         print(f"  {status}: {count}")
     print(f"Saved to {identify_file}")
+
+    # ── Validate create_errors against known-list ──
+    # Any create_error not pre-declared in known_create_errors.json is a NEW
+    # setup/build/dep failure that risks masking real graph-break signal. Flag
+    # loud so the operator either (a) fixes the underlying issue, or (b) adds
+    # an entry to known_create_errors.json with a reason. Goal: zero
+    # unexplained create_errors per sweep.
+    n_unexpected = _validate_no_unexpected_create_errors(
+        identify_results, known_create_error_map, strict=True)
+    if n_unexpected > 0 and getattr(args, "strict_create_errors", False):
+        print(f"\nFAILING: {n_unexpected} unexpected create_errors and "
+              f"--strict-create-errors is set. Resolve them and re-run.",
+              file=sys.stderr)
+        sys.exit(3)
 
     # ── Auto-retry: re-run timed-out models with extended timeout ──
     timeout_results = [r for r in identify_results if r.get("status") == "timeout"]
@@ -1326,6 +1346,7 @@ def _validate_sweep_args(args):
 
 
 SKIP_MODELS_FILE = SWEEP_DIR / "skip_models.json"
+KNOWN_CREATE_ERRORS_FILE = SWEEP_DIR / "known_create_errors.json"
 
 
 def _load_skip_models():
@@ -1338,6 +1359,84 @@ def _load_skip_models():
                   f"(from {SKIP_MODELS_FILE})")
         return models
     return set()
+
+
+def _load_known_create_errors():
+    """Load known-create-error entries from `known_create_errors.json`.
+
+    Returns: (skip_models, known_map)
+      - skip_models: set of model names to skip entirely (we don't want them
+        to even attempt creation; the failure is known + filed)
+      - known_map: {model_name: {"modes": [...], "error_pattern": "..."}} —
+        used by `_validate_no_unexpected_create_errors()` after identify pass
+
+    Empty file / no file → empty set + empty dict.
+    """
+    if not KNOWN_CREATE_ERRORS_FILE.exists():
+        return set(), {}
+    with open(KNOWN_CREATE_ERRORS_FILE) as f:
+        data = json.load(f)
+    entries = data.get("entries", [])
+    skip_models = {e["model"] for e in entries}
+    known_map = {e["model"]: {"modes": e["modes"], "error_pattern": e["error_pattern"],
+                              "reason": e.get("reason", "")}
+                 for e in entries}
+    if entries:
+        print(f"Known create_errors: {len(entries)} model entries "
+              f"({sum(len(e['modes']) for e in entries)} work items) "
+              f"will be skipped (from {KNOWN_CREATE_ERRORS_FILE.name}).")
+    return skip_models, known_map
+
+
+def _validate_no_unexpected_create_errors(results, known_map, strict=True):
+    """Flag any create_error not pre-declared in known_create_errors.json.
+
+    For each create_error in `results`, check that the model is in `known_map`
+    AND the mode is one of the declared modes AND the error message contains
+    the declared `error_pattern`. Anything that doesn't match prints a loud
+    warning to stderr.
+
+    If `strict=True` (default), returns the count of unexpected create_errors
+    so the caller can exit non-zero. If 0, the sweep is clean per this check.
+    """
+    unexpected = []
+    for r in results:
+        if r.get("status") != "create_error":
+            continue
+        name = r.get("name")
+        mode = r.get("mode")
+        err = r.get("error", "")
+        match = known_map.get(name)
+        if not match:
+            unexpected.append((name, mode, err[:120], "model not in known list"))
+            continue
+        if mode not in match["modes"]:
+            unexpected.append((name, mode, err[:120],
+                               f"model in known list but not for mode={mode}"))
+            continue
+        if match["error_pattern"] not in err:
+            unexpected.append((name, mode, err[:120],
+                               f"error pattern mismatch — expected to contain "
+                               f"{match['error_pattern']!r}"))
+    if unexpected:
+        print("\n" + "=" * 70, file=sys.stderr)
+        print(f"⚠ UNEXPECTED create_errors detected ({len(unexpected)} work items)",
+              file=sys.stderr)
+        print(f"  These models hit create_error but are NOT declared in",
+              file=sys.stderr)
+        print(f"  {KNOWN_CREATE_ERRORS_FILE.name}. Resolve each by either:",
+              file=sys.stderr)
+        print("    (a) fixing the underlying setup/build/dep issue, OR",
+              file=sys.stderr)
+        print(f"    (b) appending an entry to {KNOWN_CREATE_ERRORS_FILE.name}",
+              file=sys.stderr)
+        print("        with model, modes, error_pattern, reason.", file=sys.stderr)
+        print("=" * 70, file=sys.stderr)
+        for name, mode, err, why in unexpected:
+            print(f"  • {name} ({mode}) — {why}", file=sys.stderr)
+            print(f"      error: {err!r}", file=sys.stderr)
+        print("=" * 70 + "\n", file=sys.stderr)
+    return len(unexpected)
 
 
 def main():
@@ -1431,6 +1530,12 @@ def main():
                               help="Skip auto-retry of timed-out/errored models")
     sweep_parser.add_argument("--identify-only", action="store_true",
                               help="Stop after identify pass (skip explain)")
+    sweep_parser.add_argument("--strict-create-errors", action="store_true",
+                              help="Exit non-zero if any create_error appears in identify "
+                                   "results that is NOT pre-declared in known_create_errors.json. "
+                                   "Use in CI or when shipping data downstream — guarantees that "
+                                   "no unfixed setup/build/dep issue silently masks graph-break "
+                                   "signal. New errors must be either fixed or added to the list.")
 
     # Utilities
     sweep_parser.add_argument("--selftest", action="store_true",
