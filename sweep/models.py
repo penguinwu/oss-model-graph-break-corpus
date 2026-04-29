@@ -381,7 +381,11 @@ def enumerate_custom():
 
 
 def enumerate_all():
-    """Enumerate models from all sources.
+    """Enumerate models from default sources: hf + diffusers + custom.
+
+    Per Peng's standing direction, timm is NOT included by default — request
+    it explicitly via `--source timm` if needed. This helper mirrors the
+    default --source list in the sweep CLI.
 
     Diffusers models are included if they either have an explicit
     FAMILY_CONFIGS entry (has_config=True) OR pass the no-required-init-args
@@ -391,7 +395,6 @@ def enumerate_all():
     models = []
     # HF first: smaller, more diverse, expose more problems early
     models.extend(enumerate_hf())
-    models.extend(enumerate_timm())
     # Include diffusers models with explicit configs OR auto-inputs introspection
     models.extend([m for m in enumerate_diffusers()
                    if m.get("has_config", False) or m.get("auto_inputs", False)])
