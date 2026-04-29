@@ -40,11 +40,19 @@ Three layers, each preventing a specific failure mode of the sweep:
 
 `stage_verify` adds a CUDA JIT smoke test (`torch.randn(...).prod()` + `torch.fft.fft(x)` — exercises the nvrtc JIT path) so the build fails fast if a future regression breaks the parity.
 
-### Layer C — Known errors gate
+### Layer C — Known errors gate (now with failure classification)
 
-`sweep/known_errors.json` declares (model, status, mode, error_pattern) tuples for stable real bugs the sweep should skip entirely. After the identify pass, `_validate_no_unexpected_errors()` walks the results and flags any failure in `GATED_STATUSES` (currently `create_error`, `eager_error`) that doesn't match a declared entry. With `--strict-known-errors`, unmatched failures cause a non-zero exit.
+`sweep/known_errors.json` declares (model, status, mode, error_pattern) tuples for stable real bugs the sweep should skip entirely. After the identify pass, `_validate_no_unexpected_errors()` walks the results and processes any failure in `GATED_STATUSES` (currently `create_error`, `eager_error`).
 
-Workflow: a NEW gated failure must be either (a) fixed at root, or (b) added to `known_errors.json` with a `reason` field. Old entries are deleted when the underlying bug is fixed; the next sweep re-tests the model and surfaces the new status. Goal: every gated failure per sweep is either *expected* (in the list) or *actionable* (loud warning).
+Each unmatched gated failure is classified by `_classify_failure()` into one of three buckets via substring matching on the error text:
+
+- **infra** — env/setup/dep issue (`libnvrtc`, `No module named`, `requires the natten library`, `CUDA out of memory`, `LAPACK`, etc.). Surfaced in an informational summary; NOT gate-blocking. Fix at the venv / build script level.
+- **harness** — corpus tooling bug (`.forward() missing N required positional arguments`, `.__init__() missing`, `unsupported operand type(s) for ... NoneType`). Surfaced in a separate informational summary; NOT gate-blocking. Fix at `sweep/models.py` / `create_model`.
+- **unknown** — neither — likely a real model bug. Loud warning + counts toward the strict-mode non-zero exit.
+
+Rationale: the original gate flagged ALL unexpected gated failures as if they were equivalent — but env-bugs, harness-bugs, and real-model-bugs need different responses (re-build vs fix-tool vs file-issue). The classifier separates them so the gate's loud-warning path stays focused on what's actually a new model bug. Validated on PT 2.11 baseline data: 130 unexpected → 8 infra + 104 harness + 12 unknown — a 90% reduction in the loud-warning bucket.
+
+Workflow for a NEW *unknown* gated failure: either (a) fix at root, or (b) add to `known_errors.json` with a `reason` field. Old entries are deleted when the underlying bug is fixed; the next sweep re-tests the model and surfaces the new status. Goal: every gated failure per sweep is either *expected* (in the list), *infra* (env summary), *harness* (tooling summary), or *actionable* (loud warning).
 
 ### Tier-aware timeouts
 

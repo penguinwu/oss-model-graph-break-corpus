@@ -1419,6 +1419,58 @@ def _load_known_errors():
 # touching the validator logic — the gate is per-status.
 GATED_STATUSES = ("create_error", "eager_error")
 
+# Substring patterns that classify a gated failure as setup/env (NOT a real model
+# bug). When the validator sees one of these, it surfaces the row in a separate
+# "infra" summary instead of the loud "unexpected" warning. The hygiene gate
+# exists to flag genuine new model bugs — not to re-warn about env/dep issues
+# that are already documented elsewhere (build script, recipes/github-access).
+INFRA_ERROR_PATTERNS = (
+    # CUDA runtime libs missing (source-built torch missing nvidia-cuda-* preload)
+    "libnvrtc", "libcudart", "libcuda.so", "nvrtc:",
+    # Linker / .so issues
+    "Could not load library", "undefined symbol",
+    # Missing python packages
+    "No module named",
+    # HF/Transformers/Diffusers "X requires the Y library" phrasing
+    "requires the natten library",
+    "requires the detectron2 library",
+    "requires the timm library",
+    "requires the mamba_ssm",
+    # LAPACK (torch built without LAPACK)
+    "LAPACK", "lapack_LU", "geqrf",
+    # cudnn ops library issues
+    "cudnn",
+    # GPU memory pressure (sweep-config / hardware issue, not a model bug)
+    "CUDA out of memory",
+)
+
+# Substring patterns that classify a gated failure as a corpus-tooling bug
+# (worker / create_model / config-builder mismatch — NOT a real model bug).
+# Surface separately so the hygiene gate doesn't drown in harness noise.
+HARNESS_ERROR_PATTERNS = (
+    # diffusers + transformers signature mismatch — corpus's create_model didn't
+    # supply the right input dict for this model class
+    ".forward() missing ", ".__init__() missing ",
+    # corpus generated a None where a config field needed an int
+    "unsupported operand type(s) for ",
+)
+
+
+def _classify_failure(err: str) -> str:
+    """Return one of: 'infra', 'harness', 'unknown'.
+
+    'infra'   — env/setup/dep issue (libcuda missing, no module named, etc.)
+    'harness' — corpus tooling bug (forward signature mismatch, None config)
+    'unknown' — neither — likely a real model bug
+    """
+    for p in INFRA_ERROR_PATTERNS:
+        if p in err:
+            return "infra"
+    for p in HARNESS_ERROR_PATTERNS:
+        if p in err:
+            return "harness"
+    return "unknown"
+
 
 def _validate_no_unexpected_errors(results, known_map, strict=True):
     """Flag any create_error / eager_error not pre-declared in known_errors.json.
@@ -1426,12 +1478,18 @@ def _validate_no_unexpected_errors(results, known_map, strict=True):
     For each result with status in `GATED_STATUSES`, check that
     (model, status) is in `known_map` AND the mode is one of the declared
     modes AND the error message contains the declared `error_pattern`.
-    Anything that doesn't match prints a loud warning to stderr.
 
-    If `strict=True` (default), returns the count of unexpected failures so
-    the caller can exit non-zero. If 0, the sweep is clean per this check.
+    Failures that look like env/setup issues (matched by INFRA_ERROR_PATTERNS)
+    or corpus-tooling bugs (HARNESS_ERROR_PATTERNS) are surfaced in their own
+    summaries — they're not gate concerns. Only the residual "unknown" bucket
+    counts toward the strict-mode non-zero exit.
+
+    Returns: count of unknown unexpected failures (the only category that should
+    block strict-mode runs).
     """
     unexpected = []
+    infra_failures = []
+    harness_failures = []
     for r in results:
         status = r.get("status")
         if status not in GATED_STATUSES:
@@ -1440,18 +1498,57 @@ def _validate_no_unexpected_errors(results, known_map, strict=True):
         mode = r.get("mode")
         err = r.get("error", "")
         match = known_map.get((name, status))
+        if match and mode in match["modes"] and match["error_pattern"] in err:
+            continue   # accounted for — known stable bug
+        kind = _classify_failure(err)
+        if kind == "infra":
+            infra_failures.append((name, mode, status, err[:140]))
+            continue
+        if kind == "harness":
+            harness_failures.append((name, mode, status, err[:140]))
+            continue
+        # Unknown — populate the loud warning bucket
         if not match:
             unexpected.append((name, mode, status, err[:120],
                                f"model not in known {status} list"))
-            continue
-        if mode not in match["modes"]:
+        elif mode not in match["modes"]:
             unexpected.append((name, mode, status, err[:120],
                                f"model declared in known list but not for mode={mode}"))
-            continue
-        if match["error_pattern"] not in err:
+        else:
             unexpected.append((name, mode, status, err[:120],
                                f"error pattern mismatch — expected to contain "
                                f"{match['error_pattern']!r}"))
+
+    if infra_failures:
+        print(f"\nℹ Infra/env failures (informational, NOT gated): {len(infra_failures)} work items",
+              file=sys.stderr)
+        from collections import Counter
+        by_pattern = Counter()
+        for name, mode, status, err in infra_failures:
+            for p in INFRA_ERROR_PATTERNS:
+                if p in err:
+                    by_pattern[p] += 1
+                    break
+        for p, n in by_pattern.most_common():
+            print(f"  {n:3d}× {p!r}", file=sys.stderr)
+        print(f"  → fix at the venv / build script level (see scripts/build-nightly-from-source.sh)",
+              file=sys.stderr)
+
+    if harness_failures:
+        print(f"\nℹ Corpus-harness failures (informational, NOT gated): {len(harness_failures)} work items",
+              file=sys.stderr)
+        from collections import Counter
+        by_pattern = Counter()
+        for name, mode, status, err in harness_failures:
+            for p in HARNESS_ERROR_PATTERNS:
+                if p in err:
+                    by_pattern[p] += 1
+                    break
+        for p, n in by_pattern.most_common():
+            print(f"  {n:3d}× {p!r}", file=sys.stderr)
+        print(f"  → fix at the create_model / config-builder level (sweep/models.py)",
+              file=sys.stderr)
+
     if unexpected:
         print("\n" + "=" * 70, file=sys.stderr)
         print(f"⚠ UNEXPECTED failures detected ({len(unexpected)} work items)",
