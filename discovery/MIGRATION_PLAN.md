@@ -173,11 +173,12 @@ Original plan was a single smoke + single Gate 2 trial — proves "structurally 
 - This is the load-bearing test for the "zero corpus runtime deps" claim.
 
 **Tier 5 — Cross-cutting integrations (~30 min):**
-- Daily-briefing skill: re-point at new repo (path config in skill or env var), run it, verify brief output is sane.
-- Tools triage decision (4 tools currently in `corpus/tools/` that touch discovery):
-  - `tools/check_experiments.py` — scans `discovery/experiments/`. Decision: port to new repo, retire from corpus.
-  - `tools/brief_data.py` — emits paths into discovery. Decision: port or update to scan both repos.
-  - `tools/new_experiment.py` — creates `corpus/discovery/experiments/<slug>/`. Decision: port to new repo (it creates discovery experiments).
+- Daily-briefing skill: port wholesale to new repo with its tool dependencies (brief_data.py, check_plan.py, check_experiments.py). New repo gets its own scoped brief; corpus keeps its current brief unchanged. *Do not refactor for multi-repo awareness* — per-project briefs is the right shape; an Otter-level meta-skill that orchestrates them is a separate follow-up (see Open Loops), not migration scope.
+- Tools triage (4 tools currently in `corpus/tools/` that touch discovery):
+  - `tools/check_experiments.py` — scans `discovery/experiments/`. Port to new repo (called by new repo's brief_data.py).
+  - `tools/brief_data.py` — port to new repo, scoped to new repo via `REPO = Path(__file__).resolve().parents[1]` (already self-resolving — no code change needed beyond the move).
+  - `tools/check_plan.py` — port to new repo (called by brief_data.py).
+  - `tools/new_experiment.py` — port to new repo (it creates discovery experiments).
   - `tools/new_case_issue.py` — files GitHub issues. Decision needed: target pt2-skill-discovery or stay corpus? (See "Open decision" below.)
 
 **Tier 6 — Dual-run period (3-5 calendar days, passive):**
@@ -321,6 +322,7 @@ If you (or another agent) wake up cold and pick this up:
 ## Revision log
 
 - *2026-04-27 21:11 ET* — Plan filed after iteration with Peng. Approved for tomorrow-morning execution.
+- *2026-04-29 19:15 ET* — Rev 2.1 (clarification). Per Peng: don't make the daily-briefing skill load-bearing for migration. Right shape is per-project skills (each repo owns its own), with an Otter-level meta-skill orchestrating — but that's a separate follow-up, not migration scope. Tier 5 simplified accordingly: port the skill + its tool deps wholesale, no multi-repo refactor.
 - *2026-04-29 18:50 ET* — Rev 2. Augmented after holistic review:
   - Added Phase 3.5 (absolute-path audit) — found leaks in `filesystem_integrity.py` + 2 experiment plan.md files.
   - Expanded Phase 5 from "smoke + single trial" into 6-tier acceptance gate (static / self-test / single-trial / full feature surface / cold-start isolation / dual-run period).
