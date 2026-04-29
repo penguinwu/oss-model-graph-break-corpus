@@ -3012,15 +3012,21 @@ def _synthesize_diffusers_inputs(model, model_cls, device, batch=1, latent_h=8, 
                    "pooled_projections", "txt_ids", "img_ids",
                    "x"}  # CLIPImageProjection forward(self, x: 2D embedding)
 
+    # `sample` spatial size: VAE-with-tiling needs ≥128 (tiling math), other
+    # VAEs/UNets use 64 (standard). Transformer hidden_states stays small
+    # (latent space, ~8×8) regardless — bumping it OOMs for deep transformers.
+    has_tiling = hasattr(model, "enable_tiling")
+    sample_spatial = 128 if has_tiling else 64
+
     def _val_for(p):
         n = p.name.lower()
         if n == "sample":
             if is_audio:
                 return torch.randn(batch, in_ch, 256, device=device)  # 3D for audio: [B, C, T]
             elif is_3d:
-                return torch.randn(batch, in_ch, 4, 32, 32, device=device)
+                return torch.randn(batch, in_ch, 4, sample_spatial, sample_spatial, device=device)
             else:
-                return torch.randn(batch, in_ch, 64, 64, device=device)
+                return torch.randn(batch, in_ch, sample_spatial, sample_spatial, device=device)
         elif n == "hidden_states":
             if is_transformer_3d:
                 # 5D for 3D transformers: [B, C, T, H, W] — shapes vary, use small T
