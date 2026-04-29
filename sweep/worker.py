@@ -3445,19 +3445,21 @@ def run_correctness(spec, device, mode):
         "pass": "correctness",
     }
 
-    # Lazy import HF helpers — fail soft if not available
-    try:
-        from transformers import set_seed
-    except ImportError:
-        set_seed = lambda s: torch.manual_seed(s)
-    try:
-        from transformers.testing_utils import (
-            set_config_for_less_flaky_test,
-            set_model_for_less_flaky_test,
-        )
-    except ImportError:
-        set_config_for_less_flaky_test = lambda c: None
-        set_model_for_less_flaky_test = lambda m: None
+    # Determinism setup. We require HF set_seed (covers torch + numpy + python.random
+    # + torch.cuda); a torch.manual_seed-only fallback would silently leave numpy and
+    # python.random adrift, masking real divergences as flakiness. If HF isn't
+    # available, the correctness pass should fail loudly, not run with degraded RNG.
+    from transformers import set_seed
+    from transformers.testing_utils import (
+        set_config_for_less_flaky_test,
+        set_model_for_less_flaky_test,
+    )
+
+    # Enable deterministic algorithms (catches matmul nondeterminism on CUDA so we
+    # don't misclassify tolerance-band flakiness as a torch.compile divergence).
+    # CUBLAS_WORKSPACE_CONFIG must be set before the first cuBLAS call to take
+    # effect — harmless if already set or on CPU.
+    os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
     # Phase 1: Create model + apply less-flaky config
     print("PHASE:create", file=sys.stderr, flush=True)
@@ -3490,7 +3492,7 @@ def run_correctness(spec, device, mode):
     # Phase 2: Eager forward
     print("PHASE:eager", file=sys.stderr, flush=True)
     torch._dynamo.reset()
-    set_seed(42)
+    set_seed(42, deterministic=True)
     try:
         with ctx:
             if inputs_tuple:
@@ -3515,7 +3517,7 @@ def run_correctness(spec, device, mode):
         return result
 
     print("PHASE:compiled_forward", file=sys.stderr, flush=True)
-    set_seed(42)
+    set_seed(42, deterministic=True)
     try:
         with ctx:
             if inputs_tuple:

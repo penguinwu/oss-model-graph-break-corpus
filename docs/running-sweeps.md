@@ -11,18 +11,13 @@ source ~/envs/torch-test/bin/activate
 pip install -r requirements.txt
 
 # Run a sweep
-python3 sweep/run_sweep.py sweep \
+python3 tools/run_experiment.py sweep \
     --source hf diffusers custom \
     --workers 4 \
     --timeout 180
 ```
 
-Or use the unified CLI (equivalent):
-
-```bash
-python3 tools/run_experiment.py sweep \
-    --source hf diffusers custom
-```
+`tools/run_experiment.py` is the unified front door — it wraps `sweep/run_sweep.py` plus the experiment-config and nightly subcommands. Use it for everything in this guide.
 
 ## Smoke test on a random subset
 
@@ -56,7 +51,7 @@ Sweeps run in two passes:
 By default, `sweep` runs both passes. To run identify-only (faster):
 
 ```bash
-python3 sweep/run_sweep.py sweep --identify-only \
+python3 tools/run_experiment.py sweep --identify-only \
     --source hf diffusers custom
 ```
 
@@ -65,7 +60,7 @@ python3 sweep/run_sweep.py sweep --identify-only \
 Point `--python` at your venv's Python to avoid activating it:
 
 ```bash
-python3 sweep/run_sweep.py sweep \
+python3 tools/run_experiment.py sweep \
     --python ~/envs/torch-test/bin/python \
     --source hf diffusers custom \
     --workers 4
@@ -75,7 +70,7 @@ Or set `SWEEP_PYTHON`:
 
 ```bash
 SWEEP_PYTHON=~/envs/torch-test/bin/python \
-    python3 sweep/run_sweep.py sweep --source hf diffusers custom
+    python3 tools/run_experiment.py sweep --source hf diffusers custom
 ```
 
 ## Model sources
@@ -93,10 +88,10 @@ Default sources: `hf diffusers custom`. TIMM requires explicit request.
 
 ```bash
 # Mark batch + sequence length dims as dynamic
-python3 sweep/run_sweep.py sweep --dynamic mark --source hf diffusers custom
+python3 tools/run_experiment.py sweep --dynamic mark --source hf diffusers custom
 
 # All dims symbolic
-python3 sweep/run_sweep.py sweep --dynamic true --source hf diffusers custom
+python3 tools/run_experiment.py sweep --dynamic true --source hf diffusers custom
 ```
 
 ## Correctness testing (Phase 3)
@@ -112,6 +107,16 @@ Output goes to `correctness/correctness_results.json`. Each entry records `statu
 
 Tolerance: HF-style fp32 atol=1e-6, rtol=1e-4. Recursive walker over `ModelOutput` float fields; integer/boolean/0-dim/None/Cache fields are skipped. Each divergence is a data point to file or explain — there is no "acceptance threshold." Sort by `severity_ratio` descending to triage filing order.
 
+### Determinism
+
+The correctness pass enables full determinism so eager and compiled forwards see identical RNG and identical kernel choices:
+
+- `transformers.set_seed(42, deterministic=True)` — seeds `random` / `numpy.random` / `torch.manual_seed` / `torch.cuda.manual_seed_all` AND calls `torch.use_deterministic_algorithms(True)`. Required (no fallback) — a torch-only seed would leave numpy/python.random adrift, masking real divergences as flakiness.
+- `CUBLAS_WORKSPACE_CONFIG=:4096:8` — set automatically before the first cuBLAS call (needed when `use_deterministic_algorithms=True` with CUDA matmul). Override by setting the env var before launch.
+- HF `set_config_for_less_flaky_test` + `set_model_for_less_flaky_test` — disables dropout, fixes init weights.
+
+If a divergence persists after determinism is enabled, it's structural (a real compiler bug), not nondeterminism noise.
+
 Methodology and design rationale: `design/design-doc.md` Section 8.
 
 ## Crash recovery
@@ -119,7 +124,7 @@ Methodology and design rationale: `design/design-doc.md` Section 8.
 Sweeps checkpoint after every model. To resume after a crash:
 
 ```bash
-python3 sweep/run_sweep.py sweep --resume --source hf diffusers custom
+python3 tools/run_experiment.py sweep --resume --source hf diffusers custom
 ```
 
 The `--resume` flag reads the checkpoint file and skips already-completed models.
@@ -177,10 +182,10 @@ The sweep CLI accepts custom `torch.compile()` configuration directly. No need t
 Example — fullgraph + dynamic shapes + a custom suppression patch:
 
 ```bash
-python3 sweep/run_sweep.py sweep \
+python3 tools/run_experiment.py sweep \
     --compile-kwargs '{"fullgraph": true, "dynamic": true, "backend": "eager"}' \
-    --setup-script sweep/configs/animesh-logging-suppress.py \
-    --run-name animesh-fullgraph
+    --setup-script sweep/configs/suppress-library-logging.py \
+    --run-name fullgraph-experiment
 ```
 
 Defaults are bit-for-bit identical when no compile-config flags are passed — the cron baseline is unaffected.
