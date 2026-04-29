@@ -18,8 +18,8 @@ Issue management uses a plan-then-apply pattern:
 
 ```bash
 python3 tools/file_issues.py sweep-report \
-    --explain sweep_results/nightly/2026-04-19/explain_results.json \
-    --identify sweep_results/nightly/2026-04-19/identify_results.json
+    --explain sweep_results/nightly/<date>/explain_results.json \
+    --identify sweep_results/nightly/<date>/identify_results.json
 ```
 
 This produces a JSON plan file containing:
@@ -34,7 +34,7 @@ Review the JSON plan, then apply:
 
 ```bash
 python3 tools/file_issues.py sweep-update \
-    --plan sweep_results/nightly/2026-04-19/sweep-report.json
+    --plan sweep_results/nightly/<date>/sweep-report.json
 ```
 
 This PATCHes GitHub issues: updates bodies with current model tables, adjusts titles with counts, and closes issues that qualify.

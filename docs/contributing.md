@@ -27,7 +27,7 @@ python3 -m venv ~/envs/torch-test
 ~/envs/torch-test/bin/pip install -r requirements.txt
 
 # Run a sweep
-python3 sweep/run_sweep.py sweep \
+python3 tools/run_experiment.py sweep \
     --device cuda \
     --python ~/envs/torch-test/bin/python \
     --source hf diffusers custom \
@@ -64,6 +64,7 @@ python3 tools/validate.py
 | `sweep/orchestrator.py` | Shared worker management (spawn, harvest, timeout, kill, checkpoint) |
 | `sweep/explain.py` | Graph break analysis via Dynamo logging |
 | `sweep/sweep_watchdog.py` | Progress monitor + auto-restart on failure |
+| `sweep/test_explain.py` | Unit tests for the graph-break analysis module — `python3 sweep/test_explain.py` (no GPU) |
 | `sweep/large_models.json` | Models needing extended timeouts |
 | `sweep/tracked_models.json` | Models tracked for specific PR fixes |
 | `tools/run_experiment.py` | Unified CLI — wraps sweep + experiments + nightly pipeline |

@@ -154,7 +154,7 @@ This shows fullgraph counts, graph break counts, fixes, and regressions across P
 python3 tools/query.py --error deepcopy --output deepcopy_models.json
 
 # Run a targeted sweep on exported models
-python3 sweep/run_sweep.py --models deepcopy_models.json --device cuda
+python3 tools/run_experiment.py sweep --models deepcopy_models.json --device cuda
 
 # Export graph break analysis as CSV
 python3 tools/analyze_explain.py --csv
