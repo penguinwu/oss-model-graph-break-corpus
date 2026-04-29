@@ -1,6 +1,7 @@
 # Migration Plan: discovery → pt2-skill-discovery
 
-**Status:** plan signed off by Peng 2026-04-27 21:06 ET. Execute tomorrow morning.
+**Status:** plan signed off by Peng 2026-04-27 21:06 ET. Augmented with review findings 2026-04-29. Execute next.
+**Revision:** 2 (see revision log)
 **Owner:** Otter
 **New repo name:** `pt2-skill-discovery`
 **Strategy:** Option A (PYTHONPATH-style imports if/when needed; Option B = pip install -e deferred to future)
@@ -125,45 +126,100 @@ Specific files known to have cross-module imports:
 5. `scripts/_measure_case.py`: imports cases similarly
 6. `scripts/clean_sandboxes.py`: scan paths `/tmp/runs/` and `/tmp/discovery-runs/` — keep both (legacy + new)
 
-### Phase 5 — Validation (~45-60 min)
+### Phase 3.5 — Absolute-path audit (~15 min) [ADDED rev 2]
 
-1. *Smoke test:* `python -m scripts.smoke_test --skip-cases` in the new repo. All 9 Layer-1 tests should pass with same outputs as in corpus today.
-2. *Per-case smoke (Layer 2):* `python -m scripts.smoke_test --cases-only`. Each case's validate.py shim runs against canonical baseline. Should match corpus output.
-3. *Re-run Gate 2 single-VITS V8 trial via launch_parallel in new repo:*
-   ```
-   python -m scripts.launch_parallel \
-       --case vits_model_train --variants V8 --skills none --n 1 \
-       --experiment-dir /tmp/runs/migration-validation/ \
-       --max-parallel 1 \
-       --plan experiments/2026-04-parallel-runner-vits-validation/plan.md
-   ```
-4. Compare result.json against tonight's Gate 2 output (corpus repo, commit `8a4881a` era):
-   - Same schema fields populated
-   - Similar fix_status / gb_count / eager_self_diff (exact agent diffs may differ run-to-run; structure should match)
-   - perf_shape_sanity OK for both tiers
-   - flags consistent
-5. *If both pass:* migration validated. Proceed to Phase 6.
-6. *If either fails:* diagnose, fix, retry — do not proceed until clean.
+The "no corpus imports" claim is true at the Python `import` level, but absolute-path string leaks exist in the source tree and must be fixed before Phase 5.
 
-### Phase 6 — Corpus-side cleanup (~20 min)
+Confirmed leaks (from 2026-04-29 audit):
+- `discovery/filesystem_integrity.py:41` — hardcodes `/home/pengwu/projects/oss-model-graph-break-corpus/` in a docstring/comment.
+- `discovery/experiments/2026-04-cross-case-skill-discovery/plan.md` lines 60, 162, 165 — shell-command examples reference `corpus/discovery/skills/...` and `python -m discovery.run_case`.
+- `discovery/experiments/2026-04-parallel-runner-vits-validation/plan.md:96` — same shape.
+
+Procedure:
+1. `grep -rn "oss-model-graph-break-corpus" scripts/ cases/ experiments/ skills/` in new repo — fix every hit. Either (a) remove the absolute path entirely, (b) rewrite as `~/projects/pt2-skill-discovery/...`, or (c) parametrize via env var.
+2. `grep -rn "/discovery/" scripts/ cases/` (excluding intentional comments) — fix.
+3. `grep -rn "from discovery\." scripts/ cases/` — should be 0 after Phase 3 import update.
+4. `grep -rn "python -m discovery" experiments/ skills/` — replace with `python -m scripts...`.
+
+Failure mode if skipped: Phase 5 smoke test passes (because Python imports are clean) but a future agent copy-pastes a stale shell command from a plan.md and operates against the wrong repo.
+
+### Phase 5 — Validation (~3-4 hours, was 45-60 min) [EXPANDED rev 2]
+
+Original plan was a single smoke + single Gate 2 trial — proves "structurally working", not "fully functioning". Expanded into a tiered acceptance gate. Each tier MUST pass before the next.
+
+**Tier 0 — Static (~5 min):**
+- Per-module import probe: for each .py in `scripts/` and `cases/`, run `python -c "import scripts.X"` (or `import cases.Y`). Any ImportError = blocking.
+- Absolute-path grep: `grep -rn "oss-model-graph-break-corpus" scripts/ cases/` — must be 0 hits outside design narrative.
+- Stale-import grep: `grep -rn "from discovery\." scripts/ cases/` — must be 0.
+
+**Tier 1 — Self-tests (~10 min):**
+- `python -m scripts.smoke_test --skip-cases` (Layer 1, 9 tests). Outputs must match corpus baseline.
+- `python -m scripts.smoke_test --cases-only` (Layer 2, per-case validate). Match corpus output.
+
+**Tier 2 — Single-trial structural (~45 min):**
+- Gate 2 single VITS V8 trial via launch_parallel (original Phase 5 step 3 command, unchanged).
+- Compare result.json against corpus's last Gate 2 output: same schema fields populated; similar fix_status / gb_count / eager_self_diff (exact agent text varies); perf_shape_sanity OK on both tiers; flags consistent.
+
+**Tier 3 — Full feature surface (~60 min):**
+- Multi-config parallel launch: `python -m scripts.launch_parallel --case vits_model_train --variants V0,V8 --skills none --n 2 --max-parallel 2 ...`. Verifies parallel orchestrator + lifecycle gate end-to-end.
+- `merge_results.py` against the multi-config output. Verifies post-hoc aggregator.
+- `revalidate.py` against an existing run. Verifies revalidation tool.
+- `clean_sandboxes.py --dry-run`. Verifies housekeeping path scanning.
+
+**Tier 4 — Cold-start isolation (~15 min):**
+- `mv ~/projects/oss-model-graph-break-corpus/discovery /tmp/discovery_aside_$(date +%s)` (temporarily move corpus discovery dir aside)
+- Re-run Tier 1 + Tier 2 + Tier 3 in new repo. ANY failure = there's a hidden runtime dep on corpus's discovery dir.
+- Restore: `mv /tmp/discovery_aside_* ~/projects/oss-model-graph-break-corpus/discovery`
+- This is the load-bearing test for the "zero corpus runtime deps" claim.
+
+**Tier 5 — Cross-cutting integrations (~30 min):**
+- Daily-briefing skill: re-point at new repo (path config in skill or env var), run it, verify brief output is sane.
+- Tools triage decision (4 tools currently in `corpus/tools/` that touch discovery):
+  - `tools/check_experiments.py` — scans `discovery/experiments/`. Decision: port to new repo, retire from corpus.
+  - `tools/brief_data.py` — emits paths into discovery. Decision: port or update to scan both repos.
+  - `tools/new_experiment.py` — creates `corpus/discovery/experiments/<slug>/`. Decision: port to new repo (it creates discovery experiments).
+  - `tools/new_case_issue.py` — files GitHub issues. Decision needed: target pt2-skill-discovery or stay corpus? (See "Open decision" below.)
+
+**Tier 6 — Dual-run period (3-5 calendar days, passive):**
+- Both repos exist. corpus/discovery/ stays on disk, marked READ-ONLY (banner only — see Phase 6a).
+- All NEW discovery work goes to new repo only.
+- Spot-check daily that I haven't fallen back to corpus paths.
+- Only after Tier 6 passes do we execute Phase 6b (the actual `git rm`).
+
+If any tier fails: see "Rollback" section below before re-trying.
+
+### Phase 6 — Corpus-side cleanup [SPLIT into 6a + 6b in rev 2]
+
+Per Peng's "don't remove old until new is proven", split into two phases separated by the Tier 6 dual-run period.
+
+#### Phase 6a — Mark corpus discovery READ-ONLY (~15 min, immediately after Tier 5 passes)
+
+1. Add `corpus/discovery/MIGRATED.md` banner: "Authoritative copy at penguinwu/pt2-skill-discovery as of YYYY-MM-DD. DO NOT EDIT HERE — edits will be lost." Include link.
+2. Update corpus `CLAUDE.md`:
+   - Add a top-level note: "discovery/ has migrated — see corpus/discovery/MIGRATED.md"
+   - Remove "## Discovery Experiments" section
+   - Remove the discovery row from the tier table
+   - Add note pointing at new repo
+3. Commit + push corpus banner change. Files stay on disk for fallback.
+
+Result: corpus/discovery/ is still readable, runnable as a fallback if the new repo breaks, but conceptually frozen.
+
+#### Phase 6b — Actual deletion (~20 min, after Tier 6 dual-run period)
+
+Only execute if Tier 6 passed cleanly: ≥1 real workload completed in new repo, no fallbacks observed.
 
 1. `git rm -r discovery/` from corpus repo
-2. Add `discovery/MOVED.md` (one-line pointer): "Skill-discovery work has moved to penguinwu/pt2-skill-discovery"
-3. Update corpus `CLAUDE.md`:
-   - Remove "## Discovery Experiments" section
-   - Remove the "Discovery (multi-trial...)" row from the tier table (only Tier B + Tier C remain corpus-side)
-   - Update "Universal floor" closure rule wording if it references discovery
-   - Add note pointing at new repo
-4. Update `tools/check_experiments.py`: it scans `discovery/experiments/`. Either (a) delete the tool, or (b) make it skip if dir doesn't exist (tier-A specific check moves with discovery). Lean: delete from corpus, port to discovery if still needed.
-5. Update `discovery/README.md` (corpus-side): file is gone after `git rm -r discovery/` — no action needed
-6. Audit corpus `tools/` for any tool that still references `discovery/`: update or delete
-7. Commit + push corpus cleanup
+2. Replace `corpus/discovery/MIGRATED.md` with `corpus/discovery/MOVED.md` (one-line pointer): "Skill-discovery work has moved to penguinwu/pt2-skill-discovery"
+3. `tools/check_experiments.py`: delete from corpus (port already happened in Tier 5)
+4. Audit corpus `tools/` for any tool that still references `discovery/`: should be 0 after Tier 5 triage; verify
+5. Commit + push corpus cleanup
 
-### Phase 7 — Otter context update (~15 min)
+### Phase 7 — Otter context update (~20 min) [EXPANDED rev 2]
 
 1. Update `~/.myclaw/spaces/AAQANraxXE4/CLAUDE.md`:
    - Recognize TWO primary projects: corpus + pt2-skill-discovery
-   - Add explicit *context-switch protocol*: "When switching project context, state the project name explicitly in chat. Don't apply tier-table rules from one repo to the other."
+   - Add *context-switch protocol* (behavioral): "When switching project context, state the project name explicitly in chat."
+   - Add *mechanical safeguard* [ADDED rev 2]: at session start, parse the active cwd; if cwd is in either repo, emit a one-line "Project: <name>" banner as the first line of every response that touches files. If cwd is ambiguous (neither/outside both), require explicit project declaration before any file edit.
    - Update push-permission section: extend git-push permission from `penguinwu/oss-model-graph-break-corpus` to ALSO include `penguinwu/pt2-skill-discovery` (same guardrails: only push to main, never force, log every push, etc.)
    - Update CLAUDE.md primary project line to acknowledge both
 2. Populate the new pt2-skill-discovery `CLAUDE.md`:
@@ -172,15 +228,60 @@ Specific files known to have cross-module imports:
    - Universal closure rule (copy from corpus)
    - Push permission acknowledgment
 
-### Phase 8 — Wrap-up (~15 min)
+### Phase 8 — Wrap-up + external references audit (~30 min) [EXPANDED rev 2]
 
-1. Update Otter memory entries that reference `discovery/...` paths:
-   - `reference_corpus_seeding.md` — update paths to `pt2-skill-discovery/scripts/...`
-   - `reference_pytorch_skills.md` — verify any discovery references
+1. *Otter memory audit:* grep memory dir for `discovery/`, `corpus/discovery/`, `oss-model-graph-break-corpus/discovery`. Update each hit:
+   - `reference_corpus_seeding.md` — update paths
+   - `reference_pytorch_skills.md` — verify
    - `reference_sweep_skill.md` — verify
-   - Any other entries with `discovery/` in them
-2. Verify no cron job touches the moved files. Spot-check `myclaw.db jobs` table for any reference to `discovery/`
-3. Verify the parallel runner experiment we just landed (commit `8a4881a` era) is reproducible in the new repo — that's the validation from Phase 5
+   - Any other entries
+2. *External references audit* [ADDED rev 2]:
+   - Field report (`sweep_results/experiments/animesh-fullgraph-2026-04-28/FIELD-REPORT-GRAPH-BREAKS.md` + Drive doc 1KpJP00U9lPxe3TzA42Sd8m7oqHd2x468Ju52hUGPQnk) — update Cross-references row pointing at `discovery/experiments/.../findings.md` to point at new-repo path or just reference the Drive doc.
+   - VITS report Drive doc 1I3JU8oKajuPzYi6hmwYbaK9px-Jsjw_sm43uJBONON8 — content references corpus paths; update if material.
+   - AutoDev kanban: file a tracking task "Discovery issues now go to pt2-skill-discovery" so future agents see the routing change.
+   - Workplace posts referencing corpus/discovery: best-effort comment with new location.
+3. *Cron audit:* `sqlite3 ~/.myclaw/myclaw.db "select name, command from jobs where command like '%discovery%';"` — confirm 0 hits (current state, but re-verify post-migration).
+4. Verify the parallel runner experiment from commit `8a4881a` era is reproducible in the new repo — Tier 2/3 already covers this.
+
+---
+
+## Open decision: AutoDev issue ownership [ADDED rev 2]
+
+`tools/new_case_issue.py` currently files GitHub issues to `penguinwu/oss-model-graph-break-corpus`. After migration, two options:
+
+- **Option A (lean):** Discovery issues → pt2-skill-discovery (own kanban, own labels, own filtering). Corpus issues stay in corpus. Clean separation, mirrors the repo split.
+- **Option B:** All issues stay in corpus (single kanban for the team). Discovery just lives in a different repo.
+
+Otter's recommendation: Option A. But this is a Peng decision; default left unspecified until decided.
+
+---
+
+## Rollback plan [ADDED rev 2]
+
+The new repo is created early (Phase 1). If a later phase reveals the layout is wrong, here's what to do:
+
+**Rollback Tier 0/1 failure (in pt2-skill-discovery, before any push to main):**
+- Edit locally; re-test; only push when clean.
+- No corpus-side cleanup happens until Phase 6a; corpus is untouched.
+
+**Rollback Tier 2/3 failure (single trial / multi-config broken):**
+- Diagnose locally. Likely import or path issue surfaced by real workload.
+- corpus/discovery/ is still authoritative — fall back is "use corpus, fix new repo, retry."
+
+**Rollback Tier 4 cold-start failure (hidden corpus dep discovered):**
+- This is the most informative failure — surfaces a genuine layout assumption that's wrong.
+- Restore `mv /tmp/discovery_aside_* ~/projects/oss-model-graph-break-corpus/discovery` immediately.
+- Document the missed dep in this plan; revise Phase 2/3 accordingly; retry Tier 4.
+
+**Rollback Tier 5/6 failure (skill / tool / dual-run issue):**
+- New repo is functional but ecosystem-incomplete. Fix in place; do NOT proceed to 6b.
+- corpus/discovery/ remains as fallback.
+
+**Catastrophic rollback (decision to abandon the v1 layout):**
+- Do NOT delete the GitHub repo (history is cheap; abandoning a "v1" branch is fine).
+- Mark new repo's main branch as "abandoned-v1" in README.
+- All work continues in corpus until v2 plan is drafted.
+- corpus/discovery/ is untouched throughout, so this is a no-op rollback.
 
 ---
 
@@ -220,3 +321,12 @@ If you (or another agent) wake up cold and pick this up:
 ## Revision log
 
 - *2026-04-27 21:11 ET* — Plan filed after iteration with Peng. Approved for tomorrow-morning execution.
+- *2026-04-29 18:50 ET* — Rev 2. Augmented after holistic review:
+  - Added Phase 3.5 (absolute-path audit) — found leaks in `filesystem_integrity.py` + 2 experiment plan.md files.
+  - Expanded Phase 5 from "smoke + single trial" into 6-tier acceptance gate (static / self-test / single-trial / full feature surface / cold-start isolation / dual-run period).
+  - Split Phase 6 into 6a (banner only, immediately) and 6b (actual `git rm`, deferred ≥3-5 days after Tier 6 dual-run validates) per Peng's "don't remove old until new is proven."
+  - Expanded Phase 7 with mechanical bi-project safeguard (cwd-based banner) — behavioral rule alone is fragile.
+  - Expanded Phase 8 with external references audit (field report, Drive docs, AutoDev kanban, cron).
+  - Added "Open decision: AutoDev issue ownership" section.
+  - Added "Rollback plan" section with per-tier failure paths.
+  - Did NOT change weakness #3 (duplicated explain_helper drift) per Peng — design choice from round 1.
