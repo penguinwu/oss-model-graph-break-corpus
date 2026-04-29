@@ -1,0 +1,44 @@
+{
+  "_doc": "Models that legitimately fail with stable known unfixed bugs. The sweep skips these entirely AND validates that no NEW failure of the same class appears outside this list. New failures during a sweep MUST be either (a) added here with a reason, or (b) fixed at root. Goal: zero unexplained create_error/eager_error per sweep, so setup-side issues never mask real graph-break improvements/regressions.",
+  "_workflow": [
+    "1. To add an entry: append to `entries[]` with status (one of 'create_error' or 'eager_error'), model, modes, error_pattern (substring of the actual error message), added (ISO date), reason (one-line + issue link if applicable).",
+    "2. The sweep skips any (model, mode) pair listed here. Skip is logged.",
+    "3. After identify pass, the sweep validates: every create_error or eager_error in results must match a known entry's (model, mode, status, error_pattern). Unmatched ones print a loud warning and (with --strict-known-errors) cause a non-zero exit.",
+    "4. To remove an entry: when the underlying bug is fixed (or worked around), delete the line. Next sweep re-tests the model and surfaces the new status."
+  ],
+  "_status_field": "Each entry's `status` must be either 'create_error' (model build/config fails) or 'eager_error' (model builds but pure-eager forward fails). The validator gates both classes with the same per-class strictness.",
+  "entries": [
+    {
+      "status": "create_error",
+      "model": "ZambaForCausalLM",
+      "modes": ["eval", "train"],
+      "error_pattern": "tie_weights_keys",
+      "added": "2026-04-28",
+      "reason": "tie_weights_keys definition bug surfaced by Animesh fullgraph sweep. Real corpus or HF-side bug; not an env issue."
+    },
+    {
+      "status": "create_error",
+      "model": "ZambaModel",
+      "modes": ["eval", "train"],
+      "error_pattern": "tie_weights_keys",
+      "added": "2026-04-28",
+      "reason": "Same root cause as ZambaForCausalLM."
+    },
+    {
+      "status": "create_error",
+      "model": "Qwen3OmniMoeTalkerModel",
+      "modes": ["eval", "train"],
+      "error_pattern": "Qwen3OmniMoeTalkerTextConfig",
+      "added": "2026-04-28",
+      "reason": "transformers config drift — Qwen3OmniMoeTalkerTextConfig missing 'shared_expert_intermediate_size' attribute. Real bug — likely a transformers version mismatch with the model's expected config. Surfaced by Animesh fullgraph sweep."
+    },
+    {
+      "status": "eager_error",
+      "model": "PeAudioVideoModel",
+      "modes": ["eval", "train"],
+      "error_pattern": "None",
+      "added": "2026-04-28",
+      "reason": "KeyError(None) in pure-eager forward — model's forward path does some_dict[None] somewhere. Surfaced by Animesh fullgraph sweep timm-cluster re-test (after pip install timm let it pass create-time). Real model bug, not env."
+    }
+  ]
+}
