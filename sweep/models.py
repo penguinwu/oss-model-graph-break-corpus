@@ -274,6 +274,20 @@ def enumerate_diffusers():
                 "class_labels": [3],
             },
         },
+        # Verified pass on 2026-04-29 with default AutoencoderKL constructor_args
+        # — the only AutoencoderKL variant whose __init__ accepts the parent
+        # family's kwargs cleanly. Other variants (Allegro, CogVideoX, Cosmos,
+        # Hunyuan*, LTX*, Magvit, Mochi, QwenImage, TemporalDecoder, Wan)
+        # require per-variant configs (#94).
+        "AutoencoderKLFlux2": {
+            "constructor_args": {
+                "in_channels": 3, "out_channels": 3, "latent_channels": 4,
+                "down_block_types": ("DownEncoderBlock2D", "DownEncoderBlock2D"),
+                "up_block_types": ("UpDecoderBlock2D", "UpDecoderBlock2D"),
+                "block_out_channels": (32, 64),
+            },
+            "inputs": {"sample": [1, 3, 64, 64]},
+        },
     }
 
     models = []
@@ -294,39 +308,26 @@ def enumerate_diffusers():
         if "Multi" in name:
             continue
 
-        # Try to find a config — exact match, then family match (prefix).
-        # If a family matches, copy its constructor_args + inputs as a starting
-        # point. Variants may need adjustment but this is closer than nothing.
+        # Require an EXACT FAMILY_CONFIGS entry. Family-match by prefix sounded
+        # appealing (AutoencoderKLCogVideoX uses AutoencoderKL-shaped inputs)
+        # but in practice the variants have divergent constructor schemas
+        # (different down_block_type strings, different __init__ kwargs) and
+        # 15 of 16 AutoencoderKL family-match models still create_error'd in
+        # an empirical rerun. Better to skip cleanly and add explicit configs
+        # case-by-case (#94) than to ship a leaky family-match pretense.
         config = FAMILY_CONFIGS.get(name)
-        family_match = None
-        if not config:
-            for family_name, family_config in FAMILY_CONFIGS.items():
-                if name.startswith(family_name) and name != family_name:
-                    config = family_config
-                    family_match = family_name
-                    break
-
-        # Without a config, we have no way to construct the model OR call its
-        # forward(). Including such specs in the sweep guarantees a gated
-        # failure (`forward() missing N required positional arguments` or
-        # `__init__() missing ...`) — that's harness noise, not a real bug.
-        # Skip; track for visibility in the enumeration log.
         if not config:
             skipped_no_config.append(name)
             continue
 
-        spec = {
+        models.append({
             "name": name,
             "source": "diffusers",
             "hf_class": name,
             "constructor_args": config["constructor_args"],
             "inputs": config["inputs"],
             "has_config": True,
-        }
-        if family_match:
-            spec["family_match"] = family_match
-
-        models.append(spec)
+        })
 
     if skipped_no_config:
         print(f"[enumerate_diffusers] Skipped {len(skipped_no_config)} ModelMixin "

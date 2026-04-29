@@ -1508,6 +1508,11 @@ HARNESS_ERROR_PATTERNS = (
     ".forward() missing ", ".__init__() missing ",
     # corpus generated a None where a config field needed an int
     "unsupported operand type(s) for ",
+    # corpus passed kwargs the variant doesn't accept (cross-family constructor
+    # mismatch — diffusers AutoencoderKL family-match attempt failures)
+    "got an unexpected keyword argument",
+    # diffusers variant-specific block-type schemas don't accept the family default
+    "Invalid `down_block_type`", "Unsupported down_block_type", "Unknown up block type",
 )
 
 
