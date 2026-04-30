@@ -276,6 +276,36 @@ def _log_versions(python_bin, output_dir):
 def run_sweep(args):
     """Main sweep logic."""
     python_bin = _resolve_python(args)
+
+    # ── Venv pre-flight (safe under agent identity; see venv_setup.py) ──
+    if getattr(args, "torch", None) and getattr(args, "cuda_variant", None):
+        # Import works whether run_sweep.py is invoked as a module
+        # (`python -m sweep.run_sweep`) or as a script (`python sweep/run_sweep.py`).
+        try:
+            from sweep.venv_setup import (
+                TorchSpec, ensure_venv_ready,
+                EXIT_AWAITING_HUMAN_BOOTSTRAP, EXIT_VERSION_MISMATCH,
+            )
+        except ImportError:
+            from venv_setup import (
+                TorchSpec, ensure_venv_ready,
+                EXIT_AWAITING_HUMAN_BOOTSTRAP, EXIT_VERSION_MISMATCH,
+            )
+        spec = TorchSpec(version_pattern=args.torch, cuda_variant=args.cuda_variant)
+        venv_path = ensure_venv_ready(spec)
+        python_bin = str(venv_path / "bin" / "python")
+        print(f"[run_sweep] venv pre-flight resolved: {venv_path} (python={python_bin})")
+
+        # CRITICAL: If we're not already running under the resolved venv's
+        # python, re-exec. Otherwise enumerate_hf etc. (which import
+        # transformers/diffusers in-process) will fail with ModuleNotFoundError.
+        # We use a sentinel env var to prevent re-exec loops.
+        if sys.executable != python_bin and not os.environ.get("_VENV_REEXECED"):
+            os.environ["_VENV_REEXECED"] = "1"
+            os.environ["SWEEP_PYTHON"] = python_bin
+            print(f"[run_sweep] re-exec'ing under {python_bin} for in-process imports")
+            os.execv(python_bin, [python_bin] + sys.argv)
+
     output_dir = _resolve_run_output_dir(args).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     extra_worker_args = _build_extra_worker_args(args)
@@ -1680,6 +1710,15 @@ def main():
                             help="Tag this run as experimental. Defaults output to "
                                  "sweep_results/experiments/<slug>-<date>/. "
                                  "Tagged into result metadata.")
+    # Venv pre-flight (uses sweep.venv_setup; safe under agent identity)
+    run_parent.add_argument("--torch", default=None, metavar="SPEC",
+                            help="Torch version spec (e.g. '2.12.*'). If provided "
+                                 "with --cuda-variant, runs venv pre-flight to ensure "
+                                 "a healthy matching venv exists (clones from "
+                                 "~/envs/<cuda_variant>/ pool if needed). "
+                                 "Recipe: ~/.myclaw-shared/recipes/python-venv-bpf.md")
+    run_parent.add_argument("--cuda-variant", default=None, choices=["cu128", "cu126"],
+                            help="CUDA variant for --torch venv pre-flight.")
 
     # ── sweep subcommand ──
     sweep_parser = subparsers.add_parser(

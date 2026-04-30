@@ -842,6 +842,13 @@ def run_refresh_nightly(args):
 
     Default variant is cu126 (active line as of 2026-04-26 — cu128 nightly CI
     stopped publishing after Apr 8). Override with --cuda-variant if needed.
+
+    NOTE: This works because the target venv already has cuda-toolkit installed
+    from a prior bootstrap — pip's --upgrade path doesn't re-fetch it from
+    pypi.nvidia.com (BPF-blocked for agent). For NEW venv creation (different
+    cuda variant, fresh install), use `python -m sweep.venv_setup` or pass
+    `--torch SPEC --cuda-variant cuXYZ` to `run_sweep.py`. Recipe:
+    `~/.myclaw-shared/recipes/python-venv-bpf.md`
     """
     venv_dir = Path(args.venv).expanduser().resolve()
     pip = venv_dir / "bin" / "pip"
@@ -1817,6 +1824,13 @@ def main():
     sub_sweep.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
     sub_sweep.add_argument("--resume", action="store_true",
                            help="Resume from checkpoint")
+    sub_sweep.add_argument("--torch", default=None, metavar="SPEC",
+                           help="Torch version spec (e.g. '2.12.*'). Triggers "
+                                "venv pre-flight via sweep.venv_setup. Recipe: "
+                                "~/.myclaw-shared/recipes/python-venv-bpf.md")
+    sub_sweep.add_argument("--cuda-variant", default=None,
+                           choices=["cu128", "cu126"],
+                           help="CUDA variant for --torch venv pre-flight.")
     sub_sweep.add_argument("--dynamic-dim", choices=["batch", "all"],
                            help="Dynamic shapes mode")
     sub_sweep.add_argument("--no-auto-retry", action="store_true",
