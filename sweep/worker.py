@@ -3317,13 +3317,14 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
     if spec.get("variant"):
         result["variant"] = spec["variant"]
 
-    # Strict determinism setup mirroring run_correctness. We require HF set_seed
-    # (covers torch + numpy + python.random); HF less_flaky helpers disable
-    # dropout + fix init. NOT warn_only=True — non-deterministic eager noise
-    # would misclassify tolerance-band flakiness as compiler divergence, which
-    # is exactly the bug we're trying to detect. Models that hit
-    # deterministic-algo errors will surface as eager_error — that's explicit
-    # signal, not noise to hide.
+    # Determinism setup. Default forward path uses set_seed(deterministic=True)
+    # ONLY — no less_flaky helpers — so numerics reflect the real model. If the
+    # eager-vs-compiled comparison shows divergence, we re-run with less_flaky
+    # helpers as a SECOND data point (see "less_flaky retry" block below): if
+    # divergence disappears, that tells us the original divergence was tolerance-
+    # band noise from low-variance norm operations, not a real compiler bug. If
+    # `numeric_noise_floor_dominant=true` happens often, that's signal to revisit
+    # strategy — captured as data, not buried in methodology.
     # CUBLAS_WORKSPACE_CONFIG must be set before first cuBLAS call.
     from transformers import set_seed
     from transformers.testing_utils import (
@@ -3348,16 +3349,6 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
         result["create_time_s"] = round(time.perf_counter() - t_start, 3)
         return result
     result["create_time_s"] = round(time.perf_counter() - t_start, 3)
-
-    # Apply HF less-flaky tweaks (disables dropout, fixed init). Mirrors
-    # run_correctness — these are essential for stable eager-vs-compiled comparison.
-    try:
-        if hasattr(model, "config"):
-            set_config_for_less_flaky_test(model.config)
-        set_model_for_less_flaky_test(model)
-    except Exception as e:
-        # Helpers can fail on unusual model shapes — log but don't abort
-        result["less_flaky_warning"] = f"{type(e).__name__}: {str(e)[:200]}"
 
     if mode == "train":
         model.train()
@@ -3549,10 +3540,76 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
             result["numeric_status"] = "error"
             result["numeric_error"] = f"{type(e).__name__}: {str(e)[:500]}"
 
+    # ─── less_flaky retry on divergence ──────────────────────────────────
+    # If the default-determinism comparison shows divergence, re-run with HF
+    # less_flaky helpers (norm eps → 1.0, dropout off, fixed init). If the
+    # divergence disappears, that's a noise-floor signal — the original
+    # divergence came from low-variance norm operations amplifying tiny eager-
+    # vs-compiled differences. If divergence persists, it's structural
+    # (compiler bug). Captured as data via numeric_noise_floor_dominant.
+    NON_MATCH = ("divergence", "nan_inf_introduced", "shape_mismatch", "dtype_mismatch")
+    if result.get("numeric_status") in NON_MATCH:
+        # Free the original model first to keep peak GPU memory bounded.
+        _cleanup(model, device)
+        model = None
+        out_eager = None
+        out_compiled = None
+
+        print("PHASE:less_flaky_retry", file=sys.stderr, flush=True)
+        retry_eager = None
+        retry_compiled = None
+        try:
+            retry_model, retry_inputs_dict, retry_inputs_tuple = create_model(spec, device)
+            try:
+                if hasattr(retry_model, "config"):
+                    set_config_for_less_flaky_test(retry_model.config)
+                set_model_for_less_flaky_test(retry_model)
+            except Exception as e:
+                result["less_flaky_warning"] = f"{type(e).__name__}: {str(e)[:200]}"
+            if mode == "train":
+                retry_model.train()
+            else:
+                retry_model.eval()
+            retry_ctx = torch.no_grad() if mode == "eval" else torch.enable_grad()
+
+            torch._dynamo.reset()
+            set_seed(42, deterministic=True)
+            with retry_ctx:
+                if retry_inputs_tuple:
+                    retry_eager = retry_model(*retry_inputs_tuple)
+                else:
+                    retry_eager = retry_model(**retry_inputs_dict)
+
+            torch._dynamo.reset()
+            retry_compiled_fn = torch.compile(retry_model, **effective_kwargs)
+            set_seed(42, deterministic=True)
+            with retry_ctx:
+                if retry_inputs_tuple:
+                    retry_compiled = retry_compiled_fn(*retry_inputs_tuple)
+                else:
+                    retry_compiled = retry_compiled_fn(**retry_inputs_dict)
+
+            cmp_lf = _compare_outputs_recursive(retry_eager, retry_compiled, atol=1e-6, rtol=1e-4)
+            result["numeric_less_flaky_status"] = cmp_lf["status"]
+            result["numeric_less_flaky_max_diff"] = round(cmp_lf["max_diff"], 8)
+            result["numeric_less_flaky_severity_ratio"] = round(cmp_lf["severity_ratio"], 4)
+            if cmp_lf["first_divergence"]:
+                result["numeric_less_flaky_first_divergence"] = cmp_lf["first_divergence"]
+            # Noise-floor signal: divergence in default run, match with less_flaky
+            result["numeric_noise_floor_dominant"] = (cmp_lf["status"] == "match")
+        except Exception as e:
+            result["numeric_less_flaky_status"] = "error"
+            result["numeric_less_flaky_error"] = f"{type(e).__name__}: {str(e)[:500]}"
+            result["numeric_noise_floor_dominant"] = False
+        finally:
+            if 'retry_model' in locals():
+                _cleanup(retry_model, device)
+
     if device == "cuda":
         result["gpu_mem_mb"] = round(torch.cuda.max_memory_allocated() / 1024**2, 1)
 
-    _cleanup(model, device)
+    if model is not None:
+        _cleanup(model, device)
     return result
 
 
