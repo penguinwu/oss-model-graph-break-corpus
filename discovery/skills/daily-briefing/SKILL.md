@@ -37,7 +37,6 @@ Parse the JSON. Top-level keys:
 - `open_loops` — section counts + `needs_input` items awaiting Peng
 - `filed_issue_activity` — `{available, total_count, new_activity_count, issues}` from `tools/check_filed_issues.py --changes-only --no-update`. Tracks NEW activity (comments, PR merged, state change) on issues we own across primary repos (corpus, pt2-skill-discovery) + Otter-filed external issues (pytorch/pytorch, transformers since 2026-03-01)
 - `handoff` — current state snapshot from `~/.myclaw/spaces/AAQANraxXE4/HANDOFF.md`
-- `latest_sweep_numeric` — `{available, sweep_label, mtime, age_hours, total_with_numeric, status_counts, divergent_count, top_divergent[]}` for the most recent sweep with `numeric_status` data. Sweeps are event-driven (not daily); **only surface in the brief when `available=true` AND `age_hours <= 24`** (= a new sweep landed since yesterday's brief). Otherwise omit entirely.
 
 ## Step 2 — Decide whether to suppress
 
@@ -115,9 +114,6 @@ Keep each item to one line. If 0 items in EITHER source, drop the section entire
   🐛 = regression discovered
   📝 = doc / report shipped
 ONLY include items scoped to: sweep, AutoDev, GB analysis, models.py, sweep harness, corpus tools/. Drop infra/skill-discovery items.)
-
-**Sweep numeric correctness — only when fresh.**
-If `latest_sweep_numeric.available == true` AND `latest_sweep_numeric.age_hours <= 24`, add a 📊 bullet here naming the sweep (`sweep_label`), the divergent count (`divergent_count` of `total_with_numeric`), and — if non-zero — the top 1-2 divergent rows (name + max_diff or first_divergence). If `divergent_count == 0`, still surface ("clean baseline — 0 divergent across N models"). If `age_hours > 24` or `available == false`, omit entirely (sweeps are event-driven, not daily; don't repeat stale data).
 
 📦 *Corpus project — open issues / loops*  (only if substantive)
 
