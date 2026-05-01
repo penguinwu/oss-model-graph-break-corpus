@@ -3295,32 +3295,15 @@ def _mark_dynamic_dims(inputs_dict, inputs_tuple, source, input_type):
                 torch._dynamo.mark_dynamic(t, 1)  # seq_len / time
 
 
-def _reset_identify_seeds(seed: int = 42) -> None:
-    """Reset torch + numpy + python.random RNG state for reproducible forwards.
-
-    Runs before each forward in run_identify so eager and compiled passes start
-    from identical RNG state — required for the numeric correctness check.
-    """
-    import random
-    random.seed(seed)
-    try:
-        import numpy as np
-        np.random.seed(seed)
-    except ImportError:
-        pass
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-
-
 def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
     """Compile a model and check for errors. Returns JSON-serializable result.
 
     With default compile_kwargs (fullgraph=True, backend="eager"), this is the
-    original graph break identification pass plus a lightweight numeric
-    correctness check (eager vs compiled). With custom compile_kwargs, it tests
-    arbitrary torch.compile configurations and skips the numeric check (custom
-    backends like inductor go through run_correctness).
+    original graph break identification pass plus a numeric correctness check
+    (eager vs compiled, strict-determinism setup mirroring run_correctness).
+    With custom compile_kwargs, it tests arbitrary torch.compile configurations
+    and skips the numeric check (custom backends like inductor go through
+    run_correctness).
     """
     t_start = time.perf_counter()
     result = {
@@ -3334,17 +3317,20 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
     if spec.get("variant"):
         result["variant"] = spec["variant"]
 
-    # Determinism setup for the numeric correctness check. warn_only=True
-    # because we run hundreds of models — hard-erroring on ops without
-    # deterministic kernels would convert "graph break detected" into
-    # "eager_error" and lose GB coverage. Models without deterministic kernels
-    # just get a noisier numeric_max_diff.
-    # CUBLAS_WORKSPACE_CONFIG must be set before first cuBLAS call to take effect.
+    # Strict determinism setup mirroring run_correctness. We require HF set_seed
+    # (covers torch + numpy + python.random); HF less_flaky helpers disable
+    # dropout + fix init. NOT warn_only=True — non-deterministic eager noise
+    # would misclassify tolerance-band flakiness as compiler divergence, which
+    # is exactly the bug we're trying to detect. Models that hit
+    # deterministic-algo errors will surface as eager_error — that's explicit
+    # signal, not noise to hide.
+    # CUBLAS_WORKSPACE_CONFIG must be set before first cuBLAS call.
+    from transformers import set_seed
+    from transformers.testing_utils import (
+        set_config_for_less_flaky_test,
+        set_model_for_less_flaky_test,
+    )
     os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
-    try:
-        torch.use_deterministic_algorithms(True, warn_only=True)
-    except Exception:
-        pass  # older torch / unsupported configs — degrade silently
 
     # Numeric check only meaningful with default fullgraph=True+eager backend.
     # Custom compile_kwargs (inductor, fullgraph=False) are run_correctness territory.
@@ -3363,6 +3349,16 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
         return result
     result["create_time_s"] = round(time.perf_counter() - t_start, 3)
 
+    # Apply HF less-flaky tweaks (disables dropout, fixed init). Mirrors
+    # run_correctness — these are essential for stable eager-vs-compiled comparison.
+    try:
+        if hasattr(model, "config"):
+            set_config_for_less_flaky_test(model.config)
+        set_model_for_less_flaky_test(model)
+    except Exception as e:
+        # Helpers can fail on unusual model shapes — log but don't abort
+        result["less_flaky_warning"] = f"{type(e).__name__}: {str(e)[:200]}"
+
     if mode == "train":
         model.train()
     else:
@@ -3373,7 +3369,7 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
     result["phase"] = "eager"
     print("PHASE:eager", file=sys.stderr, flush=True)
     torch._dynamo.reset()
-    _reset_identify_seeds(42)
+    set_seed(42, deterministic=True)
     t_eager = time.perf_counter()
     try:
         with ctx:
@@ -3424,7 +3420,7 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
                         inputs_dict["token_type_ids"] = torch.zeros(
                             B, new_seq_len, dtype=torch.long, device=device)
                     print("PHASE:eager_retry_image_tokens", file=sys.stderr, flush=True)
-                    _reset_identify_seeds(42)
+                    set_seed(42, deterministic=True)
                     try:
                         with ctx:
                             out_eager = model(**inputs_dict)
@@ -3476,7 +3472,7 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
         if "dynamic" not in effective_kwargs:
             effective_kwargs["dynamic"] = compile_dynamic
         compiled = torch.compile(model, **effective_kwargs)
-        _reset_identify_seeds(42)
+        set_seed(42, deterministic=True)
         with ctx:
             if inputs_tuple:
                 out_compiled = compiled(*inputs_tuple)
