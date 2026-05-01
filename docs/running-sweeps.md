@@ -45,8 +45,10 @@ Same `seed` → same 20 models, every time. Bump `size` (e.g. `50`, `100`) for t
 
 Sweeps run in two passes:
 
-1. **Identify** — compile each model with `fullgraph=True`, record pass/fail/error
+1. **Identify** — compile each model with `fullgraph=True`, record pass/fail/error, **and run a numeric correctness check** (eager vs compiled outputs at the same shape and seed) on every full-graph model
 2. **Explain** — for graph-breaking models, re-run with Dynamo logging to extract break reasons, locations, and counts
+
+The identify pass uses the same strict-determinism setup as the standalone correctness pass (`set_seed(42, deterministic=True)` + `CUBLAS_WORKSPACE_CONFIG` + HF less-flaky helpers), so eager noise doesn't leak into the comparison. Numeric fields on each identify result: `numeric_status` (`match` / `divergence` / `nan_inf_introduced` / `shape_mismatch` / `dtype_mismatch` / `skipped` / `error`), `numeric_max_diff`, `numeric_severity_ratio`, `numeric_first_divergence`, `numeric_skip_reason`. Skipped means the model graph-broke or compile_kwargs were customised — there's no clean compiled output to compare. See `tools/analyze_sweep.py` for the bucketed report (top-N divergent rows by severity_ratio).
 
 By default, `sweep` runs both passes. To run identify-only (faster):
 
@@ -96,7 +98,11 @@ python3 tools/run_experiment.py sweep --dynamic true --source hf diffusers custo
 
 ## Correctness testing (Phase 3)
 
-A separate `correctness` pass compares eager-mode outputs against compiled outputs on the same inputs (same seed, same shape) and surfaces numerical divergences introduced by the compiler. Runs only on models marked `fullgraph_ok` in the corpus — there's no point comparing outputs if compilation already failed.
+The identify pass already runs a numeric correctness check on every full-graph model (see "Two-pass architecture" above) — that's the routine source of divergence data, produced as a side effect of every sweep with no extra commands.
+
+The standalone `correctness` pass below is for **deep audits** (e.g., investigating a divergence found in routine sweep, or running with custom backends like inductor). For routine monitoring, just read the `numeric_*` fields off `identify_results.json`.
+
+The standalone pass compares eager-mode outputs against compiled outputs on the same inputs (same seed, same shape). Runs only on models marked `fullgraph_ok` in the corpus — there's no point comparing outputs if compilation already failed.
 
 ```bash
 python3 tools/run_experiment.py correctness \

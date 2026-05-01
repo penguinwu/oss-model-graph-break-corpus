@@ -18,6 +18,10 @@ Schema (top-level keys):
   backlog_aged   list of {number, title, url, age_days}  — Backlog cards aged >= BACKLOG_AGE_FLAG_DAYS
   open_loops     dict                      — {sections: {name: count}, needs_input: [{section, task, started}]}
   handoff        dict                      — {exists, mtime, first_lines} from HANDOFF.md
+  latest_sweep_numeric dict                — most recent sweep's numeric_status stats; the
+                                              skill surfaces only when age_hours <= 24 (sweeps
+                                              are event-driven, not daily; brief stays quiet
+                                              when no new sweep landed)
 
 The skill should never invent fields beyond these. Empty lists / dicts mean
 "nothing happened in that bucket" — emit accordingly.
@@ -215,6 +219,38 @@ def parse_open_loops(path: Path) -> dict:
     return {"sections": sections, "needs_input": needs_input}
 
 
+def gather_filed_issue_activity() -> dict:
+    """Run check_filed_issues.py to detect new activity on Otter-tracked issues.
+
+    Uses --no-update so the brief composition step doesn't race with the cron's
+    state file (which check_filed_issues.py owns separately). Returns a dict with
+    `new_activity_count`, `total_count`, and `issues` (list, only with new_activity=True).
+
+    Failures are non-fatal: returns a stub if the script crashes (e.g., proxy down).
+    """
+    script = Path(__file__).parent / "check_filed_issues.py"
+    if not script.exists():
+        return {"new_activity_count": 0, "total_count": 0, "issues": [], "available": False}
+    try:
+        res = subprocess.run(
+            ["python3", str(script), "--changes-only", "--no-update"],
+            capture_output=True, text=True, timeout=60,
+        )
+        if res.returncode != 0:
+            return {"new_activity_count": 0, "total_count": 0, "issues": [],
+                    "available": False, "error": res.stderr.strip()[:200]}
+        data = json.loads(res.stdout)
+        return {
+            "new_activity_count": data.get("new_activity_count", 0),
+            "total_count": data.get("total_count", 0),
+            "issues": data.get("issues", []),
+            "available": True,
+        }
+    except Exception as e:
+        return {"new_activity_count": 0, "total_count": 0, "issues": [],
+                "available": False, "error": f"{type(e).__name__}: {str(e)[:200]}"}
+
+
 def read_handoff() -> dict:
     if not HANDOFF_PATH.exists():
         return {"exists": False}
@@ -223,6 +259,75 @@ def read_handoff() -> dict:
     text = HANDOFF_PATH.read_text()
     head = "\n".join(text.splitlines()[:40])
     return {"exists": True, "mtime": mtime, "first_lines": head}
+
+
+def gather_latest_sweep_numeric() -> dict:
+    """Find the most recent sweep with identify_results.json and emit numeric_status stats.
+
+    Sweeps are event-driven (not daily) — this gatherer always returns the latest
+    sweep's numeric data along with mtime/age. The skill decides whether to surface
+    based on age (new since last brief = age <= 24h is a reasonable default).
+
+    Returns {available: False, ...reason} if no sweeps with numeric data exist.
+    Returns {available: True, path, mtime, age_hours, sweep_label, status_counts,
+             total_with_numeric, divergent_count, top_divergent[]} otherwise.
+    """
+    sweep_root = REPO / "sweep_results"
+    if not sweep_root.exists():
+        return {"available": False, "reason": "no_sweep_results_dir"}
+
+    # Find all identify_results.json files; sort by mtime desc.
+    candidates = list(sweep_root.rglob("identify_results.json"))
+    if not candidates:
+        return {"available": False, "reason": "no_identify_results_found"}
+    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+
+    # Walk from newest until we find one with numeric_status fields.
+    for path in candidates[:10]:  # cap at 10 most recent to avoid scanning ancient archives
+        try:
+            data = json.load(open(path))
+            results = data.get("results", data) if isinstance(data, dict) else data
+        except Exception:
+            continue
+        numeric = [r for r in results if isinstance(r, dict) and "numeric_status" in r]
+        if not numeric:
+            continue
+
+        from collections import Counter
+        statuses = Counter(r["numeric_status"] for r in numeric)
+        divergent = [r for r in numeric
+                     if r["numeric_status"] in ("divergence", "nan_inf_introduced",
+                                                 "shape_mismatch", "dtype_mismatch")]
+        divergent.sort(key=lambda r: r.get("numeric_severity_ratio", 0), reverse=True)
+
+        mtime = path.stat().st_mtime
+        age_hours = (dt.datetime.now().timestamp() - mtime) / 3600.0
+        # sweep_label: parent dir relative to sweep_results
+        try:
+            label = str(path.parent.relative_to(sweep_root))
+        except ValueError:
+            label = path.parent.name
+
+        return {
+            "available": True,
+            "path": str(path),
+            "sweep_label": label,
+            "mtime": dt.datetime.fromtimestamp(mtime).isoformat(timespec="seconds"),
+            "age_hours": round(age_hours, 1),
+            "total_with_numeric": len(numeric),
+            "status_counts": dict(statuses),
+            "divergent_count": len(divergent),
+            "top_divergent": [
+                {"name": r["name"], "variant": r.get("variant"),
+                 "status": r["numeric_status"],
+                 "max_diff": r.get("numeric_max_diff"),
+                 "severity_ratio": r.get("numeric_severity_ratio"),
+                 "first_divergence": r.get("numeric_first_divergence")}
+                for r in divergent[:10]
+            ],
+        }
+
+    return {"available": False, "reason": "no_recent_sweeps_with_numeric_status"}
 
 
 def main() -> int:
@@ -250,7 +355,9 @@ def main() -> int:
         "experiments": run_check_experiments(),
         "backlog_aged": gather_backlog_aged(),
         "open_loops": parse_open_loops(OPEN_LOOPS_PATH),
+        "filed_issue_activity": gather_filed_issue_activity(),
         "handoff": read_handoff(),
+        "latest_sweep_numeric": gather_latest_sweep_numeric(),
     }
     json.dump(payload, sys.stdout, indent=2)
     sys.stdout.write("\n")

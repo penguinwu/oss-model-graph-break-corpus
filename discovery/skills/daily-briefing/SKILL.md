@@ -35,7 +35,9 @@ Parse the JSON. Top-level keys:
 - `experiments` — discovery-experiment convention drift
 - `backlog_aged` — board cards with `**Queued at:**` older than 7 days
 - `open_loops` — section counts + `needs_input` items awaiting Peng
+- `filed_issue_activity` — `{available, total_count, new_activity_count, issues}` from `tools/check_filed_issues.py --changes-only --no-update`. Tracks NEW activity (comments, PR merged, state change) on issues we own across primary repos (corpus, pt2-skill-discovery) + Otter-filed external issues (pytorch/pytorch, transformers since 2026-03-01)
 - `handoff` — current state snapshot from `~/.myclaw/spaces/AAQANraxXE4/HANDOFF.md`
+- `latest_sweep_numeric` — `{available, sweep_label, mtime, age_hours, total_with_numeric, status_counts, divergent_count, top_divergent[]}` for the most recent sweep with `numeric_status` data. Sweeps are event-driven (not daily); **only surface in the brief when `available=true` AND `age_hours <= 24`** (= a new sweep landed since yesterday's brief). Otherwise omit entirely.
 
 ## Step 2 — Decide whether to suppress
 
@@ -71,43 +73,76 @@ Pick what's interesting today. You decide order and emphasis. **Never invent.** 
 
 ### Skeleton
 
+The brief has THREE major buckets, in this order:
+1. *🚨 Needs your attention* — top of brief, things requiring Peng's input. **This is the most important section.** If only one thing in the whole brief, this is what Peng should look at first.
+2. *📦 Corpus project* — graph break corpus work (sweep, AutoDev, GB analysis, models.py, sweep harness)
+3. *🔬 Skill discovery project* — pt2-skill-discovery work (cases, skill catalog, harness, validators)
+
+Cross-project items (HANDOFF state, infra hooks, MyClaw work) go in a 4th *🛠 Cross-cutting* section ONLY if substantive — otherwise drop entirely.
+
+**NEVER mix corpus and skill-discovery items in the same section.** Different audiences, different concerns. Use the project tag (📦 vs 🔬) to make scope obvious at a glance.
+
 ```
 [🦦 Otter] Daily brief — <today>
 
-*What shipped since yesterday*
+🚨 *Needs your attention*  (only if non-empty — top of brief)
 
-1. <One-line bullet summarizing one thread of work, with issue refs if applicable.>
-2. <Next bullet.>
-3. <Next bullet.>
+1. <emoji> <project tag> <task one-liner> (<age>d) ← (← if >= 2d old)
+2. 💬 <project tag> <repo>#<N> — <event signal e.g. "+2 comments since last check" or "closed by maintainer"> — <title (<60 chars)>
+3. ...
 
-(Synthesize from commits + closed issues + closed_loops into bullets. Do NOT enumerate commit hashes — describe the WORK done. Issue numbers are fine — they link. Keep each bullet to one line. Aim for 3-7 bullets total.)
+(Use these emoji prefixes for quick-glance triage:
+  🔴 = blocking (delays downstream work)
+  🟠 = aging (>=4d, getting stale)
+  🟡 = recent (<4d, soft attention)
+  💬 = NEW activity on a tracked filed-issue (comment, state change, PR merged) — sourced from `filed_issue_activity.issues` where new_activity=True
+Tag each item with 📦 (corpus) or 🔬 (skill discovery) or 🛠 (cross-cutting).
+Keep each item to one line. If 0 items in EITHER source, drop the section entirely.)
 
-*HANDOFF state*  (only if mtime within 24h)
+**Sources for this section:**
+- `open_loops.needs_input` — items waiting on Peng (use 🔴/🟠/🟡 by age)
+- `filed_issue_activity.issues` (where `new_activity=True`) — issues we filed/own that got new activity since last check; use 💬 prefix + the `signal` field. Each issue's `html_url` becomes a clickable link in the HTML render. **Always include these — Peng wants visibility into responses on filed issues.**
 
-(2-4 bullets of what Peng needs to pick up where things left off. Pull from handoff.first_lines but synthesize — don't paste raw subsections. Highlight blockers explicitly with the word "Blocked:". Keep each bullet to one line.)
+📦 *Corpus project — what shipped*
 
-*Active workstream plans*
-
-<continuing numbering from above>. WS<N> — <plan name>: ok / STALE (<N>d since last_check)
-<next>. WS<N> — <plan name>: ok / STALE (<N>d since last_check)
-...
-
-(If all are ok with recent last_check, write "All N plans current — no stale items." as a single numbered bullet instead of enumerating.)
-
-*Experiment convention drift*  (only if drift > 0)
-
-<continuing>. <slug>: <key problem>
+<continuing>. <emoji> <one-line bullet for one corpus thread, with issue refs if applicable>
 <continuing>. ...
 
-*Aged Backlog (>7 days)*  (only if non-empty)
+(Use emoji to convey signal type:
+  ⚡ = code shipped
+  📊 = sweep result
+  ✅ = issue closed / fix landed
+  🐛 = regression discovered
+  📝 = doc / report shipped
+ONLY include items scoped to: sweep, AutoDev, GB analysis, models.py, sweep harness, corpus tools/. Drop infra/skill-discovery items.)
 
-<continuing>. #<N> (<age>d) — <title>
+**Sweep numeric correctness — only when fresh.**
+If `latest_sweep_numeric.available == true` AND `latest_sweep_numeric.age_hours <= 24`, add a 📊 bullet here naming the sweep (`sweep_label`), the divergent count (`divergent_count` of `total_with_numeric`), and — if non-zero — the top 1-2 divergent rows (name + max_diff or first_divergence). If `divergent_count == 0`, still surface ("clean baseline — 0 divergent across N models"). If `age_hours > 24` or `available == false`, omit entirely (sweeps are event-driven, not daily; don't repeat stale data).
+
+📦 *Corpus project — open issues / loops*  (only if substantive)
+
+<continuing>. <emoji> #N (Xd) — title
 <continuing>. ...
 
-*Awaiting your input*  (only if non-empty — these are blockers)
+🔬 *Skill discovery project — what shipped*  (only if non-empty)
 
-<continuing>. <WS> — <task> (<age>d) ← (← marker if started >= 2 days ago)
-<continuing>. ...
+<continuing>. <emoji> <one-line bullet for one skill-discovery thread>
+
+(Same emoji legend as corpus. Include items scoped to: pt2-skill-discovery repo, discovery harness, case files, skill catalog, validators.)
+
+🔬 *Skill discovery project — open issues / loops*  (only if substantive)
+
+<continuing>. <emoji> ...
+
+🛠 *Cross-cutting (infra, hooks, MyClaw)*  (only if substantive)
+
+<continuing>. <emoji> ...
+
+📋 *Active workstream plans*
+
+<continuing>. <emoji> WS<N> — <plan name>: 🟢 ok / 🟠 STALE (<N>d since last_check)
+
+(🟢 = current, 🟠 = stale. Tag with 📦 or 🔬 if the plan is project-scoped.)
 
 —
 Source: tools/brief_data.py + project board #1
@@ -115,9 +150,9 @@ Source: tools/brief_data.py + project board #1
 
 ### Composition guidance
 
-- *"What shipped since yesterday" is the headline.* Bullets, one line each. Issue numbers OK; commit hashes are noise.
-- *Continuous numbering.* If "What shipped" has 5 bullets (1-5), and "Active workstream plans" follows with 3 entries, those are 6, 7, 8. Never restart numbering.
-- *HANDOFF is synthesis, not dump.* 2-4 bullets max. Pull blockers explicitly. Peng wants the bottom line, not the whole file.
+- *🚨 "Needs your attention" is the headline section.* Top of brief. Order items by 🔴 → 🟠 → 🟡. If empty, drop entirely (no "(no items)" placeholder).
+- *📦 vs 🔬 separation is strict.* A commit that touches both repos is rare; classify by which repo it landed in. If a finding genuinely spans both (e.g., a sweep result that informs a skill-discovery decision), put it in the originating project + cross-reference in plain text within the bullet.
+- *Continuous numbering across all sections.* Makes "close item 7" trivial.
 - *Trim aggressively.* If a section has 10+ items, show top N and "+M more (numbered K through K+M)".
 
 ## Step 4 — Render as HTML (rich card)
@@ -127,36 +162,45 @@ Brief is posted as a GChat **rich card** (HTML) for better visual hierarchy. Com
 ```html
 <h2>🦦 Otter — Daily brief — YYYY-MM-DD</h2>
 
-<h3>What shipped since yesterday</h3>
+<h3>🚨 Needs your attention</h3>
 <ol>
-  <li>Bullet copy here. Issue refs like <a href="https://github.com/penguinwu/oss-model-graph-break-corpus/issues/N">#N</a> become real links.</li>
-  <li>Next bullet.</li>
+  <li>🔴 📦 WS1 — task description (Xd) &larr;</li>
+  <li>🟠 🔬 WS2 — task description (Xd) &larr;</li>
+  <li>🟡 🛠 cross-cutting item (Xd)</li>
 </ol>
 
-<h3>HANDOFF state</h3>
-<ul>
-  <li>2-4 synthesized bullets (NOT verbatim — Peng wants the bottom line).</li>
-  <li><b>Blocked:</b> highlight blockers in bold.</li>
-</ul>
-
-<h3>Active workstream plans</h3>
+<h3>📦 Corpus project — what shipped</h3>
 <ol start="N">
-  <li>WS1 — Skill Discovery Phase 3: ok (Xd since last_check)</li>
-  <li>...</li>
+  <li>⚡ Bullet about a corpus commit. Issue refs like <a href="https://github.com/penguinwu/oss-model-graph-break-corpus/issues/N">#N</a> become real links.</li>
+  <li>📊 Sweep result bullet.</li>
+  <li>🐛 Regression bullet.</li>
 </ol>
 
-<h3>Aged Backlog (>7 days)</h3>
+<h3>📦 Corpus project — open issues</h3>
 <ol start="N">
-  <li><a href="...">#N</a> (Xd) — title</li>
+  <li>🟠 <a href="...">#N</a> (Xd) — title</li>
 </ol>
 
-<h3>Awaiting your input</h3>
+<h3>🔬 Skill discovery project — what shipped</h3>
 <ol start="N">
-  <li>WS1 — task description (Xd) — &larr; (use &larr; entity for arrow)</li>
+  <li>⚡ Bullet about a skill-discovery commit (pt2-skill-discovery repo).</li>
+</ol>
+
+<h3>🛠 Cross-cutting</h3>
+<ol start="N">
+  <li>HANDOFF / infra / hook items (only if substantive).</li>
+</ol>
+
+<h3>📋 Active workstream plans</h3>
+<ol start="N">
+  <li>🟢 📦 WS1 — Skill Discovery Phase 3: ok (Xd since last_check)</li>
+  <li>🟠 🔬 WS2 — XYZ plan: STALE (Xd since last_check)</li>
 </ol>
 
 <p><i>Source: tools/brief_data.py + project board #1</i></p>
 ```
+
+**Section ordering rule:** 🚨 always first, then 📦, then 🔬, then 🛠, then 📋. The 🚨 section is the most-important-thing — Peng might only have 5 seconds to glance, and 🚨 is what should fit in those 5 seconds.
 
 HTML rules:
 

@@ -154,6 +154,61 @@ def analyze(results):
         for etype, count in by_err_type.most_common():
             print(f"  {etype}: {count}")
 
+    # --- Numeric correctness (eager vs compiled, identify-pass) ---
+    # Added 2026-05-01: identify pass now runs a strict-determinism numeric
+    # check on full_graph models. numeric_status is absent on results from
+    # sweeps run before that change.
+    numeric_results = [r for r in results if "numeric_status" in r]
+    numeric_summary = {}
+    if numeric_results:
+        numeric_statuses = Counter(r["numeric_status"] for r in numeric_results)
+        print("\n" + "=" * 60)
+        print(f"NUMERIC CORRECTNESS ({len(numeric_results)} models with numeric_status)")
+        print("=" * 60)
+        for status, count in numeric_statuses.most_common():
+            pct = count / len(numeric_results) * 100
+            print(f"  {status:20s} {count:5d}  ({pct:5.1f}%)")
+
+        # Skip-reason breakdown (helps distinguish "skipped because graph_break"
+        # from "skipped because custom_compile_kwargs" etc.)
+        skipped = [r for r in numeric_results if r["numeric_status"] == "skipped"]
+        if skipped:
+            skip_reasons = Counter(r.get("numeric_skip_reason", "unknown") for r in skipped)
+            print(f"\n  Skip reasons:")
+            for reason, count in skip_reasons.most_common():
+                print(f"    {reason:25s} {count:5d}")
+
+        # Top divergent rows by severity_ratio (max_diff / atol)
+        divergent = [r for r in numeric_results
+                     if r["numeric_status"] in ("divergence", "nan_inf_introduced",
+                                                 "shape_mismatch", "dtype_mismatch")]
+        if divergent:
+            print(f"\n  TOP DIVERGENT (sorted by severity_ratio):")
+            divergent.sort(key=lambda r: r.get("numeric_severity_ratio", 0), reverse=True)
+            print(f"    {'name':40s} {'status':22s} {'max_diff':>12s} {'severity':>10s}  first_divergence")
+            for r in divergent[:15]:
+                name = (r.get("variant", "") + ":" + r["name"]) if r.get("variant") else r["name"]
+                fd = r.get("numeric_first_divergence", "—")
+                if isinstance(fd, str) and len(fd) > 50:
+                    fd = fd[:47] + "..."
+                print(f"    {name[:40]:40s} {r['numeric_status']:22s} "
+                      f"{r.get('numeric_max_diff', 0):>12.2e} "
+                      f"{r.get('numeric_severity_ratio', 0):>10.1f}  {fd}")
+
+        numeric_summary = {
+            "models_with_numeric_status": len(numeric_results),
+            "statuses": dict(numeric_statuses),
+            "divergent_count": len(divergent),
+            "top_divergent": [
+                {"name": r["name"], "variant": r.get("variant"),
+                 "status": r["numeric_status"],
+                 "max_diff": r.get("numeric_max_diff"),
+                 "severity_ratio": r.get("numeric_severity_ratio"),
+                 "first_divergence": r.get("numeric_first_divergence")}
+                for r in divergent[:25]
+            ],
+        }
+
     # --- JSON summary for programmatic use ---
     summary = {
         "total_results": len(results),
@@ -161,6 +216,7 @@ def analyze(results):
         "by_source": {s: dict(c) for s, c in by_source.items()},
         "by_variant": {v: dict(c) for v, c in by_variant.items()},
         "by_mode": {m: dict(c) for m, c in by_mode.items()},
+        "numeric_correctness": numeric_summary,
     }
     return summary
 
