@@ -3295,12 +3295,32 @@ def _mark_dynamic_dims(inputs_dict, inputs_tuple, source, input_type):
                 torch._dynamo.mark_dynamic(t, 1)  # seq_len / time
 
 
+def _reset_identify_seeds(seed: int = 42) -> None:
+    """Reset torch + numpy + python.random RNG state for reproducible forwards.
+
+    Runs before each forward in run_identify so eager and compiled passes start
+    from identical RNG state — required for the numeric correctness check.
+    """
+    import random
+    random.seed(seed)
+    try:
+        import numpy as np
+        np.random.seed(seed)
+    except ImportError:
+        pass
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
 def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
     """Compile a model and check for errors. Returns JSON-serializable result.
 
     With default compile_kwargs (fullgraph=True, backend="eager"), this is the
-    original graph break identification pass. With custom compile_kwargs, it
-    tests arbitrary torch.compile configurations.
+    original graph break identification pass plus a lightweight numeric
+    correctness check (eager vs compiled). With custom compile_kwargs, it tests
+    arbitrary torch.compile configurations and skips the numeric check (custom
+    backends like inductor go through run_correctness).
     """
     t_start = time.perf_counter()
     result = {
@@ -3313,6 +3333,24 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
     }
     if spec.get("variant"):
         result["variant"] = spec["variant"]
+
+    # Determinism setup for the numeric correctness check. warn_only=True
+    # because we run hundreds of models — hard-erroring on ops without
+    # deterministic kernels would convert "graph break detected" into
+    # "eager_error" and lose GB coverage. Models without deterministic kernels
+    # just get a noisier numeric_max_diff.
+    # CUBLAS_WORKSPACE_CONFIG must be set before first cuBLAS call to take effect.
+    os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+    try:
+        torch.use_deterministic_algorithms(True, warn_only=True)
+    except Exception:
+        pass  # older torch / unsupported configs — degrade silently
+
+    # Numeric check only meaningful with default fullgraph=True+eager backend.
+    # Custom compile_kwargs (inductor, fullgraph=False) are run_correctness territory.
+    do_numeric = not compile_kwargs
+    out_eager = None
+    out_compiled = None
 
     # Phase markers to stderr — orchestrator reads these on timeout
     print("PHASE:create", file=sys.stderr, flush=True)
@@ -3335,13 +3373,14 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
     result["phase"] = "eager"
     print("PHASE:eager", file=sys.stderr, flush=True)
     torch._dynamo.reset()
+    _reset_identify_seeds(42)
     t_eager = time.perf_counter()
     try:
         with ctx:
             if inputs_tuple:
-                model(*inputs_tuple)
+                out_eager = model(*inputs_tuple)
             else:
-                model(**inputs_dict)
+                out_eager = model(**inputs_dict)
     except Exception as e:
         err_str = str(e)
         err_type = type(e).__name__
@@ -3385,9 +3424,10 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
                         inputs_dict["token_type_ids"] = torch.zeros(
                             B, new_seq_len, dtype=torch.long, device=device)
                     print("PHASE:eager_retry_image_tokens", file=sys.stderr, flush=True)
+                    _reset_identify_seeds(42)
                     try:
                         with ctx:
-                            model(**inputs_dict)
+                            out_eager = model(**inputs_dict)
                         retried = True
                         result["eager_time_s"] = round(time.perf_counter() - t_eager, 3)
                         result["image_token_retry"] = need_features
@@ -3436,11 +3476,12 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
         if "dynamic" not in effective_kwargs:
             effective_kwargs["dynamic"] = compile_dynamic
         compiled = torch.compile(model, **effective_kwargs)
+        _reset_identify_seeds(42)
         with ctx:
             if inputs_tuple:
-                compiled(*inputs_tuple)
+                out_compiled = compiled(*inputs_tuple)
             else:
-                compiled(**inputs_dict)
+                out_compiled = compiled(**inputs_dict)
         result["status"] = "full_graph" if uses_fullgraph else "success"
         if uses_fullgraph:
             result["fullgraph_ok"] = True
@@ -3485,6 +3526,32 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
             _record_error(result, e)
     result["compile_time_s"] = round(time.perf_counter() - t_compile, 3)
     result["phase"] = "done"
+
+    # Numeric correctness check: eager vs compiled outputs at same shape/seed.
+    # Catches dynamo-introduced numerical bugs that the existing GB pass would miss.
+    # Skipped when: custom compile_kwargs (run_correctness covers that), graph_break
+    # / errors (no clean compiled output), or no captured outputs.
+    if not do_numeric:
+        result["numeric_status"] = "skipped"
+        result["numeric_skip_reason"] = "custom_compile_kwargs"
+    elif out_eager is None:
+        result["numeric_status"] = "skipped"
+        result["numeric_skip_reason"] = "no_eager_output"
+    elif out_compiled is None:
+        result["numeric_status"] = "skipped"
+        result["numeric_skip_reason"] = result.get("status", "no_compiled_output")
+    else:
+        try:
+            cmp = _compare_outputs_recursive(out_eager, out_compiled, atol=1e-6, rtol=1e-4)
+            result["numeric_status"] = cmp["status"]
+            result["numeric_max_diff"] = round(cmp["max_diff"], 8)
+            result["numeric_severity_ratio"] = round(cmp["severity_ratio"], 4)
+            result["numeric_bitwise_equal"] = cmp["bitwise_equal"]
+            if cmp["first_divergence"]:
+                result["numeric_first_divergence"] = cmp["first_divergence"]
+        except Exception as e:
+            result["numeric_status"] = "error"
+            result["numeric_error"] = f"{type(e).__name__}: {str(e)[:500]}"
 
     if device == "cuda":
         result["gpu_mem_mb"] = round(torch.cuda.max_memory_allocated() / 1024**2, 1)
