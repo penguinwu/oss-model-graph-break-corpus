@@ -58,10 +58,25 @@ Read `discovery/EXPERIMENT_LIFECYCLE.md` and walk through Gates 0-4 in strict or
 
 ### Tier B — Sweep + correctness + AutoDev
 
-Lighter discipline (cron handles framing, tests are well-established):
-- Pre-change: run `tools/smoke_test.py` (3-model infra check)
-- Schema-changing PRs: include a regression test
-- Existing "Validate Invariants Before Reporting New Experiments" section above is the Tier B doctrine
+**Trigger:** any change to `sweep/worker.py`, `sweep/orchestrator.py`, `sweep/models.py`, `sweep/explain.py`, `sweep/run_sweep.py`, or `tools/run_experiment.py`. When you touch any of these files, you MUST walk through ALL of Gates 1-5 below BEFORE pushing — and BEFORE proposing a full sweep. State your gate progression explicitly in the conversation. Skipping a gate requires Peng's explicit approval, in writing, in the conversation.
+
+Why this is non-negotiable: a full sweep is multi-hour. Catching script errors there wastes wall-clock and erodes trust in headline numbers. Each gate below catches a different bug class at low compute cost.
+
+#### Gates (in order, no skipping)
+
+| Gate | What | Catches | Cost |
+|---|---|---|---|
+| **1. Unit tests** | `python sweep/test_explain.py` (and any other `sweep/test_*.py`) | Static regressions, harness API breaks | <1 min |
+| **2. Smoke test** | `python tools/smoke_test.py --python <venv>` (8 fixed models, expected statuses) | Per-model pipeline regressions | ~2 min |
+| **3. Single-trial field enumeration** | Run `worker.py` on 1 known-passing model, dump every field of result.json, assert no nulls/NaNs/missing-expected fields | Schema bugs, JSON serialization issues, new-field omissions | ~30s |
+| **4. 3-trial reproducibility** | Run worker.py on the SAME model 3x. Confirm result fields are bit-identical (or explicitly noise-bounded) across trials | RNG drift, state contamination, nondeterministic pipeline | ~1 min |
+| **5. Orchestrated mini-sweep** | Run `tools/run_experiment.py sweep --models <10-model JSON> --identify-only --modes eval`. Inspect aggregated `identify_results.json` for schema consistency. Run `tools/analyze_sweep.py` on it | Checkpoint aggregation, JSON merging, downstream tool compatibility, schema drift across the pipeline | ~2-3 min |
+
+Schema-changing PRs (any new/renamed/removed field on result.json): also add a regression test that exercises the new field path. State which test in the commit message.
+
+After all 5 gates pass: full sweep is OK to launch. Until then, no full sweep.
+
+The "Validate Invariants Before Reporting New Experiments" section above is the parallel doctrine for *post-launch* result reporting. Gates 1-5 are *pre-launch*; invariants validation is *pre-headline*.
 
 ### Tier C — Ad-hoc analysis
 
