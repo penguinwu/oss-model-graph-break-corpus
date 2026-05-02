@@ -105,6 +105,16 @@ def enumerate_hf():
             # Models requiring deps not installable under our agent:claude_code BPF identity (#91)
             "DinatModel",                   # Requires `natten` library — wheel build fails under our env
             "LayoutLMv2Model",              # Requires `detectron2` from dl.fbaipublicfiles.com — domain not allowlisted
+            # Sub-component models with no input recipe yet — kept skipped pending
+            # either (a) per-class recipes in sweep/worker.py or (b) confirmation
+            # the composite parent's signal is sufficient. All surfaced in the
+            # 2026-04-30 PT 2.12 sweep; these are NEW in transformers 5.6.2.
+            # Sister models (MllamaVisionModel, Qwen3VL/3_5 Vision variants,
+            # Qwen2_5OmniToken2Wav{BigVGAN,DiT}) had recipes added in commits
+            # 08511ae + 47bba8a and now run cleanly — see those for the pattern.
+            "Qwen2_5OmniThinkerTextModel",  # text-sub fails on mrope_section config — config patch needed
+            "Qwen3OmniMoeTalkerCodePredictorModel",  # Sub-component of Talker (already skipped as internal); composite Thinker covers signal
+            "Qwen3OmniMoeTalkerCodePredictorModelForConditionalGeneration",  # Sub-component of Talker (already skipped); composite Thinker covers signal
         }
         if name in _SKIP_MODELS:
             continue
