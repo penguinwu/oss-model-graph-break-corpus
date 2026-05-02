@@ -2057,6 +2057,32 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
         n_mels = getattr(config, "mel_dim", getattr(config, "n_mels", 80))
         inputs = {"mel_spectrogram": torch.randn(B, n_mels, 64, device=device)}
 
+    # Qwen2_5OmniToken2WavDiTModel: 5-arg diffusion transformer. The DiTInputEmbedding
+    # concatenates (hidden_states, condition_vector_after_spk_encoder, code_embed,
+    # speaker_embedding) along the channel dim, so each leg has its own channel
+    # contract. quantized_code passes through a repeat_interleave(repeats=N), so
+    # its seq_len must be 1/N of the output seq_len.
+    # apply_cfg=False because the default (True) doubles the batch inside
+    # input_embed without doubling time_embedding — fine when B=1, RuntimeError
+    # for any B>1. apply_cfg is a runtime classifier-free-guidance toggle, not a
+    # capability switch, so disabling it doesn't change the model under test.
+    if name_lower == "qwen2_5omnitoken2wavditmodel":
+        mel_dim = getattr(config, "mel_dim", 80)
+        enc_emb_dim = getattr(config, "enc_emb_dim", 192)
+        repeats = getattr(model.text_embed, "repeats", 2)
+        vocab = model.text_embed.codec_embed.num_embeddings
+        S = 32
+        S_code = max(1, S // repeats)
+        spk_ref_time = 64  # ECAPA pools over time, length is uncritical
+        inputs = {
+            "hidden_states": torch.randn(B, S, mel_dim, device=device),
+            "condition_vector": torch.randn(B, spk_ref_time, mel_dim, device=device),
+            "speaker_embedding": torch.randn(B, S, enc_emb_dim, device=device),
+            "quantized_code": torch.randint(0, vocab, (B, S_code), device=device),
+            "time_step": torch.rand(B, device=device),
+            "apply_cfg": False,
+        }
+
     # Lfm2Model: architecture issue with conv ordering
     # Lfm2VlModel: shape mismatch in vision projection
     # These may need specific model version — skip for now
