@@ -1,11 +1,11 @@
 # OSS Model Compiler Quality Corpus
 
-> **Note (2026-05-02):** Skill-discovery work has migrated to a separate repo,
+> **Note (2026-05-02):** Skill-discovery work has moved to a separate repo,
 > [penguinwu/pt2-skill-discovery](https://github.com/penguinwu/pt2-skill-discovery)
-> (`~/projects/pt2-skill-discovery/`). This repo's `discovery/` dir is now a
-> READ-ONLY fallback during the migration's dual-run period — see
-> `discovery/MIGRATED.md`. Do not edit `discovery/` here; do all skill-discovery
-> work in the new repo.
+> (`~/projects/pt2-skill-discovery/`). The `discovery/` dir was removed from
+> this repo on 2026-05-02 (Phase 6b of the migration); recoverable from git
+> history at sha `7af8010`'s parent if needed. All skill-discovery work
+> happens in the new repo.
 
 ## What This Is
 
