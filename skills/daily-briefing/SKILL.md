@@ -72,14 +72,13 @@ Pick what's interesting today. You decide order and emphasis. **Never invent.** 
 
 ### Skeleton
 
-The brief has THREE major buckets, in this order:
+The brief has TWO major buckets, in this order:
 1. *🚨 Needs your attention* — top of brief, things requiring Peng's input. **This is the most important section.** If only one thing in the whole brief, this is what Peng should look at first.
 2. *📦 Corpus project* — graph break corpus work (sweep, AutoDev, GB analysis, models.py, sweep harness)
-3. *🔬 Skill discovery project* — pt2-skill-discovery work (cases, skill catalog, harness, validators)
 
-Cross-project items (HANDOFF state, infra hooks, MyClaw work) go in a 4th *🛠 Cross-cutting* section ONLY if substantive — otherwise drop entirely.
+Cross-cutting items (HANDOFF state, infra hooks, MyClaw work) go in a 3rd *🛠 Cross-cutting* section ONLY if substantive — otherwise drop entirely.
 
-**NEVER mix corpus and skill-discovery items in the same section.** Different audiences, different concerns. Use the project tag (📦 vs 🔬) to make scope obvious at a glance.
+**Skill-discovery work is briefed by a separate skill** at `~/projects/pt2-skill-discovery/skills/daily-briefing/SKILL.md` (its own cron, its own scope). Do NOT include pt2-skill-discovery items here — they belong in that brief, not this one. (Migration completed 2026-05-02.)
 
 ```
 [🦦 Otter] Daily brief — <today>
@@ -95,7 +94,7 @@ Cross-project items (HANDOFF state, infra hooks, MyClaw work) go in a 4th *🛠 
   🟠 = aging (>=4d, getting stale)
   🟡 = recent (<4d, soft attention)
   💬 = NEW activity on a tracked filed-issue (comment, state change, PR merged) — sourced from `filed_issue_activity.issues` where new_activity=True
-Tag each item with 📦 (corpus) or 🔬 (skill discovery) or 🛠 (cross-cutting).
+Tag each item with 📦 (corpus) or 🛠 (cross-cutting).
 Keep each item to one line. If 0 items in EITHER source, drop the section entirely.)
 
 **Sources for this section:**
@@ -120,16 +119,6 @@ ONLY include items scoped to: sweep, AutoDev, GB analysis, models.py, sweep harn
 <continuing>. <emoji> #N (Xd) — title
 <continuing>. ...
 
-🔬 *Skill discovery project — what shipped*  (only if non-empty)
-
-<continuing>. <emoji> <one-line bullet for one skill-discovery thread>
-
-(Same emoji legend as corpus. Include items scoped to: pt2-skill-discovery repo, discovery harness, case files, skill catalog, validators.)
-
-🔬 *Skill discovery project — open issues / loops*  (only if substantive)
-
-<continuing>. <emoji> ...
-
 🛠 *Cross-cutting (infra, hooks, MyClaw)*  (only if substantive)
 
 <continuing>. <emoji> ...
@@ -138,7 +127,7 @@ ONLY include items scoped to: sweep, AutoDev, GB analysis, models.py, sweep harn
 
 <continuing>. <emoji> WS<N> — <plan name>: 🟢 ok / 🟠 STALE (<N>d since last_check)
 
-(🟢 = current, 🟠 = stale. Tag with 📦 or 🔬 if the plan is project-scoped.)
+(🟢 = current, 🟠 = stale. Tag with 📦 — all corpus-scoped plans.)
 
 —
 Source: tools/brief_data.py + project board #1
@@ -147,7 +136,7 @@ Source: tools/brief_data.py + project board #1
 ### Composition guidance
 
 - *🚨 "Needs your attention" is the headline section.* Top of brief. Order items by 🔴 → 🟠 → 🟡. If empty, drop entirely (no "(no items)" placeholder).
-- *📦 vs 🔬 separation is strict.* A commit that touches both repos is rare; classify by which repo it landed in. If a finding genuinely spans both (e.g., a sweep result that informs a skill-discovery decision), put it in the originating project + cross-reference in plain text within the bullet.
+- *Corpus-only scope.* Drop any item scoped to pt2-skill-discovery (cases, skill catalog, harness, discovery experiments) — those go to the pt2-skill-discovery brief instead. Cross-cutting infra goes in the 🛠 section.
 - *Continuous numbering across all sections.* Makes "close item 7" trivial.
 - *Trim aggressively.* If a section has 10+ items, show top N and "+M more (numbered K through K+M)".
 
@@ -161,7 +150,6 @@ Brief is posted as a GChat **rich card** (HTML) for better visual hierarchy. Com
 <h3>🚨 Needs your attention</h3>
 <ol>
   <li>🔴 📦 WS1 — task description (Xd) &larr;</li>
-  <li>🟠 🔬 WS2 — task description (Xd) &larr;</li>
   <li>🟡 🛠 cross-cutting item (Xd)</li>
 </ol>
 
@@ -177,11 +165,6 @@ Brief is posted as a GChat **rich card** (HTML) for better visual hierarchy. Com
   <li>🟠 <a href="...">#N</a> (Xd) — title</li>
 </ol>
 
-<h3>🔬 Skill discovery project — what shipped</h3>
-<ol start="N">
-  <li>⚡ Bullet about a skill-discovery commit (pt2-skill-discovery repo).</li>
-</ol>
-
 <h3>🛠 Cross-cutting</h3>
 <ol start="N">
   <li>HANDOFF / infra / hook items (only if substantive).</li>
@@ -189,14 +172,14 @@ Brief is posted as a GChat **rich card** (HTML) for better visual hierarchy. Com
 
 <h3>📋 Active workstream plans</h3>
 <ol start="N">
-  <li>🟢 📦 WS1 — Skill Discovery Phase 3: ok (Xd since last_check)</li>
-  <li>🟠 🔬 WS2 — XYZ plan: STALE (Xd since last_check)</li>
+  <li>🟢 📦 WS1 — plan name: ok (Xd since last_check)</li>
+  <li>🟠 📦 WS2 — XYZ plan: STALE (Xd since last_check)</li>
 </ol>
 
 <p><i>Source: tools/brief_data.py + project board #1</i></p>
 ```
 
-**Section ordering rule:** 🚨 always first, then 📦, then 🔬, then 🛠, then 📋. The 🚨 section is the most-important-thing — Peng might only have 5 seconds to glance, and 🚨 is what should fit in those 5 seconds.
+**Section ordering rule:** 🚨 always first, then 📦, then 🛠, then 📋. The 🚨 section is the most-important-thing — Peng might only have 5 seconds to glance, and 🚨 is what should fit in those 5 seconds.
 
 HTML rules:
 

@@ -49,7 +49,8 @@ def collect() -> dict:
     }
 
     if not EXPERIMENTS_DIR.is_dir():
-        report["drift"].append({"item": "experiments-dir-missing", "detail": str(EXPERIMENTS_DIR)})
+        # discovery/experiments was migrated to pt2-skill-discovery on 2026-05-02.
+        # Corpus no longer has discovery experiments — return empty report (not drift).
         return report
 
     readme_text = README.read_text() if README.exists() else ""
