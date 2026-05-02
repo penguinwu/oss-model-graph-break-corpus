@@ -25,6 +25,7 @@ Recipe lives at: ~/.myclaw-shared/recipes/python-venv-bpf.md
 """
 from __future__ import annotations
 
+import functools
 import os
 import re
 import shutil
@@ -210,8 +211,14 @@ def _venv_python(path: Path) -> Path:
     return path / "bin" / "python"
 
 
+@functools.lru_cache(maxsize=None)
 def _pip_list(venv: Path) -> dict[str, str]:
-    """Return dict of {package_name: version} for installed packages."""
+    """Return dict of {package_name: version} for installed packages.
+
+    Cached per-process: venv contents are stable for the lifetime of a
+    sweep / test run, and re-spawning pip across many venvs in tight
+    succession was the slow path that made test suites time out.
+    """
     py = _venv_python(venv)
     if not py.exists():
         return {}
@@ -230,8 +237,12 @@ def _pip_list(venv: Path) -> dict[str, str]:
     return result
 
 
+@functools.lru_cache(maxsize=None)
 def _torch_version(venv: Path) -> Optional[str]:
-    """Return torch.__version__ from venv, or None if torch isn't importable."""
+    """Return torch.__version__ from venv, or None if torch isn't importable.
+
+    Cached per-process: see ``_pip_list``.
+    """
     py = _venv_python(venv)
     if not py.exists():
         return None
@@ -243,6 +254,13 @@ def _torch_version(venv: Path) -> Optional[str]:
         return out.strip()
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return None
+
+
+def _clear_inspection_cache() -> None:
+    """Clear cached venv inspection results. For tests / long-lived
+    callers that need a fresh probe after a known venv change."""
+    _pip_list.cache_clear()
+    _torch_version.cache_clear()
 
 
 def _extract_cuda_variant(torch_version: Optional[str]) -> Optional[str]:
@@ -369,6 +387,8 @@ def repair_venv(v: VenvInfo) -> None:
                 rest = lines[1] if len(lines) > 1 else b""
                 script.write_bytes(new_shebang + b"\n" + rest)
         log(f"repaired pip shebangs in {v.path}")
+        # Repaired venv may now be importable; invalidate cached probes.
+        _clear_inspection_cache()
 
 
 def is_pool_healthy(pool: Path) -> bool:
@@ -538,6 +558,9 @@ def clone_pool_and_install(pool: Path, spec: TorchSpec) -> Path:
     if rc != 0:
         log(f"transitive deps install warning (non-fatal): {out[-200:]}")
 
+    # Newly populated venv — drop any stale (empty) cache entries from
+    # earlier inspection of the empty target path.
+    _clear_inspection_cache()
     return target
 
 
