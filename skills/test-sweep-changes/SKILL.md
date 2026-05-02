@@ -1,6 +1,6 @@
 ---
 name: test-sweep-changes
-description: Use BEFORE editing any corpus sweep harness file (sweep/worker.py, sweep/orchestrator.py, sweep/models.py, sweep/explain.py, sweep/run_sweep.py, tools/run_experiment.py) AND BEFORE proposing or launching a full sweep. Walks through 5 testing gates (unit → smoke → single-trial → reproducibility → mini-sweep) to catch script bugs at low compute cost rather than discovering them in a multi-hour full sweep.
+description: Use BEFORE editing any corpus sweep harness file (sweep/worker.py, sweep/orchestrator.py, sweep/models.py, sweep/explain.py, sweep/run_sweep.py, sweep/venv_setup.py, tools/run_experiment.py) AND BEFORE proposing or launching a full sweep. Walks through 5 testing gates (unit → smoke → single-trial → reproducibility → mini-sweep) to catch script bugs at low compute cost rather than discovering them in a multi-hour full sweep.
 ---
 
 # test-sweep-changes
@@ -8,7 +8,7 @@ description: Use BEFORE editing any corpus sweep harness file (sweep/worker.py, 
 ## When to use
 
 **Trigger conditions (any one):**
-- About to edit `sweep/worker.py`, `sweep/orchestrator.py`, `sweep/models.py`, `sweep/explain.py`, `sweep/run_sweep.py`, or `tools/run_experiment.py` in the corpus repo
+- About to edit `sweep/worker.py`, `sweep/orchestrator.py`, `sweep/models.py`, `sweep/explain.py`, `sweep/run_sweep.py`, `sweep/venv_setup.py`, or `tools/run_experiment.py` in the corpus repo
 - About to propose, schedule, or launch a full sweep (any pass: identify, explain, correctness, validate)
 - About to push a commit that touches any of the above files
 
