@@ -70,7 +70,7 @@ GRAPH_BREAK_RULES = [
     ("import_config_skip", 5, lambda exp, loc:
         "import_utils.py" in loc or "configuration_utils.py" in loc),
     ("frame_skip", 2, lambda exp, loc:
-        "output_capturing.py" in loc or "generic.py" in loc),
+        "output_capturing.py" in loc),
     ("find_spec_skip", 7, lambda exp, loc:
         "find_spec" in exp),
     ("tensor_item", 56, lambda exp, loc:

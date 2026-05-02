@@ -271,6 +271,24 @@ def enumerate_diffusers():
                 "encoder_hidden_states": [1, 1, 32],
             },
         },
+        # AudioLDM2 variant of UNet2DConditionModel (audio diffusion). Same in_channels=4
+        # default; takes a second encoder_hidden_states_1 for cross-conditioning.
+        # Constructed + forward verified 2026-05-02 with this config.
+        "AudioLDM2UNet2DConditionModel": {
+            "constructor_args": {
+                "in_channels": 4, "out_channels": 4, "sample_size": 32,
+                "cross_attention_dim": 32,
+                "down_block_types": ("CrossAttnDownBlock2D", "DownBlock2D"),
+                "up_block_types": ("UpBlock2D", "CrossAttnUpBlock2D"),
+                "block_out_channels": (32, 64),
+            },
+            "inputs": {
+                "sample": [1, 4, 32, 32],
+                "timestep": 1.0,
+                "encoder_hidden_states": [1, 1, 32],
+                "encoder_hidden_states_1": [1, 1, 32],
+            },
+        },
         # DiT / Transformer family
         "DiTTransformer2DModel": {
             "constructor_args": {
