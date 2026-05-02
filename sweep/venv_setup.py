@@ -25,7 +25,6 @@ Recipe lives at: ~/.myclaw-shared/recipes/python-venv-bpf.md
 """
 from __future__ import annotations
 
-import functools
 import os
 import re
 import shutil
@@ -211,56 +210,72 @@ def _venv_python(path: Path) -> Path:
     return path / "bin" / "python"
 
 
-@functools.lru_cache(maxsize=None)
-def _pip_list(venv: Path) -> dict[str, str]:
-    """Return dict of {package_name: version} for installed packages.
+def _site_packages(venv: Path) -> Optional[Path]:
+    """Locate <venv>/lib/python*/site-packages/ — None if venv is empty."""
+    lib = venv / "lib"
+    if not lib.exists():
+        return None
+    for py_dir in sorted(lib.iterdir()):
+        if py_dir.name.startswith("python"):
+            sp = py_dir / "site-packages"
+            if sp.exists():
+                return sp
+    return None
 
-    Cached per-process: venv contents are stable for the lifetime of a
-    sweep / test run, and re-spawning pip across many venvs in tight
-    succession was the slow path that made test suites time out.
+
+_DIST_INFO_RE = re.compile(r"^(.+)-([0-9][^-]*)$")
+
+
+def _pip_list(venv: Path) -> dict[str, str]:
+    """{package_name: version} read from site-packages/*.dist-info/.
+
+    Pure filesystem walk — no subprocess. Replaces an earlier subprocess
+    `pip list` per venv that cost ~0.5s each AND triggered a per-venv pip
+    interpreter startup; across 11 venvs that was a multi-second tax. See
+    ``_torch_version`` for the same fix on the torch-version probe.
+
+    Names are normalized to pip's hyphen-lowercase form (dist-info
+    directories use underscores).
     """
-    py = _venv_python(venv)
-    if not py.exists():
+    sp = _site_packages(venv)
+    if sp is None:
         return {}
-    try:
-        out = subprocess.check_output(
-            [str(py), "-m", "pip", "list", "--format=freeze"],
-            text=True, stderr=subprocess.DEVNULL, timeout=30,
-        )
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        return {}
-    result = {}
-    for line in out.strip().splitlines():
-        if "==" in line:
-            name, ver = line.split("==", 1)
-            result[name.strip().lower()] = ver.strip()
+    result: dict[str, str] = {}
+    for entry in sp.iterdir():
+        if not entry.name.endswith(".dist-info") or not entry.is_dir():
+            continue
+        stem = entry.name[: -len(".dist-info")]
+        m = _DIST_INFO_RE.match(stem)
+        if not m:
+            continue
+        name = m.group(1).lower().replace("_", "-")
+        result[name] = m.group(2)
     return result
 
 
-@functools.lru_cache(maxsize=None)
 def _torch_version(venv: Path) -> Optional[str]:
-    """Return torch.__version__ from venv, or None if torch isn't importable.
+    """Return torch.__version__ by reading site-packages/torch/version.py.
 
-    Cached per-process: see ``_pip_list``.
+    Pure filesystem read — no `import torch` subprocess. The previous
+    implementation spawned a Python that did `import torch`, which costs
+    ~4s per venv (CUDA library init); across 11 venvs that was the dominant
+    cost of `find_matching_pt_venvs`. Importability is verified separately
+    by ``_nvrtc_smoke`` after install.
     """
-    py = _venv_python(venv)
-    if not py.exists():
+    sp = _site_packages(venv)
+    if sp is None:
+        return None
+    vf = sp / "torch" / "version.py"
+    if not vf.exists():
         return None
     try:
-        out = subprocess.check_output(
-            [str(py), "-c", "import torch; print(torch.__version__)"],
-            text=True, stderr=subprocess.DEVNULL, timeout=30,
-        )
-        return out.strip()
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        for line in vf.read_text().splitlines():
+            m = re.match(r"^__version__\s*=\s*['\"]([^'\"]+)['\"]", line)
+            if m:
+                return m.group(1)
+    except (OSError, UnicodeDecodeError):
         return None
-
-
-def _clear_inspection_cache() -> None:
-    """Clear cached venv inspection results. For tests / long-lived
-    callers that need a fresh probe after a known venv change."""
-    _pip_list.cache_clear()
-    _torch_version.cache_clear()
+    return None
 
 
 def _extract_cuda_variant(torch_version: Optional[str]) -> Optional[str]:
@@ -387,8 +402,6 @@ def repair_venv(v: VenvInfo) -> None:
                 rest = lines[1] if len(lines) > 1 else b""
                 script.write_bytes(new_shebang + b"\n" + rest)
         log(f"repaired pip shebangs in {v.path}")
-        # Repaired venv may now be importable; invalidate cached probes.
-        _clear_inspection_cache()
 
 
 def is_pool_healthy(pool: Path) -> bool:
@@ -558,9 +571,6 @@ def clone_pool_and_install(pool: Path, spec: TorchSpec) -> Path:
     if rc != 0:
         log(f"transitive deps install warning (non-fatal): {out[-200:]}")
 
-    # Newly populated venv — drop any stale (empty) cache entries from
-    # earlier inspection of the empty target path.
-    _clear_inspection_cache()
     return target
 
 
