@@ -16,11 +16,18 @@ Schema produced (printed as JSON to stdout):
     "eager_self_diff": float | None,
     "eager_deterministic": bool | None,
     "max_diff_compiled_vs_eager": float | None,
-    "max_diff_vs_baseline": float | None
+    "max_diff_vs_baseline": float | None,
+    "bitwise_equal_compiled_vs_eager": bool | None,
+    "bitwise_equal_vs_baseline": bool | None
   },
   "error": str | None
 }
 ```
+
+bitwise_equal_* fields are populated whenever the two tensors share shape +
+dtype (None on shape mismatch). torch.equal() is essentially free relative to
+the model forward, so we compute it alongside max_diff and let downstream
+triage split divergences into bitwise / FP-rounding / above-tolerance buckets.
 
 Usage from a per-case validate.py shim:
 
@@ -105,6 +112,15 @@ def _safe_max_diff(a, b):
     return None  # shape mismatch beyond simple prefix; can't compare
 
 
+def _safe_bitwise_equal(a, b):
+    """torch.equal returns True iff shape + dtype + values all match. Returns
+    None on shape/dtype mismatch — bitwise equality is undefined under prefix-
+    clamp comparison (the regime _safe_max_diff handles), so we don't try."""
+    if a.shape != b.shape or a.dtype != b.dtype:
+        return None
+    return bool(torch.equal(a, b))
+
+
 def _run_canonical_check(case) -> dict:
     """Run model with case-spec canonical inputs; return integrity + gb + max_diff."""
     out = {
@@ -118,6 +134,8 @@ def _run_canonical_check(case) -> dict:
         "eager_deterministic": None,
         "max_diff_vs_eager_baseline": None,
         "max_diff_compiled_vs_eager_now": None,
+        "bitwise_equal_vs_eager_baseline": None,
+        "bitwise_equal_compiled_vs_eager_now": None,
         "error": None,
     }
     try:
@@ -181,6 +199,9 @@ def _run_canonical_check(case) -> dict:
             md = _safe_max_diff(eager_out, baseline_out)
             if md is not None:
                 out["max_diff_vs_eager_baseline"] = md
+            be = _safe_bitwise_equal(eager_out, baseline_out)
+            if be is not None:
+                out["bitwise_equal_vs_eager_baseline"] = be
 
         torch._dynamo.reset()
         set_seed(0)
@@ -222,6 +243,9 @@ def _run_canonical_check(case) -> dict:
         md = _safe_max_diff(eager_out, compiled_out)
         if md is not None:
             out["max_diff_compiled_vs_eager_now"] = md
+        be = _safe_bitwise_equal(eager_out, compiled_out)
+        if be is not None:
+            out["bitwise_equal_compiled_vs_eager_now"] = be
 
     except Exception as e:
         out["error"] = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
@@ -289,6 +313,8 @@ def main(case_id: str) -> int:
             "eager_deterministic": canonical["eager_deterministic"],
             "max_diff_compiled_vs_eager": canonical["max_diff_compiled_vs_eager_now"],
             "max_diff_vs_baseline": canonical["max_diff_vs_eager_baseline"],
+            "bitwise_equal_compiled_vs_eager": canonical["bitwise_equal_compiled_vs_eager_now"],
+            "bitwise_equal_vs_baseline": canonical["bitwise_equal_vs_eager_baseline"],
         },
         "error": canonical["error"],
     }

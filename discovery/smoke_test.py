@@ -415,6 +415,7 @@ def smoke_one_case(case_id: str, python_bin: str) -> tuple[bool, str]:
         "gb_in_agent_run", "gb_under_canonical_inputs", "gb_call_sites",
         "eager_self_diff", "eager_deterministic",
         "max_diff_compiled_vs_eager", "max_diff_vs_baseline",
+        "bitwise_equal_compiled_vs_eager", "bitwise_equal_vs_baseline",
     }
     missing_details = expected_details - set(out.get("details", {}).keys())
     if missing_details:
