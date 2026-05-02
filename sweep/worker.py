@@ -714,6 +714,8 @@ def _fix_config(model_name, config):
     # --- Mllama: intermediate_layers_indices must be valid after layer reduction ---
     # Default [3, 7, 15, 23, 30] — all out of range with 2 vision layers.
     # vision_output_dim = hidden_size * (len(intermediate_layers_indices) + 1)
+    # Applies to both the composite mllamamodel (config.vision_config) and the
+    # standalone mllamavisionmodel (config IS the vision config).
     if name_lower == "mllamamodel":
         vision_cfg = getattr(config, "vision_config", None)
         if vision_cfg:
@@ -726,6 +728,13 @@ def _fix_config(model_name, config):
             # Also reduce num_global_layers
             if getattr(vision_cfg, "num_global_layers", 0) > 2:
                 vision_cfg.num_global_layers = 2
+    if name_lower == "mllamavisionmodel":
+        n_layers = getattr(config, "num_hidden_layers", 2)
+        config.intermediate_layers_indices = list(range(n_layers))
+        v_hs = getattr(config, "hidden_size", 1280)
+        config.vision_output_dim = v_hs * (len(config.intermediate_layers_indices) + 1)
+        if getattr(config, "num_global_layers", 0) > 2:
+            config.num_global_layers = 2
 
     # --- Gemma3n: list-typed configs and num_kv_shared_layers need post-reduction sync ---
     if name_lower == "gemma3nmodel":
@@ -2006,6 +2015,47 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
             img_size = img_size[0]
         num_channels = getattr(config, "num_channels", 3)
         inputs = {"pixel_values": torch.randn(B, num_channels, img_size, img_size, device=device)}
+
+    # MllamaVisionModel: standalone vision encoder. pixel_values carries an
+    # extra (num_concurrent_media, max_num_tiles) dim, plus aspect-ratio
+    # tensors describing tile arrangement.
+    # Shapes: pixel_values (B, 1, max_tiles, C, H, W); aspect_ratio_ids
+    # (B, 1); aspect_ratio_mask (B, 1, max_tiles).
+    if name_lower == "mllamavisionmodel":
+        img_size = getattr(config, "image_size", 560)
+        if isinstance(img_size, (list, tuple)):
+            img_size = img_size[0]
+        num_channels = getattr(config, "num_channels", 3)
+        max_tiles = getattr(config, "max_num_tiles", 4)
+        inputs = {
+            "pixel_values": torch.randn(B, 1, max_tiles, num_channels, img_size, img_size, device=device),
+            "aspect_ratio_ids": torch.zeros(B, 1, dtype=torch.long, device=device),
+            "aspect_ratio_mask": torch.ones(B, 1, max_tiles, dtype=torch.long, device=device),
+        }
+
+    # Qwen3VL / Qwen3_5 vision sub-encoders: take pre-flattened patch features
+    # plus grid_thw describing (temporal, height, width) layout. Same forward
+    # contract across all 4 classes (Qwen3VL, Qwen3VLMoe, Qwen3_5, Qwen3_5Moe).
+    # Shapes: hidden_states (seq_len, in_channels * temporal_patch_size * patch_size**2);
+    # grid_thw (num_images, 3) where seq_len = sum(t*h*w) per image.
+    if name_lower in ("qwen3vlvisionmodel", "qwen3vlmoevisionmodel",
+                      "qwen3_5visionmodel", "qwen3_5moevisionmodel"):
+        in_ch = getattr(config, "num_channels", getattr(config, "in_channels", 3))
+        patch = getattr(config, "patch_size", 14)
+        tps = getattr(config, "temporal_patch_size", 2)
+        flat_dim = in_ch * tps * patch * patch
+        t, h, w = 1, 4, 4
+        seq = t * h * w
+        inputs = {
+            "hidden_states": torch.randn(seq, flat_dim, device=device),
+            "grid_thw": torch.tensor([[t, h, w]], dtype=torch.long, device=device),
+        }
+
+    # Qwen2_5OmniToken2WavBigVGANModel: vocoder taking a mel spectrogram only.
+    # Shape: (B, n_mels, time).
+    if name_lower == "qwen2_5omnitoken2wavbigvganmodel":
+        n_mels = getattr(config, "mel_dim", getattr(config, "n_mels", 80))
+        inputs = {"mel_spectrogram": torch.randn(B, n_mels, 64, device=device)}
 
     # Lfm2Model: architecture issue with conv ordering
     # Lfm2VlModel: shape mismatch in vision projection
