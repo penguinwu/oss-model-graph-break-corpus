@@ -100,6 +100,24 @@ def spawn_worker(python_bin, spec, pass_num, device, mode, timeout_s,
     env = os.environ.copy()
     env["CUDA_VISIBLE_DEVICES"] = "0"
 
+    # Optional: HF kernels-community kernel resolution for models that need them.
+    # GATED behind SWEEP_USE_KERNEL_RESOLVER=1 to delay the per-model rollout
+    # decision (see issue tracking MRA harness work). When enabled, sets
+    # LOCAL_KERNELS=... in the worker subprocess env using sweep/kernel_resolver.py.
+    if os.environ.get("SWEEP_USE_KERNEL_RESOLVER") == "1":
+        try:
+            from sweep.kernel_resolver import resolve_kernels_for_model
+            torch_ver = subprocess.check_output(
+                [python_bin, "-c", "import torch; print(torch.__version__)"],
+                stderr=subprocess.DEVNULL, timeout=10,
+            ).decode().strip()
+            local_kernels_value = resolve_kernels_for_model(spec.get("name", ""), torch_ver)
+            if local_kernels_value:
+                env["LOCAL_KERNELS"] = local_kernels_value
+        except Exception:
+            # Defensive: never let kernel-resolver failures break the sweep
+            pass
+
     worker_script = CUSTOM_WORKER_SCRIPT if spec.get("source") == "custom" else WORKER_SCRIPT
     cmd = [
         python_bin, str(worker_script),
@@ -312,6 +330,17 @@ def run_pass(python_bin, specs, pass_num, device, modes, workers, timeout_s,
     GPU_RECOVERY_WAIT = 30    # seconds between GPU health checks
     GPU_RECOVERY_RETRIES = 4  # max retries (total wait = 4 × 30s = 2 min)
 
+    # Stagger between back-to-back worker spawns inside the same scheduling pass.
+    # Without this, two subprocess.Popen calls fire near-simultaneously, both
+    # children import torch + initialize cudnn 9.x at the same wall-clock moment,
+    # and one or both can hit "Invalid handle. Cannot load symbol cudnnGetVersion"
+    # from racing on the libcudnn dlopen. PT 2.12 baseline 2026-04-30 had 16/24
+    # auto-retried errors flake-pass on serial retry; cudnn-signature lines were
+    # ~15 of those. Tunable via SWEEP_SPAWN_STAGGER_S env var (set to 0 to
+    # disable). Only applies between consecutive spawns in the same iteration —
+    # steady-state spawns (one slot at a time) pay zero overhead.
+    SPAWN_STAGGER_S = float(os.environ.get("SWEEP_SPAWN_STAGGER_S", "3.0"))
+
     # Build work queue
     pending = deque()
     for spec in specs:
@@ -452,6 +481,11 @@ def run_pass(python_bin, specs, pass_num, device, modes, workers, timeout_s,
                         model_timeout, dynamic, extra_args=extra_worker_args
                     )
                     active[handle.proc.pid] = handle
+                    # Stagger before the next consecutive spawn to give the
+                    # just-spawned worker a head start on cudnn lazy-load
+                    # initialization (see SPAWN_STAGGER_S comment for context).
+                    if SPAWN_STAGGER_S > 0 and pending and len(active) < current_max:
+                        time.sleep(SPAWN_STAGGER_S)
                 except Exception as e:
                     # If we can't even spawn, record as error and continue
                     result = {
