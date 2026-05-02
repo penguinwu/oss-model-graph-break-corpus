@@ -43,6 +43,7 @@ SKIP_MESSAGE_IDS = set()
 AGENT_PREFIXES = (
     "[🦦 Otter]:",           # Otter's standard GChat prefix (with emoji)
     "[Otter]:",              # Otter prefix without emoji (GChat may strip it)
+    "[🦦 Otter, on Peng's behalf]",  # Cross-post variant sent --as-user
     "*Technical Report:",     # Technical report posts
     "*Fullgraph sweep complete",  # Fullgraph sweep result posts
     "*Fullgraph sweep",      # Other sweep report variants

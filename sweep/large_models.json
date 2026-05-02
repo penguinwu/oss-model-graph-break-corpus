@@ -143,6 +143,13 @@
     "timeout_tier": "large",
     "wall_time_s": 453.92
   },
+  "Qwen2_5_VLForConditionalGeneration": {
+    "discovered": "2026-04-30",
+    "resolved_status": "graph_break",
+    "source": "hf",
+    "timeout_tier": "large",
+    "wall_time_s": 95.14
+  },
   "Qwen2_5_VLModel": {
     "discovered": "2026-04-14",
     "resolved_status": "full_graph",

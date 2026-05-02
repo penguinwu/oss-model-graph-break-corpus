@@ -14,16 +14,16 @@
       "model": "ZambaForCausalLM",
       "modes": ["eval", "train"],
       "error_pattern": "tie_weights_keys",
-      "applies_to_versions": ["2.11", "2.13"],
+      "applies_to_versions": ["2.11", "2.12", "2.13"],
       "added": "2026-04-28",
-      "reason": "tie_weights_keys definition bug confirmed on PT 2.11 baseline AND torch-181552 (PT 2.13-dev a0). Re-verify on PT 2.12, 2.14+ — drop the entry if the bug clears."
+      "reason": "tie_weights_keys definition bug confirmed on PT 2.11 baseline, PT 2.12 nightly, AND torch-181552 (PT 2.13-dev a0). Re-verify on 2.14+ — drop the entry if the bug clears."
     },
     {
       "status": "create_error",
       "model": "ZambaModel",
       "modes": ["eval", "train"],
       "error_pattern": "tie_weights_keys",
-      "applies_to_versions": ["2.11", "2.13"],
+      "applies_to_versions": ["2.11", "2.12", "2.13"],
       "added": "2026-04-28",
       "reason": "Same root cause as ZambaForCausalLM."
     },
@@ -32,54 +32,40 @@
       "model": "Qwen3OmniMoeTalkerModel",
       "modes": ["eval", "train"],
       "error_pattern": "Qwen3OmniMoeTalkerTextConfig",
-      "applies_to_versions": ["2.13"],
+      "applies_to_versions": ["2.12", "2.13"],
       "added": "2026-04-28",
-      "reason": "transformers config drift — Qwen3OmniMoeTalkerTextConfig missing 'shared_expert_intermediate_size' attribute. Surfaced on torch-181552 (PT 2.13-dev). Not observed in PT 2.11 sweep — re-verify on PT 2.12, 2.14+."
+      "reason": "transformers config drift — Qwen3OmniMoeTalkerTextConfig missing 'shared_expert_intermediate_size' attribute. Surfaced on torch-181552 (PT 2.13-dev) AND PT 2.12 nightly. Not observed in PT 2.11 sweep (model wasn't in transformers 5.5.3). Re-verify on 2.14+."
     },
     {
       "status": "eager_error",
       "model": "PeAudioVideoModel",
       "modes": ["eval", "train"],
       "error_pattern": "None",
-      "applies_to_versions": ["2.11", "2.13"],
+      "applies_to_versions": ["2.11", "2.12", "2.13"],
       "added": "2026-04-28",
-      "reason": "KeyError(None) in pure-eager forward. Confirmed on PT 2.11 baseline and PT 2.13-dev (Animesh sweep, after timm install). Re-verify on PT 2.12, 2.14+."
+      "reason": "KeyError(None) in pure-eager forward. Confirmed on PT 2.11 baseline, PT 2.12 nightly, and PT 2.13-dev (Animesh sweep, after timm install). Re-verify on 2.14+."
     },
     {
       "status": "eager_error",
       "model": "MusicFlamingoForConditionalGeneration",
       "modes": ["eval", "train"],
       "error_pattern": "CUDA error: device-side assert triggered",
-      "applies_to_versions": ["2.11", "2.13"],
+      "applies_to_versions": ["2.11", "2.12", "2.13"],
       "added": "2026-04-29",
-      "reason": "CUDA device-side assert in pure-eager forward (likely out-of-range index in embedding/scatter). Observed on PT 2.11 baseline AND PT 2.13-dev. Filed as #89. Re-verify on PT 2.12, 2.14+."
-    },
-    {
-      "status": "eager_error",
-      "model": "Zamba2ForCausalLM",
-      "modes": ["eval", "train"],
-      "error_pattern": "1",
-      "applies_to_versions": ["2.11"],
-      "added": "2026-04-29",
-      "reason": "Zamba2 eager forward crashes; worker.py error capture only retained '1' as the error message (worker capture bug). Observed on PT 2.11. Filed as #90. Re-verify on PT 2.12+ once worker capture is fixed."
-    },
-    {
-      "status": "eager_error",
-      "model": "Zamba2Model",
-      "modes": ["eval", "train"],
-      "error_pattern": "1",
-      "applies_to_versions": ["2.11"],
-      "added": "2026-04-29",
-      "reason": "Same as Zamba2ForCausalLM — see #90."
+      "reason": "CUDA device-side assert in pure-eager forward (likely out-of-range index in embedding/scatter). Observed on PT 2.11 baseline, PT 2.12 nightly, AND PT 2.13-dev. Filed as #89. Re-verify on 2.14+."
     },
     {
       "status": "eager_error",
       "model": "PI0Model",
       "modes": ["eval", "train"],
       "error_pattern": "'NoneType' object has no attribute 'get_seq_length'",
-      "applies_to_versions": ["2.11"],
+      "applies_to_versions": ["2.11", "2.12"],
       "added": "2026-04-29",
-      "reason": "KV cache contract mismatch — model expects a non-None Cache object, corpus harness passes None. Observed on PT 2.11. Filed under #88 (corpus-harness escapee). Re-verify on PT 2.12+ — likely persists until the harness is fixed."
+      "reason": "KV cache contract mismatch — model expects a non-None Cache object, corpus harness passes None. Observed on PT 2.11 and PT 2.12. Filed under #88 (corpus-harness escapee). Re-verify on 2.13+ — likely persists until the harness is fixed."
     }
+  ],
+  "_notes_2026_04_30": [
+    "PT 2.12 sweep validation pass dropped Zamba2ForCausalLM and Zamba2Model entries — both eager_error on PT 2.11 (#90) but FULL_GRAPH on PT 2.12. Real PT 2.12 win.",
+    "8 cuDNN worker_errors (Ernie/Esm/EuroBert/Evolla/Exaone4 family) NOT added — confirmed transient via auto-retry pass which resolved all 8 to full_graph. Single worker died with broken CUDA context in a 44-second window during the main pass. Infrastructure noise, not a stable bug."
   ]
 }
