@@ -1,5 +1,12 @@
 # OSS Model Compiler Quality Corpus
 
+> **Note (2026-05-02):** Skill-discovery work has migrated to a separate repo,
+> [penguinwu/pt2-skill-discovery](https://github.com/penguinwu/pt2-skill-discovery)
+> (`~/projects/pt2-skill-discovery/`). This repo's `discovery/` dir is now a
+> READ-ONLY fallback during the migration's dual-run period — see
+> `discovery/MIGRATED.md`. Do not edit `discovery/` here; do all skill-discovery
+> work in the new repo.
+
 ## What This Is
 
 A corpus of 734 open-source models for surfacing `torch.compile` quality issues — graph breaks, numerical divergences, NaN/Inf, shape mismatches, infrastructure failures, and whatever else the compiler trips on. Tracks signals across PyTorch versions with classification, root cause analysis, and issue management. The corpus name still says "graph break" for historical reasons; the scope has grown.
@@ -36,25 +43,22 @@ Every new sweep adds a *dimension* — correctness, dynamic shapes, a new compil
 
 *Why:* The Phase 3 correctness sweep produced 169 `create_error` results vs 16 in the pt2.11 graph-break baseline a few days earlier; the 169 were `full_graph` in baseline. The Phase 3 worker had a model-creation bug in the wrapper-variant path that smoke testing didn't cover. We almost reported 12 verification failures that weren't trustworthy.
 
-## Experimentation Discipline (3 tiers)
+## Experimentation Discipline (2 tiers)
 
-The corpus runs different kinds of experiments at different cadences and stakes. The discipline scales accordingly. Pick the tier that matches what you're doing — don't apply Tier A ceremony to a one-off, don't skip Tier A gates for discovery work.
+The corpus runs different kinds of experiments at different cadences and stakes. The discipline scales accordingly.
 
 | Experiment type | Tier | Smoke test | Plan.md gates | Launcher gate | Lifecycle doc |
 |---|---|---|---|---|---|
-| Discovery (multi-trial, harness change, schema change) | **A** — full | mandatory | mandatory | mandatory | `discovery/EXPERIMENT_LIFECYCLE.md` |
 | Sweep / correctness / AutoDev / `tools/run_experiment.py` | **B** — lighter | mandatory (`tools/smoke_test.py`) | n/a (cron-scheduled) | recommended on schema change | "Validate Invariants" section above |
 | One-off ad-hoc analysis | **C** — informal | recommended | n/a | n/a | universal floor below |
+
+(Tier A — Discovery experiments — moved to pt2-skill-discovery; see that repo's `CLAUDE.md` and `design/experiment_lifecycle.md`.)
 
 ### Universal floor (applies to all tiers)
 
 > Before launching any new run, every loose end from prior runs is CLOSED with verified fix or EXPLICITLY DEFERRED with written reason. No silent drops. No "I'll fix it on the next run."
 
 This rule was hardened on 2026-04-27 after a chain of V8 discovery experiments cascaded multi-hour failures because each "next run" papered over an unresolved loose end from the prior. The pattern: launch → bug surfaces → "I'll fix it next run" → re-launch → same bug surfaces → repeat. The closure rule is the antidote.
-
-### Tier A — Discovery experiments
-
-Read `discovery/EXPERIMENT_LIFECYCLE.md` and walk through Gates 0-4 in strict order. The launchers (`discovery/run_case.py`, `discovery/revalidate.py`) enforce a hard gate — they refuse to start unless `discovery/smoke_test.py` exits 0 and the experiment's `plan.md` has a complete `## Pre-launch gates` section. Bypass requires `--lifecycle-bypass --reason "<text>"` which writes the reason to `plan.md`.
 
 ### Tier B — Sweep + correctness + AutoDev
 
@@ -72,37 +76,9 @@ No formal gates. The universal floor still applies: if you change a script, run 
 
 ## Discovery Experiments
 
-Multi-trial discovery experiments (skill-evaluation studies, agent-strategy studies) are tracked under `discovery/experiments/<YYYY-MM-slug>/`. Each experiment has:
+Migrated to [penguinwu/pt2-skill-discovery](https://github.com/penguinwu/pt2-skill-discovery). See that repo's `CLAUDE.md`, `design/experiment_lifecycle.md`, and `experiments/README.md` for the convention. Scaffold tools (`new_experiment.py`, `new_case_issue.py`, `queue_task.py`) move with the migration; corpus's `tools/queue_task.py` continues to manage the cross-repo board.
 
-- `plan.md` — methodology, matrix, open questions, stop conditions
-- `reports/<case>.md` — per-case findings (one per model)
-- `synthesis.md` — cross-case writeup (deferred until all cases close)
-
-Convention is documented in `discovery/experiments/README.md` and enforced by `tools/check_experiments.py` (run nightly via the daily brief).
-
-**Use the scaffold tools — do NOT hand-roll directories:**
-
-| Tool | When |
-|---|---|
-| `tools/new_experiment.py "<slug>" --title "<Title>"` | Starting a new experiment (LIGHTWEIGHT default — plan.md + dir + README row, no GitHub issue) |
-| `tools/new_experiment.py "<slug>" --title "<Title>" --with-umbrella-issue` | Same, but ALSO files an umbrella GitHub issue + adds to project board #1 |
-| `tools/new_case_issue.py <experiment-slug> <case_id> "<Model name>"` | (optional) Per-case GitHub issue for an experiment that warrants per-case tracking |
-| `tools/queue_task.py "<title>" [--umbrella N]` | Deferring work — creates a Backlog card on project board #1 so the commitment survives session end |
-
-*Issue-filing is ORTHOGONAL to scaffolding an experiment.* Most local experiments don't need GitHub-issue tracking — flooding the repo with issues nobody tracks defeats the point. Use `--with-umbrella-issue` only when the experiment warrants team-visible tracking (cross-case studies that produce shipped findings, work needing cross-team comments / status visibility).
-
-The board is the canonical source of "agreed but not started" work. TodoWrite is in-conversation only; OPEN-LOOPS.md is project-level facts; the board is indefinite-lifetime and visible without local access. When you commit to deferred work, queue it.
-
-**Analysis outputs land on main directly + headline summary on the per-case issue.**
-
-Anything under `discovery/experiments/<exp>/reports/` (findings docs, fingerprint CSVs, synthesis docs) commits to main directly. After landing:
-
-1. Post a headline summary as a comment on the per-case issue (or umbrella for cross-case synthesis). Link the file path on main.
-2. Per-case issue moves to Done.
-
-No PR-FIRST workflow — discontinued 2026-04-25 per Peng. Reasons: PR diffs are hard to read for analysis docs; merge conflicts accumulated when feature branches drifted from main. Direct-to-main + issue comment is the workflow now.
-
-(Earlier sessions encoded a PR-FIRST rule. That rule is removed. This block is the current state.)
+The local fallback dir is `corpus/discovery/` — see `discovery/MIGRATED.md` for the dual-run policy.
 
 ## Script Map
 
