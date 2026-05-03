@@ -1,19 +1,20 @@
 ---
-plan: DeepSeek V4 Pro — model evaluation
+plan: DeepSeek V4 — corpus enablement + evaluation
 status: active
 owner: Otter
 created: 2026-04-25
-last_check: 2026-04-25
+last_check: 2026-05-02
+revision: 2
 forcing_function: tools/check_plan.py + daily brief at 7:30 AM ET
 ---
 
-# DeepSeek V4 Pro — Evaluation Plan
+# DeepSeek V4 — Corpus Enablement + Evaluation Plan
 
-> **Status: APPROVED for execution** (Peng review 2026-04-25 13:22 + 13:32 ET — all 5 open questions resolved including the AutoDev Kanban board pointer).
+> **Revision 2 — 2026-05-02:** Major rework after (a) the Apr 25 one-off `run_eval.py` was deleted in commit `c7987b5` per Peng's principle that adding a model = a new config, not a new runner; (b) PR #45643 (Add DeepSeek V4) merged into transformers main this morning at 11:41 UTC, eliminating the PR-branch dance; (c) GPU corrected from H100 → A100 80GB (devvm has 1× A100 80GB).
 
 ## Goal
 
-Evaluate the latest DeepSeek-V4-Pro release ([huggingface.co/deepseek-ai/DeepSeek-V4-Pro](https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro)) on **four dimensions**, with results landing on a AutoDev Kanban board dashboard for ongoing visibility:
+Add DeepSeek V4 as a first-class corpus model and run the standard evaluation:
 
 | Dimension | What we measure | Pass criterion |
 |---|---|---|
@@ -22,220 +23,136 @@ Evaluate the latest DeepSeek-V4-Pro release ([huggingface.co/deepseek-ai/DeepSee
 | **Performance** | tier-1 (small / "fast") and tier-2 (realistic) speedup of compiled vs eager; compile time | speedup > 1.0x. (No prior-release regression check — Peng 2026-04-25: no comparable baseline; absolute numbers only.) |
 | **Numerics** | `bitwise_equal` field + max_abs_diff distribution; bf16 vs fp32 stability | record per layer / per output head if model is composite |
 
-## Why this model
+## Why this model — and which variant
 
-DeepSeek V4 Pro is a *fresh release* not yet in the corpus. Standing eval question: when a high-profile new model lands, where do PyTorch's compile, correctness, and perf stories stand on it? This evaluation answers that — and produces actionable issues if any dimension fails.
+DeepSeek V4 series (released Apr 2026) is a fresh release not yet in the corpus. Standing eval question: when a high-profile new model lands, where do PyTorch's compile, correctness, and perf stories stand on it?
 
-This is the **standard model-evaluation project**, NOT WS1 skill discovery. Different from the per-case agent experiments under `discovery/experiments/`.
+**The DSV4 series has two variants on HF Hub:**
 
-## What we know about the model (TBD — fill before launch)
+| Variant | Total params | Activated | HF model_class | Context |
+|---|---|---|---|---|
+| `deepseek-ai/DeepSeek-V4-Pro` | 1.6T | 49B (MoE) | `DeepseekV4ForCausalLM` | 1M tokens |
+| `deepseek-ai/DeepSeek-V4-Flash` | 284B | 13B (MoE) | `DeepseekV4ForCausalLM` | 1M tokens |
 
-To verify by reading the HF model card + config:
+**Critical:** both variants use the **same HF model class** (`DeepseekV4ForCausalLM`, model_type `deepseek_v4`). The architectural feature set (Hybrid Attention via CSA+HCA, manifold-Constrained Hyper-Connections, hash layers, MoE routing, index_*) is identical between Pro and Flash. The variants differ only in size knobs (`hidden_size`, `num_hidden_layers`, `num_attention_heads`, `n_routed_experts`, `moe_intermediate_size`).
 
-- [ ] *Architecture:* presumably MoE (DeepSeek V3 was 671B MoE w/ 37B active). Confirm V4 Pro's exact shape — total params, active params, expert count, MoE dispatch op.
-- [ ] *Tokenizer:* HF tokenizer used in their inference example (DeepSeek typically uses their own).
-- [ ] *Config:* hidden size, layer count, attention type (MLA?), routing strategy.
-- [ ] *Memory footprint:* full-model load on devvm (1× H100 80GB) feasible, or do we need a tiny config?
-- [ ] *Inference example:* HF README's canonical input + expected output (used as the eager reference).
-- [ ] *Known issues:* any caveats in model card re: fp16/bf16 stability, sliding window attn, etc.
-- [ ] *Comparable previous release:* DeepSeek V3 / V3-Pro baseline for perf-regression check.
+**Implication for corpus integration:** **one corpus entry covers both.** The corpus's `_reduce_model_size` shrinks `num_hidden_layers` to 2 anyway (graph-break behavior is determined by ops used, not depth). Whatever default `DeepseekV4Config()` ships with after the merge becomes the starting point; per-model overrides reduce remaining size knobs (notably `n_routed_experts`) so the model fits A100 80GB during instantiation.
 
-## Two-phase execution (Peng 2026-04-25)
+**Use Flash's default dims as the starting reference point** (`hidden_size=4096`, `n_routed_experts=256` etc. — smaller than Pro's `7168` and `384`), but in practice the difference disappears after `_reduce_model_size` + per-model expert reduction. This is "use Flash" in spirit while not actually picking one over the other architecturally.
 
-| Phase | Config | Focus | Why |
-|---|---|---|---|
-| **Phase 1** | Tiny config (smallest variant we can configure or HF dev-config) | **Correctness** (graph breaks + numerics) | Establish that compile produces correct output before scaling. Memory-feasible on 1× H100; fast iteration. |
-| **Phase 2** | Full model (or largest config that fits 1× H100; sharded if needed and infra exists) | **Performance** (tier-1 + tier-2) + reconfirm correctness at scale | Real-world inference perf. Only meaningful if Phase 1 correctness lands. |
+## A100 80GB constraint
 
-Phase 2 launches only after Phase 1 produces a clean correctness verdict (or with explicit Peng sign-off if Phase 1 surfaces issues we want to defer). Each phase produces its own `results.json` so downstream analysis can stage the conclusions.
+- **Pro full weights at bf16:** 1.6T × 2B = 3.2 TB. Needs ~40+ A100s. Out of scope.
+- **Flash full weights at bf16:** 284B × 2B = 568 GB. Needs ~7+ A100s. Also out of scope.
+- **Reduced (corpus-style):** ~7B params at bf16 = ~13 GB. Fits comfortably (Apr 25 phase 1 ran at this scale).
+- **Quantized variants on HF Hub:** Pro/Flash ship in FP4+FP8 mixed precision (their MoE expert weights are FP4). For corpus eval we want bf16 weights to test the true compute path; we construct the model from config + random init rather than loading published weights. This is the same approach Apr 25 used.
+
+**Verdict:** corpus eval runs against a **scaled-down architecturally-complete config** instantiated from `DeepseekV4Config(...)` with reduced size knobs. Same approach as every other large MoE model in the corpus (Dbrx, Qwen MoE variants, etc.).
+
+## What's done (Apr 25 Phase 1, pre-revision-2)
+
+Phase 1 ran on Apr 25 via the deleted `run_eval.py` one-off. Tiny config: `vocab=4096, hidden=7168, layers=4, experts=16, moe_intermediate=3072, batch=1, seq=16` → 7.15B params, 13.3 GB at bf16. Loaded from `transformers PR #45643` (sha `a0a8482927a1...`), since DSV4 was not in mainline at the time.
+
+**Findings:**
+- ✅ **gb=0 (single fullgraph)** — model fully captures into one graph; ~1712 ops
+- ❌ **Correctness FAIL: max_abs_diff = 1.07** (4 orders of magnitude above the 1e-4 tolerance)
+- ✅ **Performance: 3.58× speedup** at tier-1 (eager 54.1ms vs compiled 15.1ms; compile_s 5.5)
+- ✅ **eager_self_diff = 0.0** — divergence is REAL (Inductor/AOTAutograd), not RNG noise
+
+Sub-issues filed: [#67 Phase 1 closed](https://github.com/penguinwu/oss-model-graph-break-corpus/issues/67) ✓ ; [#108 correctness divergence](https://github.com/penguinwu/oss-model-graph-break-corpus/issues/108) OPEN ; [#68 Phase 2](https://github.com/penguinwu/oss-model-graph-break-corpus/issues/68) OPEN. Umbrella [#66](https://github.com/penguinwu/oss-model-graph-break-corpus/issues/66) OPEN.
+
+Historical record at `experiments/results/deepseek_v4_pro/phase1-tiny-20260425-183222/{results.json,README.md}`.
+
+## What's changed since Apr 25 (this revision)
+
+1. **PR #45643 merged into transformers main this morning** (2026-05-02 11:41 UTC, sha `08e4cf82819a`). DSV4 is now installable from `pip install -U transformers` (or `git+main` until the next PyPI tag drops). No more PR-branch + PYTHONPATH dance.
+2. **The one-off `experiments/scripts/run_eval.py` is gone** (commit `c7987b5`). Eval work goes through `tools/run_experiment.py` like every other model in the corpus.
+3. **GPU corrected:** devvm is 1× **A100 80GB**, not H100 as Revision 1 assumed. The compute envelope is the same in this case (both 80GB SKUs exist) but the doc should be accurate.
 
 ## Methodology
 
-### Evaluation harness
+### Corpus integration shape
 
-Build a config-driven evaluation following the existing `experiments/` pattern (`tools/run_experiment.py`). One JSON config file, runnable as:
+DSV4 is now a regular HF model. Integration steps:
 
-```bash
-~/envs/torch211/bin/python tools/run_experiment.py run experiments/configs/deepseek-v4-pro.json
-```
-
-The config drives a sweep of 4 backend × 2 mode combinations:
-
-| Backend | Mode | Purpose |
-|---|---|---|
-| `eager` | inference | reference output for correctness; eager perf baseline |
-| `inductor` (default) | inference | primary compile target; perf + correctness |
-| `aot_eager` | inference | isolates dynamo from inductor (for triaging numerics divergence) |
-| `inductor` | inference, `dtype=bf16` | numerics check at training-relevant precision |
-
-(Drop `aot_eager` and the bf16 row if scope creep — they're triage tools, not gates.)
+1. **Upgrade transformers** in the corpus's nightly venv (`~/envs/torch-nightly-cu126`) to a version that contains the merged PR. Either:
+   - `pip install -U transformers` (if a release post 11:41 UTC today is available on PyPI), OR
+   - `pip install --upgrade git+https://github.com/huggingface/transformers.git@main` (always-latest from main)
+2. **Verify `enumerate_hf` discovers DeepseekV4ForCausalLM + DeepseekV4Model** — should be automatic; `sweep/models.py:enumerate_hf()` walks `dir(transformers)` for ModelMixin subclasses.
+3. **Verify `worker.py:create_model` succeeds with reduced size.** The default `DeepseekV4Config()` will probably allocate too many experts to fit A100 80GB during init. Two paths:
+   - (a) Add a per-model override block in `sweep/worker.py:_fix_config` that reduces `n_routed_experts` (target: 4–8) and any other dims that scale aggressively with the default. Mirror the Bert/ViT/Jamba pattern (search `worker.py` for `name_lower == "..."` blocks).
+   - (b) Add an entry to `sweep/large_models.json` if it ends up tier='large' (>120s wall) so timeout tier auto-adjusts.
+4. **Run via the standard path:**
+   ```bash
+   ~/envs/torch-nightly-cu126/bin/python tools/run_experiment.py sweep --models DeepseekV4ForCausalLM --modes eval --workers 1
+   ```
+   This invokes the existing identify/explain/correctness pipeline. No new runner script.
 
 ### Per-dimension protocol
 
-**Graph breaks.** Run `torch._dynamo.explain(model)(*inputs)` and the standard `fullgraph=True` compile. Record `graph_break_count`, the unique break categories, and file-line locations. If gb>0, run the existing categorization (per `correctness/` and `tools/file_issues.py`) and tag each break with corpus's existing labels (e.g. `[dynamo] data-dependent branching`, `[dynamo] Tensor.item()`).
+**Graph breaks.** Standard sweep `fullgraph=True` compile + `torch._dynamo.explain`. `tools/file_issues.py` categorizes any breaks via existing rules (`[dynamo] data-dependent branching`, `[dynamo] Tensor.item()`, etc.). Apr 25 found gb=0 — should reproduce.
 
-**Correctness.** Compute `max_abs_diff(eager_out, compiled_out)` on a fixed canonical prompt (pick from HF README example). Tolerance: **1e-4** across dtypes — same default as `pytorch/benchmarks/dynamo/common.py:1069` (`tolerance = args.xla_tolerance if args.trace_on_xla else 1e-4`). Below this is "pass"; above is "above-tolerance" and gets filed. Independently compute `bitwise_equal: bool` (`torch.equal`) so we separate "FP-rounding" from "above-tolerance" from "bitwise-different". This is the same field that's in WS4 backlog — implementing it here is partial WS4 progress.
+**Correctness.** Standard `run_correctness` path (`sweep/worker.py:3880`+) with the corpus's existing 3-layer determinism handling: `set_seed(42, deterministic=True)` + CUBLAS deterministic + the less_flaky-retry methodology that flags `numeric_noise_floor_dominant`. Apr 25 found `max_abs_diff=1.07` (4 orders above 1e-4). If reproduced via the principled path, the divergence is real and stays as a Phase-2 blocker.
 
-**Performance.** Use `discovery/perf.py:measure_perf` (the primitive shipped for skill-eval — same methodology applies here: gc + cache clear, warmup separate from timing, median over reps, real `compile_times()`):
-- *tier-1 ("fast"):* small input (e.g. 16-token prompt) — measures compile fixed cost + per-call overhead.
-- *tier-2 ("realistic"):* representative inference workload (e.g. 2048 prompt + 256 generate) — measures steady-state.
+**Performance.** Standard sweep doesn't measure tier-1/tier-2 perf (that's only in `experiments/scripts/run_eval.py` which we deleted). For now: graph-break + correctness only. Perf measurement is Phase 2 territory and gates on the correctness story landing first.
 
-Record: `eager_ms`, `compiled_ms`, `speedup`, `peak_mem_mb`, `compile_s`. Report absolute numbers — no prior-release regression check (Peng 2026-04-25: no comparable baseline).
+## Output
 
-**Reference benchmark stack to align with:** [pytorch/pytorch/benchmarks](https://github.com/pytorch/pytorch/tree/7a6f3270a85fefb5716d3224cf1936c07b0296e4/benchmarks) — specifically `benchmarks/dynamo/huggingface.py` for HF model handling and `benchmarks/dynamo/common.py` for the shared infra. The corpus's `discovery/perf.py` should align its methodology with this codebase (warmup, iteration counts, stat reporting) so our numbers are comparable to upstream PyTorch's benchmark dashboards. Treat divergences from upstream methodology as deliberate, documented choices, not accidents.
+**Source-of-truth artifact:** sweep results land at `sweep_results/experiments/deepseek-v4-corpus-add-<date>/` (the principled path's standard output convention). No need for a separate `experiments/results/deepseek_v4_pro/` tree going forward — that was tied to the run_eval.py shape.
 
-### RNG determinism (HF model gotcha — required for any meaningful perf or correctness number)
+**AutoDev Kanban board:** [github.com/users/penguinwu/projects/1](https://github.com/users/penguinwu/projects/1). Per Peng 2026-04-25 13:32 ET. Existing umbrella + sub-issues stay; status updates per phase.
 
-Per Animesh: many HF models invoke `torch.manual_seed` internally during forward (dropout init, sampling, layer-norm noise variants), so even with a fixed input you can get different outputs across two eager runs. Without addressing this, **every accuracy comparison is suspect** and tier-1 perf may show false variance.
-
-The canonical pattern from [`benchmarks/dynamo/common.py:540`](https://github.com/pytorch/pytorch/blob/7a6f3270a85fefb5716d3224cf1936c07b0296e4/benchmarks/dynamo/common.py#L540) (referenced by `check_accuracy` at L2201):
-
-```python
-@functools.cache
-def patch_torch_manual_seed():
-    """Make torch manual seed deterministic. Helps with accuracy testing."""
-    def deterministic_torch_manual_seed(*args, **kwargs):
-        from torch._C import default_generator
-        seed = 1337
-        if HAS_CUDA and not torch.cuda._is_in_bad_fork():
-            torch.cuda.manual_seed_all(seed)
-        if HAS_XPU and not torch.xpu._is_in_bad_fork():
-            torch.xpu.manual_seed_all(seed)
-        return default_generator.manual_seed(seed)
-    torch.manual_seed = deterministic_torch_manual_seed
-```
-
-The benchmark suite also keeps a `non_deterministic_models` set ([`common.py:1897`](https://github.com/pytorch/pytorch/blob/7a6f3270a85fefb5716d3224cf1936c07b0296e4/benchmarks/dynamo/common.py#L1897)) — models that remain non-deterministic *even with the seed patch*. For those, eager-vs-eager differences are accepted ("`eager_two_runs_differ`" downgraded to "pass").
-
-**Required infra changes for our perf primitive (`discovery/perf.py`):**
-1. Apply `patch_torch_manual_seed()` (or our equivalent) before any model load + before each measurement run.
-2. Run an "eager_self_check": run eager twice with the same input and compare. If outputs diverge, the model is non-deterministic — flag in results JSON, don't fail compile-vs-eager check on bitwise grounds.
-3. Maintain a corpus-level `non_deterministic_models` set in the eval config for known offenders (start empty; populate as we find them).
-
-This applies to the perf-primitive **broadly**, not just DeepSeek V4 Pro — same hardening makes every existing per-case measurement more reliable.
-
-**Numerics.** Bitwise + max_abs_diff in bf16 specifically — DeepSeek's training/inference is bf16-native so any compile-induced fp32-bf16 mismatch is real-world relevant. If model has multiple output heads (router logits, hidden states, final logits), report per-head separately so we can isolate where divergence enters.
-
-## Output — AutoDev Kanban board + detailed writeup
-
-**Source-of-truth artifact:** each phase produces a `results.json` under `experiments/results/deepseek_v4_pro/<phase>-<date>/`. The AutoDev board surfaces the work-in-progress state.
-
-**AutoDev Kanban board:** [github.com/users/penguinwu/projects/1](https://github.com/users/penguinwu/projects/1) — the same board the discovery cases (#59, #61, #62, #63) live on. Per Peng 2026-04-25 13:32 ET. No new ETL or dashboard infra needed — just track this eval as GitHub issues that auto-attach to the board (project automation handles status moves). Proposed issue structure:
-
-- **Umbrella:** `[Eval] DeepSeek V4 Pro` — top-level tracking issue with links to phase sub-issues + the plan file.
-- **Phase 1 sub-issue:** `[Eval] DeepSeek V4 Pro — Phase 1 (tiny config, correctness)` — closes when Phase 1 results land.
-- **Phase 2 sub-issue:** `[Eval] DeepSeek V4 Pro — Phase 2 (full model, performance)` — closes when Phase 2 results land.
-- **Per-failure issues:** filed via the existing `tools/file_issues.py` pipeline for graph-break categories and correctness divergences. These auto-attach to the board too.
-
-Board view = the live dashboard. Status moves: Backlog → Ready → In progress → Done (project automation: closing the issue moves the card to Done, same as we saw with #59 today).
-
-**Detailed writeup (high-profile model — people will care):**
-
-Per Peng 2026-04-25: this is a release the broader community will be interested in. The summary needs to be more thorough than a typical per-case finding. Peng will guide the writeup process directly. Skeleton:
-
-1. **Headline** (3–5 bullets, fits in a tweet/Workplace post): pass/fail per dimension at a glance.
-2. **Graph breaks** — total count, categorized by break shape (data-dep / op-not-supported / config-flag / other), code-line locations, and which are upstream-fixable (corpus issue category) vs model-design choices.
-3. **Correctness (numerics)** — max_abs_diff distribution, bitwise_equal bool, per-dtype (fp32 + bf16). Call out any layer-specific divergence (router logits vs final logits) if model is composite. Compare eager-self-consistency (deterministic? if not, flag the model in the non_deterministic set).
-4. **Performance** — tier-1 + tier-2 speedup, compile time, peak memory. Absolute numbers, no regression baseline. Phase 2 only.
-5. **Methodology + caveats** — config used (tiny vs full), tolerance threshold, RNG seed, env (PyTorch / transformers versions).
-6. **Failures filed** — links to corpus issues, with one-line on each.
-7. **What this tells us** — short interpretation, in Peng's voice (drafted with her).
-
-Output venues: corpus repo (`experiments/results/deepseek_v4_pro/<phase>/README.md`) + AutoDev Kanban board dashboard + (per Peng's call) Workplace post to PT2 working group / Compile Q&A.
-
-Per-eval `results.json` schema (proposed):
-
-```json
-{
-  "model_id": "deepseek-ai/DeepSeek-V4-Pro",
-  "model_revision": "<HF commit sha>",
-  "torch_version": "2.11.0+cu128",
-  "transformers_version": "5.5.3",
-  "device": "cuda",
-  "rows": [
-    {
-      "backend": "inductor", "mode": "eval", "dtype": "bf16",
-      "graph_break_count": 0, "compile_ok": true,
-      "max_abs_diff_vs_eager": 1.49e-04, "bitwise_equal": false,
-      "eager_ms_t1": 12.3, "compiled_ms_t1": 4.1, "speedup_t1": 3.0,
-      "eager_ms_t2": 145.0, "compiled_ms_t2": 52.0, "speedup_t2": 2.79,
-      "peak_mem_mb": 41203, "compile_s": 18.4
-    }
-  ]
-}
-```
-
-## Resolved decisions (Peng 2026-04-25 13:22 ET)
+## Resolved decisions (Peng 2026-04-25 + 2026-05-02)
 
 | # | Question | Decision |
 |---|---|---|
-| 1 | "Kabana" instance | **AutoDev Kanban board** ([github.com/users/penguinwu/projects/1](https://github.com/users/penguinwu/projects/1)) — same board discovery cases live on. ("Kabana" = Kanban; I'd misread it as Kibana the viz tool.) Per Peng 2026-04-25 13:32 ET. |
-| 2 | Tiny-config vs full-model | Two phases: tiny + correctness FIRST, then full-model + perf. See "Two-phase execution" section. |
+| 1 | "Kabana" instance | AutoDev Kanban board ([projects/1](https://github.com/users/penguinwu/projects/1)). |
+| 2 | Tiny-config vs full-model | Two phases: tiny + correctness FIRST, then full+perf. Phase 2 deferred indefinitely until Phase 1 correctness divergence (#108) is understood — "full" is meaningless if the small case diverges. |
 | 3 | Comparable baseline | None. Absolute numbers only. |
 | 4 | Tolerance per dtype | **1e-4** (default per upstream `pytorch/benchmarks/dynamo/common.py:1069`). |
-| 5 | Filed vs dashboard | Detailed writeup of all three dimensions (graph breaks + correctness/numerics + performance). High-profile model — community-facing report. Peng will guide the summary process. |
-
-**All open questions resolved.** Plan is fully unblocked for execution.
+| 5 | Detailed writeup | Required for community release; Peng will guide the summary. |
+| 6 | **Pro vs Flash variant** *(Rev 2)* | Same `DeepseekV4ForCausalLM` class; one corpus entry tests both. Default config dims used at construction time decide which "shape" we exercise — start with Flash's dims (smaller hidden_size + fewer experts) since Apr 25 already proved Pro-shape works at tiny scale. |
+| 7 | **Custom model registry vs HF auto-discovery** *(Rev 2)* | DSV4 is in transformers main now → `enumerate_hf` auto-discovers it. **No custom-models registry entry.** Per-model size-reduction override goes in `sweep/worker.py:_fix_config` like every other large MoE. |
+| 8 | **One-off runner vs general path** *(Rev 2)* | General path. `experiments/scripts/run_eval.py` deleted in `c7987b5` — DSV4 runs via `tools/run_experiment.py sweep --models DeepseekV4ForCausalLM` like any other corpus model. |
 
 ## Done means
 
-**Phase 1 (tiny-config, correctness-first):**
-- `results.json` landed at `experiments/results/deepseek_v4_pro/phase1-tiny-<date>/`.
-- Graph break + correctness verdict captured per the schema above.
-- Failures (gb>0, max_abs_diff > 1e-4) filed as corpus issues.
-- Phase 1 writeup at `experiments/results/deepseek_v4_pro/phase1-tiny-<date>/README.md`.
+**Phase 1 (corpus integration + correctness reproduction):**
+- Transformers upgraded to a version containing PR #45643's merge (>= 5.7 or git+main)
+- `python sweep/models.py --source hf | grep DeepseekV4` returns the class
+- `tools/run_experiment.py sweep --models DeepseekV4ForCausalLM --modes eval --workers 1` runs to completion (no create_error)
+- Results show `numeric_status` either `match` (Apr 25 wrong) or `divergence` with `numeric_max_diff > 1e-4` (Apr 25 reproduced)
+- If correctness reproduces: file-update on #108 with the principled-path repro command + close #67 (already closed) + leave #66+#68 open
+- If correctness does NOT reproduce: investigate (better seeding via the 3-layer methodology may have collapsed the noise; or the `n_routed_experts=4` reduction changed enough to mask the bug; or PR-branch sha `a0a8482927a1` had a bug since fixed in the merged sha `08e4cf82819a`)
 
-**Phase 2 (full-model, performance):** (gated on Phase 1 correctness)
-- `results.json` landed at `experiments/results/deepseek_v4_pro/phase2-full-<date>/` with perf rows + correctness reconfirmation at scale.
-- Tier-1 + tier-2 numbers captured.
-- Phase 2 writeup at `experiments/results/deepseek_v4_pro/phase2-full-<date>/README.md`.
-
-**Both phases:**
-- Umbrella + sub-issues tracked on AutoDev board ([projects/1](https://github.com/users/penguinwu/projects/1)); cards auto-move to Done on issue close.
-- Combined detailed writeup ready for Peng-guided community summary (per Resolved Decision #5).
+**Phase 2 (perf at scale):** GATED on Phase 1 correctness verdict. If divergence persists at tiny scale, full-model perf is meaningless. Re-plan Phase 2 once #108 is resolved.
 
 ## Stop conditions
 
-- *Model won't load on devvm (memory):* fall back to tiny-config or pause and re-plan.
-- *Eager itself fails* (model bug, transformers compatibility): file the eager failure as a transformers issue; don't attempt compile until eager works.
-- *Compile crashes* (e.g. inductor codegen error): file as a corpus issue with the crash trace; continue with other dimensions where possible.
+- *transformers upgrade fails* (BPF blocks, version conflict): document the install path, defer to Peng.
+- *DSV4 still won't construct under reduced size:* iterate on `_fix_config` overrides; if 3+ rounds don't converge, defer + file as a corpus-tooling issue.
+- *Eager itself fails:* file as a transformers issue; pause until upstream patches.
+- *Compile crashes:* file as a corpus issue with the crash trace; reduce scope (drop correctness, keep gb-only) and continue.
 
-## Out of scope (for this eval)
+## Out of scope
 
-- *Training-mode evaluation* — inference-only here. Training adds backward-graph + DDP/FSDP complexity that warrants its own eval.
-- *Multi-GPU / sharded inference* — 1× H100 only for v1. Sharded inference is a separate workstream.
-- *Latency under serving load* (vLLM, TensorRT) — different stack, different eval.
-- *Skill / agent evaluation* — that's WS1; this plan is the standard eval flow.
+- Full-model evaluation (1.6T or 284B params won't fit single A100; would need sharded inference, separate workstream)
+- Training-mode evaluation
+- Quantized inference (FP4 + FP8 mixed) — that's the published variants' default, but corpus tests the bf16 compute path
+- Latency under serving load (vLLM, TensorRT)
 
-## Execution shape
+## Execution shape — tonight
 
-**Pre-flight (both phases):**
-1. Read HF model card + config; fill in the "What we know about the model" checklist above.
-2. Land RNG-determinism patch + `non_deterministic_models` set in `discovery/perf.py` (per the "RNG determinism" subsection).
-3. Create the umbrella issue + Phase 1 + Phase 2 sub-issues on the AutoDev board (use `tools/queue_task.py` or hand-create with the existing per-case template style).
-
-**Phase 1 — Tiny-config, correctness-first:**
-4. Identify smallest viable config (HF dev-config, or hand-shrink the standard config to test-shape).
-5. Verify model loads in eager mode on devvm.
-6. Author `experiments/configs/deepseek-v4-pro-phase1.json`.
-7. Run graph break check (`fullgraph=True`) — fast even if compile fails.
-8. Run correctness check (`compiled vs eager`, default backend; fp32 first, then bf16).
-9. Aggregate to Phase 1 `results.json`.
-10. File graph-break and correctness failures as corpus issues.
-11. Write Phase 1 `README.md`.
-12. **Sign-off gate:** Peng reviews Phase 1 before Phase 2 launches.
-
-**Phase 2 — Full-model, performance:**
-13. Author `experiments/configs/deepseek-v4-pro-phase2.json` (full config; sharded if infra exists).
-14. Re-run correctness at scale (cheap sanity check before perf).
-15. Run perf check (`measure_perf` tier-1 + tier-2).
-16. Aggregate to Phase 2 `results.json`; close the Phase 2 sub-issue (auto-moves the board card to Done).
-17. Write Phase 2 `README.md`.
-18. Combined community-facing summary (Peng-guided per Resolved Decision #5).
+1. ✅ Cleanup `run_eval.py` + Pro Phase 1 config — commit `c7987b5`
+2. ✅ Investigate variants + PR status (this revision)
+3. **Upgrade `~/envs/torch-nightly-cu126` transformers** to post-merge version. Verify `from transformers import DeepseekV4ForCausalLM` succeeds.
+4. **Run `python sweep/models.py --source hf | grep -i deepseek`** to confirm enumerate_hf picks it up.
+5. **Try `worker.py:create_model({"name": "DeepseekV4ForCausalLM", "source": "hf"}, "cuda")`** in isolation — see what fails. Iterate on `_fix_config` per-model override (set `n_routed_experts=4` etc.) until create succeeds at <16 GB.
+6. **Run the full pipeline:** `tools/run_experiment.py sweep --models DeepseekV4ForCausalLM --modes eval --workers 1 --identify-only --output-dir sweep_results/experiments/dsv4-add-$(date +%Y%m%d)/` then explain + correctness as the second pass.
+7. **Capture results** — file findings as a comment on #66 (umbrella) and #67 (close-out) and #108 (Phase 1 reproduction status).
+8. **Commit** the per-model override + a `experiments/configs/dsv4-add.json` if needed for future re-runs.
 
 ## Revision log
 
-- *2026-04-25 13:15 ET:* Plan drafted from Peng's directive. 5 open questions raised.
-- *2026-04-25 13:18 ET:* Folded in two new pointers from Peng — `pytorch/pytorch/benchmarks` at sha 7a6f3270 (HF benchmark suite reference) + the deterministic RNG seed pattern at `common.py:540` (Animesh's note on HF model non-determinism). Scope expanded: hardening `discovery/perf.py` is part of this work, not just DeepSeek-specific.
-- *2026-04-25 13:22 ET:* Peng answered the 5 open questions. Two-phase execution adopted (tiny+correctness → full+perf). Tolerance pinned at 1e-4 (upstream default). No comparable baseline. Detailed writeup required for community release. Status moved from `draft` to `active`. One follow-up pending: "Kabana" instance.
-- *2026-04-25 13:32 ET:* "Kabana" resolved — it's the **AutoDev Kanban board** ([projects/1](https://github.com/users/penguinwu/projects/1)), the same board discovery cases live on. (I'd been parsing it as "Kibana" the Elasticsearch viz tool — wrong.) No new dashboard ETL required; track via GitHub issues that auto-attach to the board. Plan is fully unblocked.
+- **Rev 1** *(2026-04-25)*: Initial plan. 5 open questions resolved in 3 rounds (13:15 → 13:18 → 13:22 → 13:32 ET). Two-phase execution adopted. Tolerance 1e-4. AutoDev board for tracking. *Phase 1 executed Apr 25 via one-off `run_eval.py` — gb=0 + correctness divergence + 3.58× speedup.*
+- **Rev 2** *(2026-05-02)*: Major rework. (a) Deleted one-off `run_eval.py` per Peng's principle that custom models reuse general corpus path (`c7987b5`). (b) PR #45643 merged into transformers main 11:41 UTC today — DSV4 is now auto-discovered by `enumerate_hf`. (c) GPU corrected H100 → A100 80GB. (d) Pro vs Flash decision: same class, one corpus entry, use Flash dims as starting reference. (e) Phase 2 perf measurement removed from this plan's scope (gated on correctness; would need a `--measure-perf` extension to general path which is itself out-of-scope tonight).
