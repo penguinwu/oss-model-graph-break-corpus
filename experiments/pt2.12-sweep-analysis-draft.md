@@ -17,7 +17,7 @@
 
 **Top single-target Dynamo improvements that would unlock the most models:**
 
-1. **Deepcopy polyfill (PR #179611)** — closes **~164 breaks** at `copy.py:151` across many models. PR is closed but didn't land in 2.12. Already in flight upstream.
+1. **Deepcopy polyfill** — would close **~164 breaks** at `copy.py:151` across many models. **The proposed fix (PR #179611) was closed-without-merging on 2026-04-11.** Path forward needs clarification: revival of #179611, a successor PR, or alternative approach. Until then, this remains the largest standing single-source amplifier.
 2. **`CALL_FUNCTION_EX` (variadic call) better handling** — resolves **~177 of 431 #103 occurrences** (the "Cannot resume from graph break" wrapper). Would also help with the `output_capturing.py:192` cascade (122 breaks).
 3. **Un-skip / polyfill specific functions Dynamo currently skips** — clears ~72 #102 inner reasons.
 4. **`callable()` / `is_torch_compiling()` builtin pattern (issue #20)** — ~248 breaks across `import_utils.py:1525/1538/1540`.
@@ -58,7 +58,7 @@
 
 PT 2.12 was tested against **739 unique HF transformer models in each of eval and train modes** (1478 total work items after de-duplication). For comparison, PT 2.11 covered 710 models per mode (1420 work items). The 29-model expansion is the "new-models-since-2.11" set analyzed in §3.
 
-> **Methodology note — duplicate rows:** PT 2.12's `identify_results.json` contains 126 byte-identical duplicate rows (63 model-name-source-mode keys appearing twice) — a sweep-merge artifact. All duplicates are status-consistent within their pairs (no "one full_graph, one graph_break" cases). Stats below are computed on the **de-duplicated** dataset (739 unique work items per mode); raw counts would be 802 per mode.
+> **Methodology note — duplicate rows (FIXED 2026-05-03):** PT 2.12's `identify_results.json` had 126 byte-identical duplicate rows (63 model-name-source-mode keys appearing twice) — a sweep-orchestrator bug, **root cause identified and fixed**: `orchestrator.py:run_pass` prepopulated its return list with all `resume_from` entries regardless of overlap with the call's spec list. When `run_sweep.py` called `run_pass` twice (multi-worker + single-worker), both calls re-added the resumed entries. Patched in commit `38127cf`. The 2.12 baseline JSON has been deduped in-place (1604 → 1478); pre-dedup file preserved at `.preDedup.bak`. Stats below reflect the corrected 739 unique work items per mode.
 
 ### Per-mode status counts
 
@@ -203,6 +203,8 @@ For the **215 models with ≥5 graph breaks**, we extract the file:line location
 
 ### Top cascade champions (1 root → N breaks)
 
+> **What "1 root → N breaks" means in this dataset:** for the top cascade champions below, the N reported breaks all originate from a SINGLE underlying break site that gets hit repeatedly during the forward pass. Example: MimiModel's 19 reported `break_reasons` entries ALL point at `torch/nn/functional.py:5462`. The breakdown is 1 first-time break + 15 "duplicate graph break" suppressions + 3 #102 wrapper failures — all at the same location. So "18 breaks" doesn't mean 18 distinct issues; it means ONE torch-side limitation hit 18 times across the model's forward path. Fixing the single root would clear all 18+.
+
 | Model | Breaks | Unique locations | Ratio |
 |---|---:|---:|---:|
 | MimiModel (eval / train) | 18 / 18 | 1 / 1 | 6% |
@@ -229,7 +231,7 @@ These models have effectively one root cause expanding into 11-28 downstream bre
 
 **Highest-leverage targets identified:**
 
-1. **`copy.py:151` — 164 breaks**. This is the **deepcopy regression**. Per the §8 analysis and Animesh's PR #179611 investigation, this trace pattern stems from PR #177443/#177484 (in PT 2.12); the polyfill PR #179611 closed too late to land in 2.12. **When the deepcopy polyfill ships in a future release, ~164 breaks should resolve at once.**
+1. **`copy.py:151` — 164 breaks**. This is the **deepcopy regression**. The trace pattern stems from PT 2.12's PR #177443/#177484 changes. **The proposed fix — Animesh's polyfill PR #179611 ("[dynamo] Support copy.deepcopy via polyfill") — is CLOSED-WITHOUT-MERGING (closed 2026-04-11, never landed).** A successor PR or reopen is required for these 164 breaks to be addressed; without it, the deepcopy issue persists indefinitely across 2.12 and future releases. **Action: clarify the path forward with the dynamo team.**
 
 2. **`output_capturing.py:192` — 122 breaks**. This is the transformers wrapper for output post-processing. Many models hit it on `CALL_FUNCTION_EX` with model-specific output object construction. Could be addressed either Dynamo-side (better variadic call handling — same pattern that resolves most #103 cases) or transformers-side (refactor wrapper).
 
