@@ -11,7 +11,7 @@
 
 **State of graph capture in PT 2.12 (pre-release sweep, 2026-04-30):**
 
-- **Eval fullgraph rate: 73.1%** (540 / 739 models compile without breaks). **Train: 67.1%** (496 / 739). The ~6pt train-side gap shows up entirely as additional `graph_break` models — none of the missing fullgraph leak into other failure categories (eager_error, timeout, create_error counts are identical in both modes). At the per-model level, **44 specific models flip eval=fullgraph → train=graph_break**; the dominant cause is model-internal `self.training`-conditioned forward branches with data-dep control flow (34 of 44; see §6 for full categorization including IBert quantization, DETR-family loss/matcher, etc.).
+- **Eval fullgraph rate: 73.1%** (540 / 739). **Train: 67.1%** (496 / 739). The ~6pt train gap = **44 models flip status** (eval=fullgraph → train=graph_break); no models leak into other failure categories. **Distinct from break volume**: those 44 flip models contribute **215 train-only graph break occurrences** (avg 4.9 per model; IBertModel alone has 19). The dominant cause across both numbers: model-internal `self.training`-conditioned forward branches with data-dep control flow (~207 of 215 break occurrences; 34 of 44 flip models). See §6 for full categorization.
 - **Headline accounting check passes** (Q3): Dynamo's `graph_count = graph_break_count + 1` invariant holds across all 446 explain rows. Subsequent stats can be trusted.
 - **Most graph breaks are concentrated, not scattered** (Q2): of the 215 models with ≥5 breaks, **53% have ≤30% unique break locations** — one root cause amplified into many downstream breaks. Fixing single root causes yields disproportionate impact.
 
@@ -283,26 +283,36 @@ The cascade pattern means **break_count headline numbers significantly overstate
 | PT 2.11 eval | 531 | 176 | — |
 | PT 2.11 train | 488 | 219 | **−43 fullgraph, +43 breaks** |
 
-**Aggregate-level conservation (not per-model):** the *total count* of "missing fullgraph in train" exactly equals the *total count* of "extra graph_break in train" — no models leak into other failure categories (eager_error, timeout, create_error stay constant between modes). This is a corpus-aggregate property: 540−496 = 44 missing, 223−179 = 44 extra. NOT a per-model claim — at the per-model level there's churn (some models are fullgraph in BOTH modes, some break in BOTH, and 44 specifically flip eval=fullgraph→train=graph_break).
+**Two distinct levels of asymmetry — keep them separate:**
 
-### Which 44 specific models flip eval=fullgraph → train=graph_break?
-
-These are the models that drive the asymmetry. Looking at the FIRST break location in each model's train-mode explain output:
-
-| First-break location category | Count | Reading |
+| Level | Train delta vs eval | What it counts |
 |---|---:|---|
-| **Model-internal train-only branch** (some `modeling_X.py:line`) | **34** | The model's own code has a `self.training`-conditioned branch that hits a data-dep check or unsupported pattern. Train-only forward path. |
-| MusicGen-specific train code | 6 | Train-only code in `modeling_musicgen.py` |
-| DETR family loss/matcher | 2 | `modeling_conditional_detr.py`, `modeling_detr.py` — bipartite-matching loss is data-dep |
-| Autoformer loss path | 1 | `modeling_autoformer.py` train-only loss computation |
-| IBert quantization train path | 1 | `quant_modules.py:173` — quantization-aware training activation range |
-| **Total** | **44** | |
+| **Model status-flip count** | **+44** (eval=fullgraph → train=graph_break) | Number of MODELS whose status changes from fullgraph in eval to graph_break in train. Every "missing fullgraph" is matched by a "graph_break" status — none leak into eager_error / timeout / create_error (those counts are identical in both modes). |
+| **Break occurrence count** | **+215** train-only graph breaks across those 44 models | Total `graph_break_count` summed over the 44 flip models in train mode. Each flip model has on average 4.9 graph breaks (range: 1 to 19, with IBertModel = 19 the highest). NOT 1 break per model — a model that flips status carries multiple breaks once it's in graph_break territory. |
 
-**Concrete example — AutoformerModel:** breaks at `modeling_autoformer.py:886` and `:549`. The break reason is "**Data-dependent branching**" — the model has `if some_tensor_value > 0:` style code that's only reached on the train-mode forward path. Eval mode skips that branch entirely (because of a `self.training`-gated wrapper above), so eval compiles fullgraph; train hits the data-dep branch and breaks.
+**Confirmed: 44 ≠ 215.** The 44 figure is a model-count (status-level conservation). The 215 is the actual break-occurrence volume train mode accumulates beyond eval. Earlier draft text conflated the two; corrected here.
+
+### Where the 215 train-only break occurrences happen
+
+Categorized by file:line of each break (parsed from `break_reasons.reason` text), using the 316 entries in those models' train explain output (215 unique graph breaks + 101 "duplicate-suppressed" repeated emissions of the same break):
+
+| Category | Break entries | Models |
+|---|---:|---:|
+| **Model-internal `modeling_X.py` train branch** | **207** | 34 |
+| MusicGen train-only code | 48 | 6 |
+| IBert quantization-train (`quant_modules.py:173`) | 28 | 1 (IBertModel alone) |
+| DETR family loss/matcher | 23 | 2 |
+| Autoformer train-only branch | 10 | 1 |
+
+(Sum 316 includes duplicates; the canonical 215 is the dedup count of distinct break events. Either way, the dominant pattern is model-internal `self.training`-conditioned forward branches with data-dependent control flow.)
+
+**Concrete example — AutoformerModel:** 5 train-mode graph breaks all at `modeling_autoformer.py:886` and `:549`. The break reason is "**Data-dependent branching**" — the model has `if some_tensor_value > 0:` style code reached only on the train-mode forward path. Eval skips that branch (via `self.training`-gated wrapper); train hits it and breaks repeatedly during forward.
+
+**IBertModel is the outlier** — 19 train-only breaks all from `transformers/models/ibert/quant_modules.py:173`, the quantization-aware training activation range computation. One model, one underlying code path, but it fires 19 times during forward.
 
 **Answers the "different forward path?" question (yes):** train mode in transformers models genuinely exercises different Python code than eval — typically via `if self.training:` branches that activate dropout, loss computation, auxiliary heads, or quantization-aware paths. Many of those train-only branches contain data-dependent control flow that Dynamo can't trace.
 
-**Answers the "extra train breaks" categorization** (vs my earlier vague "loss-computation" claim): the dominant pattern (34/44) is **model-internal train-only branches with data-dep control flow**, NOT primarily loss-computation. Loss / matcher (DETR family, Autoformer) is a small subset (~3/44). Quantization-aware train (IBert) is one model. None of the 44 flips are caused by autograd-hook registration — that's a separate phenomenon visible in §5's `torch/utils/hooks.py:27` amplifier.
+**Cause categorization** (by break-occurrence count, not just first-location-per-model): the dominant pattern (~207 of 215) is model-internal train-only branches with data-dep control flow, scattered across 34 model files. MusicGen + IBert + DETR + Autoformer collectively contribute the other ~109 breaks, all from train-mode-specific forward code. None are caused by autograd-hook registration — that's a separate phenomenon visible in §5's `torch/utils/hooks.py:27` amplifier (which fires on graph_break-status models in BOTH modes, not just train).
 
 ### Per-model asymmetry
 
