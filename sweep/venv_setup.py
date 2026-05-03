@@ -109,6 +109,45 @@ TORCH_PYTHON_DEPS = [
 # Data classes
 # ──────────────────────────────────────────────────────────────────────────
 
+# ──────────────────────────────────────────────────────────────────────────
+# transformers ↔ torch compatibility
+# ──────────────────────────────────────────────────────────────────────────
+# Minimum torch version required by each transformers minor.
+# Sourced from transformers release notes; update on each new minor release.
+# https://github.com/huggingface/transformers/releases
+TRANSFORMERS_MIN_TORCH = {
+    "5.4": "2.1",
+    "5.5": "2.1",
+    "5.6": "2.2",
+    "5.7": "2.3",
+    "5.8": "2.3",
+}
+
+
+def _major_minor(version: str) -> tuple[int, int]:
+    """'2.12.0.dev20260407+cu128' -> (2, 12). (0, 0) on parse failure."""
+    m = re.match(r"^(\d+)\.(\d+)", version)
+    return (int(m.group(1)), int(m.group(2))) if m else (0, 0)
+
+
+def check_compat(torch_version: str, transformers_version: str) -> Optional[str]:
+    """Return None if the torch/transformers pair is compatible, else a
+    human-readable warning string. Caller decides fail-vs-warn policy."""
+    tx_mm = ".".join(transformers_version.split(".")[:2])
+    min_torch = TRANSFORMERS_MIN_TORCH.get(tx_mm)
+    if min_torch is None:
+        return (
+            f"unknown transformers minor {tx_mm}; "
+            f"TRANSFORMERS_MIN_TORCH table in sweep/venv_setup.py needs update"
+        )
+    if _major_minor(torch_version) < _major_minor(min_torch):
+        return (
+            f"transformers {transformers_version} requires torch >= {min_torch}, "
+            f"but torch is {torch_version}"
+        )
+    return None
+
+
 @dataclass
 class VenvInfo:
     path: Path

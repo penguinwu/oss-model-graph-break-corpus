@@ -339,6 +339,22 @@ def run_sweep(args):
         with open(state_file, "w") as f:
             json.dump(early_state, f, indent=2)
 
+        # ── transformers ↔ torch compatibility gate ──
+        try:
+            from sweep.venv_setup import check_compat
+        except ImportError:
+            from venv_setup import check_compat
+        torch_v = version_info.get("torch")
+        tx_v = version_info.get("transformers")
+        if torch_v and tx_v:
+            warning = check_compat(torch_v, tx_v)
+            if warning:
+                print(f"[run_sweep] COMPAT WARNING: {warning}", file=sys.stderr)
+                if not getattr(args, "skip_compat_check", False):
+                    print("[run_sweep] aborting; pass --skip-compat-check to override",
+                          file=sys.stderr)
+                    sys.exit(1)
+
     # ── Load or enumerate models ──
     if args.models:
         try:
@@ -1719,6 +1735,10 @@ def main():
                                  "Recipe: ~/.myclaw-shared/recipes/python-venv-bpf.md")
     run_parent.add_argument("--cuda-variant", default=None, choices=["cu128", "cu126"],
                             help="CUDA variant for --torch venv pre-flight.")
+    run_parent.add_argument("--skip-compat-check", action="store_true",
+                            help="Skip the transformers/torch min-version compat gate. "
+                                 "Use only when knowingly testing an unsupported pair "
+                                 "(e.g. transformers nightly against an older torch).")
 
     # ── sweep subcommand ──
     sweep_parser = subparsers.add_parser(
