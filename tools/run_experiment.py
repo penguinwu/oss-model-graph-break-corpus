@@ -996,7 +996,7 @@ def pipeline_preflight(python, device="cuda"):
 
     result = subprocess.run(
         [python, "-c", "import transformers; print(transformers.__version__)"],
-        capture_output=True, text=True, timeout=15)
+        capture_output=True, text=True, timeout=60)
     if result.returncode != 0:
         errors.append(f"transformers import failed: {result.stderr.strip()[:200]}")
     else:
