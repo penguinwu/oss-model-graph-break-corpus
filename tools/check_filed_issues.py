@@ -45,6 +45,23 @@ AUTHOR = "penguinwu"
 PROXY = "http://localhost:7824/fetch"
 STATE_FILE = Path.home() / ".cache" / "check_filed_issues_state.json"
 
+# Bot/self markers — mirror jobs/github_issue_monitor.py BOT_MARKERS.
+# A comment whose body contains any of these is treated as "self-noise" and
+# does NOT count as new activity (used to de-noise the daily brief, since
+# Otter posts redirect/closure/cross-link comments routinely).
+BOT_MARKERS = ["[🦦 Otter]", "<!-- otter-bot -->", "## tlparse Trace Reports"]
+
+# Priority authors — comments by these accounts get tagged for Peng's attention
+# even when they're embedded in higher-volume noise. Start narrow; grow as we
+# identify external stakeholders by github handle.
+PRIORITY_AUTHORS = {
+    "anijain2305": "Animesh (dynamo team)",
+}
+
+# Mention detection — if a comment body @-mentions Peng, surface as priority
+# regardless of who the commenter is.
+MENTION_HANDLES = {"penguinwu"}
+
 
 def _gh_token() -> str | None:
     """Read GitHub OAuth token from gh CLI config."""
@@ -160,10 +177,68 @@ def fetch_tracked_issues(token: str) -> list[dict]:
     return unique
 
 
-def diff_against_state(issues: list[dict], state: dict) -> list[dict]:
+def _fetch_new_comments(repo: str, number: int, n_new: int, token: str) -> list[dict]:
+    """Fetch the most recent N comments on an issue. Returns [] on error."""
+    if n_new <= 0:
+        return []
+    # Cap to avoid pulling huge histories on first-run-of-a-noisy-issue
+    n_fetch = min(n_new, 30)
+    url = (f"https://api.github.com/repos/{repo}/issues/{number}/comments"
+           f"?per_page={n_fetch}&sort=created&direction=desc")
+    try:
+        items = _gh_get(url, token) or []
+    except Exception as e:
+        print(f"warning: fetching comments for {repo}#{number}: {e}", file=sys.stderr)
+        return []
+    return items
+
+
+def _classify_comments(comments: list[dict]) -> dict:
+    """Classify a batch of comments into self-noise vs real activity vs priority.
+
+    Returns:
+      - non_self_count: int (comments not posted by self/bot)
+      - priority_signals: list[str] (one per priority comment, prefix with handle)
+    """
+    non_self_count = 0
+    priority_signals: list[str] = []
+    for c in comments:
+        commenter = (c.get("user") or {}).get("login", "")
+        body = c.get("body") or ""
+        # Skip self
+        if commenter == AUTHOR:
+            continue
+        # Skip bot-marker-bearing comments (regardless of author — could be
+        # a bot account with the marker, or self-comment with the marker)
+        if any(m in body for m in BOT_MARKERS):
+            continue
+        non_self_count += 1
+        # Priority signals
+        why = []
+        if commenter in PRIORITY_AUTHORS:
+            why.append(PRIORITY_AUTHORS[commenter])
+        if any(f"@{h}" in body for h in MENTION_HANDLES):
+            why.append("mentions @penguinwu")
+        if why:
+            preview = body[:120].replace("\n", " ").strip()
+            priority_signals.append(f"{commenter}: {' + '.join(why)} — \"{preview}\"")
+    return {
+        "non_self_count": non_self_count,
+        "priority_signals": priority_signals,
+    }
+
+
+def diff_against_state(issues: list[dict], state: dict, token: str) -> list[dict]:
     """Mark which issues have NEW activity since last check.
 
     `state` is keyed `<repo>#<number>` → {"last_updated_at": ..., "last_comments_count": ...}
+
+    Two-stage classification:
+      Stage 1 — count delta. If comments_count increased OR updated_at advanced,
+                potential activity.
+      Stage 2 — fetch new comments + filter self/bot. If 0 non-self comments
+                remain, drop the new_activity flag (pure self-noise).
+                Tag priority based on commenter allowlist + @-mentions.
     """
     flagged: list[dict] = []
     for iss in issues:
@@ -172,18 +247,43 @@ def diff_against_state(issues: list[dict], state: dict) -> list[dict]:
         prev_updated = prev.get("last_updated_at", "")
         prev_count = prev.get("last_comments_count", 0)
 
-        new_activity = False
-        signal = []
-        if iss["updated_at"] > prev_updated:
-            new_activity = True
+        # Stage 1 — coarse delta
+        comments_increased = iss["comments_count"] > prev_count
+        updated_advanced = iss["updated_at"] > prev_updated
+
+        # Stage 2 — fetch + filter (only when comments increased; updated_at-only
+        # changes are typically labels/state)
+        non_self_count = 0
+        priority_signals: list[str] = []
+        if comments_increased:
+            new_comments = _fetch_new_comments(
+                iss["repo"], iss["number"],
+                iss["comments_count"] - prev_count,
+                token,
+            )
+            cls = _classify_comments(new_comments)
+            non_self_count = cls["non_self_count"]
+            priority_signals = cls["priority_signals"]
+
+        # Compose signal — comments_increased suppressed if all new comments
+        # are self/bot. updated_advanced kept ONLY when no comments increased
+        # (otherwise the updated_at bump is from the self comments themselves
+        # and is also self-noise).
+        signal: list[str] = []
+        if comments_increased and non_self_count > 0:
+            signal.append(f"+{non_self_count} non-self comments")
+        if updated_advanced and not comments_increased:
             signal.append(f"updated {iss['updated_at'][:10]}")
-        if iss["comments_count"] > prev_count:
-            new_activity = True
-            signal.append(f"+{iss['comments_count'] - prev_count} comments")
+
+        new_activity = bool(signal) or bool(priority_signals)
+        priority = bool(priority_signals)
 
         flagged.append({
             **iss,
             "new_activity": new_activity,
+            "priority": priority,
+            "priority_signals": priority_signals,
+            "non_self_comment_count": non_self_count,
             "signal": "; ".join(signal) if signal else "no change",
         })
     return flagged
@@ -217,14 +317,14 @@ def main() -> int:
 
     state = _load_state()
     issues = fetch_tracked_issues(token)
-    flagged = diff_against_state(issues, state)
+    flagged = diff_against_state(issues, state, token)
 
     if args.changes_only:
         flagged = [f for f in flagged if f["new_activity"]]
 
-    # Sort: new activity first, then by updated_at desc
-    flagged.sort(key=lambda x: (not x["new_activity"], x["updated_at"]), reverse=False)
-    flagged.reverse()  # most recent first
+    # Sort: priority first, then new activity, then by updated_at desc
+    flagged.sort(key=lambda x: (not x.get("priority", False), not x["new_activity"], x["updated_at"]), reverse=False)
+    flagged.reverse()  # most recent / highest priority first
 
     if not args.no_update:
         new_state = update_state(issues, state)
@@ -232,14 +332,18 @@ def main() -> int:
 
     if args.pretty:
         new_count = sum(1 for f in flagged if f["new_activity"])
+        priority_count = sum(1 for f in flagged if f.get("priority", False))
         primary = sum(1 for f in flagged if f.get("scope") == "primary")
         external = sum(1 for f in flagged if f.get("scope") == "external")
-        print(f"Tracked issues: {len(flagged)} ({primary} primary-repo, {external} external) — {new_count} with NEW activity\n")
+        print(f"Tracked issues: {len(flagged)} ({primary} primary-repo, {external} external) — "
+              f"{new_count} with NEW activity, {priority_count} PRIORITY\n")
         for f in flagged:
-            marker = "🆕" if f["new_activity"] else "  "
+            marker = "⚡" if f.get("priority") else ("🆕" if f["new_activity"] else "  ")
             scope = "📦" if f.get("scope") == "primary" else "🔗"
             print(f"  {marker} {scope} {f['repo']}#{f['number']} [{f['state']}] — {f['title'][:60]}")
             print(f"      {f['signal']} | {f['html_url']}")
+            for ps in f.get("priority_signals", []):
+                print(f"      ⚡ {ps}")
     else:
         out = {
             "checked_at": int(time.time()),
@@ -248,6 +352,7 @@ def main() -> int:
             "otter_birthday": OTTER_BIRTHDAY,
             "total_count": len(flagged),
             "new_activity_count": sum(1 for f in flagged if f["new_activity"]),
+            "priority_count": sum(1 for f in flagged if f.get("priority", False)),
             "issues": flagged,
         }
         print(json.dumps(out, indent=2))
