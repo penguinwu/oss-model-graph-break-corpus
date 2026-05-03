@@ -352,8 +352,21 @@ def run_pass(python_bin, specs, pass_num, device, modes, workers, timeout_s,
                 continue  # Already done
             pending.append((spec, mode))
 
-    # Load any already-completed results
-    results = list(resume_from.values()) if resume_from else []
+    # Track resumed-skipped count for progress display, but ONLY include in
+    # returned `results` the items that actually overlap this call's specs.
+    # Bug fix (2026-05-03): when run_pass is called multiple times in one sweep
+    # (e.g. multi-worker + single-worker passes in run_sweep.py) sharing the same
+    # resume_from dict, prepopulating `results` with ALL of resume_from causes
+    # each call to re-add the resumed entries to its return value. The caller
+    # then concatenates the returns → duplicates in identify_results.json.
+    # Fix: prepopulate ONLY with resume_from entries whose (name, mode) matches
+    # this call's spec list.
+    spec_names = {s["name"] for s in specs}
+    relevant_resumed = [
+        v for k, v in (resume_from or {}).items()
+        if k[0] in spec_names and k[1] in modes
+    ]
+    results = list(relevant_resumed)
     skipped = len(results)
     completed = skipped
     total = len(pending) + skipped
