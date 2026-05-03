@@ -11,7 +11,7 @@
 
 **State of graph capture in PT 2.12 (pre-release sweep, 2026-04-30):**
 
-- **Eval fullgraph rate: 73.1%** (540 / 739). **Train: 67.1%** (496 / 739). The ~6pt train gap = **44 models flip status** (eval=fullgraph → train=graph_break); no models leak into other failure categories. **Distinct from break volume**: those 44 flip models contribute **215 train-only graph break occurrences** (avg 4.9 per model; IBertModel alone has 19). The dominant cause across both numbers: model-internal `self.training`-conditioned forward branches with data-dep control flow (~207 of 215 break occurrences; 34 of 44 flip models). See §6 for full categorization.
+- **Eval fullgraph rate: 73.1%** (540 / 739). **Train: 67.1%** (496 / 739). Train mode produces **215 extra graph break occurrences** beyond eval (avg ~5 per affected model; IBertModel alone has 19). These 215 breaks are concentrated in 44 models that flip from `eval=full_graph` to `train=graph_break`; the ~6pt deficit converts entirely into graph_break status, with no leak into other failure categories. Dominant cause: per-model `self.training`-conditioned forward branches with data-dependent control flow. See §6.
 - **Headline accounting check passes** (Q3): Dynamo's `graph_count = graph_break_count + 1` invariant holds across all 446 explain rows. Subsequent stats can be trusted.
 - **Most graph breaks are concentrated, not scattered** (Q2): of the 215 models with ≥5 breaks, **53% have ≤30% unique break locations** — one root cause amplified into many downstream breaks. Fixing single root causes yields disproportionate impact.
 
@@ -274,105 +274,50 @@ The cascade pattern means **break_count headline numbers significantly overstate
 
 ## §6. Train vs eval graph-break asymmetry
 
-### Conservation: where the 6pt train deficit goes
+### Headline
 
-The ~6pt gap in fullgraph rate (eval 73.1% → train 67.1%) does **not** scatter into other failure categories. Per-mode status counts on the same 739-model corpus:
+Train mode produces **215 extra graph break occurrences** beyond eval, distributed across 44 models that flip from `eval=full_graph` to `train=graph_break`. The per-model break count varies widely (range 1 to 19, average ~5); there is **no "1 extra break per flipped model" pattern**.
 
-| status | eval | train | Δ (train − eval) |
-|---|---:|---:|---:|
-| full_graph | 540 | 496 | **−44** |
-| graph_break | 179 | 223 | **+44** |
-| eager_error | 13 | 13 | 0 |
-| create_error | 3 | 3 | 0 |
-| timeout | 4 | 4 | 0 |
+The 44 flipped models do not leak into other failure categories — `eager_error`, `create_error`, and `timeout` counts are identical across modes. The deficit is entirely a `full_graph → graph_break` conversion.
 
-The exact mass that exits `full_graph` enters `graph_break`. Train mode does not introduce new eager errors, new timeouts, or new instantiation failures — it only converts a slice of cleanly-traceable models into model-with-graph-breaks territory. **Conservation claim is exact, not approximate.**
+### Distribution of train-mode break counts across the 44 flip models
 
-### Two levels of asymmetry — distinct numbers
+| train_break_count | Models |
+|---:|---:|
+| 1 | 2 |
+| 2 | 2 |
+| 3 | 3 |
+| 4 | 11 |
+| 5 | 15 |
+| 6 | 8 |
+| 10 | 1 |
+| 19 | 1 |
+| **Total** | **44 models / 215 breaks** |
 
-| Level | Train delta vs eval | What it counts |
-|---|---:|---|
-| **Model status-flip count** | **+44** (eval=full_graph → train=graph_break) | Number of MODELS whose status flips. Per the conservation table above, this is the entire 6pt gap — no models leak into other failure categories. |
-| **Break occurrence count** | **+215** train-only graph breaks across those 44 models | Sum of `graph_break_count` (from `explain_results.json`) over the 44 flip models in train mode. Avg 4.89 per model; range 1 (MusicgenMelodyModel) to 19 (IBertModel). NOT 1 break per model — a model that flips status carries multiple breaks once in graph_break territory. |
-
-**44 ≠ 215.** The 44 is a model-count (status conservation). The 215 is the actual break-occurrence volume train mode accumulates beyond eval.
-
-### Roster: the 44 flip models with their train break counts
-
-Sorted by `train_break_count` descending. `eval_b` column is from explain pass (which uses `fullgraph=False`); 4 of 44 models show nonzero eval breaks in explain even though identify reported `full_graph` — see footnote.
-
-| # | Model | eval_b | train_b |
-|---:|---|---:|---:|
-| 1 | IBertModel | 0 | 19 |
-| 2 | ConditionalDetrModel | 0 | 10 |
-| 3 | BartForCausalLM | 0 | 6 |
-| 4 | BigBirdPegasusForCausalLM | 0 | 6 |
-| 5 | PLBartForCausalLM | 0 | 6 |
-| 6 | TableTransformerModel | 0 | 6 |
-| 7 | MBartForCausalLM | 0 | 6 |
-| 8 | WhisperForCausalLM | 0 | 6 |
-| 9 | BlenderbotForCausalLM | 0 | 6 |
-| 10 | Phi4MultimodalAudioModel | 6 | 6 |
-| 11 | TrOCRForCausalLM | 0 | 5 |
-| 12 | MraModel | 0 | 5 |
-| 13 | BioGptForCausalLM | 0 | 5 |
-| 14 | SEWDModel | 0 | 5 |
-| 15 | XGLMForCausalLM | 0 | 5 |
-| 16 | InstructBlipForConditionalGeneration | 0 | 5 |
-| 17 | MarianForCausalLM | 0 | 5 |
-| 18 | PegasusForCausalLM | 0 | 5 |
-| 19 | FlaubertWithLMHeadModel | 2 | 5 |
-| 20 | AutoformerModel | 0 | 5 |
-| 21 | Kosmos2ForConditionalGeneration | 0 | 5 |
-| 22 | BlenderbotSmallForCausalLM | 0 | 5 |
-| 23 | Blip2Model | 0 | 5 |
-| 24 | InstructBlipVideoForConditionalGeneration | 0 | 5 |
-| 25 | Blip2ForConditionalGeneration | 0 | 5 |
-| 26 | FlaubertModel | 1 | 4 |
-| 27 | InstructBlipVideoModel | 0 | 4 |
-| 28 | AudioFlamingo3ForConditionalGeneration | 2 | 4 |
-| 29 | OPTForCausalLM | 0 | 4 |
-| 30 | InstructBlipModel | 0 | 4 |
-| 31 | XGLMModel | 0 | 4 |
-| 32 | CohereAsrForConditionalGeneration | 0 | 4 |
-| 33 | DetrModel | 0 | 4 |
-| 34 | MvpForCausalLM | 0 | 4 |
-| 35 | MusicgenForConditionalGeneration | 0 | 4 |
-| 36 | MusicgenMelodyForConditionalGeneration | 0 | 4 |
-| 37 | BioGptModel | 0 | 4 |
-| 38 | Kosmos2Model | 0 | 3 |
-| 39 | CohereAsrModel | 0 | 3 |
-| 40 | OPTModel | 0 | 3 |
-| 41 | MusicgenForCausalLM | 0 | 2 |
-| 42 | MusicgenMelodyForCausalLM | 0 | 2 |
-| 43 | MusicgenMelodyModel | 0 | 1 |
-| 44 | MusicgenModel | 0 | 1 |
-| | **Sum** | | **215** |
-
-**Footnote on the eval_b column.** Identify pass uses `fullgraph=True` (raises on first break, so success = 0 breaks counted). Explain pass uses `fullgraph=False` and runs `torch._dynamo.explain()` — which counts breaks even on models that would have passed `fullgraph=True`. So Phi4MultimodalAudioModel, FlaubertModel, FlaubertWithLMHeadModel, AudioFlamingo3ForConditionalGeneration each show some eval_b > 0 in explain despite passing `fullgraph=True` in eval identify. From a user perspective they're full_graph in eval (the metric we report); the explain numbers just confirm there exist break locations the `fullgraph=True` happy-path missed.
+Median train_break_count is 5. The two extremes — IBertModel (19) and ConditionalDetrModel (10) — are responsible for 14% of the 215.
 
 ### Categorization of the 215 train-only break occurrences
 
-Each break categorized by the source file path in its `break_reasons` text. Buckets are **non-overlapping** — a break is assigned to the first matching specific cluster (IBert / MusicGen / DETR / Autoformer); everything else lands in "Other transformers modeling_X.py". Counts are **break-reason entries** (319 total — exceeds the 215 graph_break_count because some breaks generate multiple reason entries; the relative distribution is what matters).
+Categorized by source file path. Buckets are **non-overlapping** — a break is assigned to the first matching specific cluster (IBert / MusicGen / DETR / Autoformer); everything else lands in "Other transformers modeling_X.py". Numbers below are break-reason entries (319 total; exceeds 215 because some breaks generate multiple reason entries — the relative distribution is what matters).
 
-| Category | Break entries | Flip models |
+| Category | Break entries | Models |
 |---|---:|---:|
-| Other transformers modeling_X.py (per-model train branches) | **204** | **33** |
+| Other transformers modeling_X.py (per-model train branches) | 204 | 33 |
 | MusicGen modeling files | 48 | 6 |
 | IBert `quant_modules.py` (quantization-aware training) | 28 | 1 |
 | DETR family (detr/conditional_detr/table_transformer) | 28 | 3 |
 | Autoformer modeling file | 11 | 1 |
 | **Total** | **319** | **44** |
 
-(Model counts sum to 33 + 6 + 1 + 3 + 1 = 44 — every flip model accounted for in exactly one bucket.)
+The dominant pattern (~64% of break entries) is per-model `self.training`-conditioned forward branches in regular `modeling_X.py` files, spread across 33 different models. Four named clusters (MusicGen, IBert, DETR, Autoformer) contribute the other 36% from concentrated code paths.
 
-**Reading.** The dominant pattern (204 / 319 ≈ 64%) is the "long tail" of per-model `self.training`-conditioned forward branches in regular `modeling_X.py` files, spread across 33 different models with 1-7 breaks each. Four named clusters (MusicGen, IBert, DETR, Autoformer) collectively contribute the other 36% from concentrated code paths.
+**Concrete example — AutoformerModel:** 5 train-mode graph breaks at `modeling_autoformer.py:886` and `:549`. Reason: "Data-dependent branching" — the model has `if some_tensor_value > 0:` style code on the train-mode forward path. Eval skips that branch via `self.training` gating; train hits it and breaks.
 
-**Concrete example — AutoformerModel:** 5 train-mode graph breaks at `modeling_autoformer.py:886` and `:549`. Reason: "Data-dependent branching" — the model has `if some_tensor_value > 0:` style code on the train-mode forward path. Eval skips that branch (via `self.training`-gated wrapper); train hits it and breaks.
+**Outlier — IBertModel:** 19 train-only breaks all from `transformers/models/ibert/quant_modules.py:173`, the quantization-aware-training activation-range computation. Single code line fires 19 times during forward (loop body in a quantized layer).
 
-**Outlier — IBertModel:** 19 train-only breaks all from `transformers/models/ibert/quant_modules.py:173`, the quantization-aware-training activation-range computation. One model, one code path, fired 19 times during forward (loop body in a quantized layer).
+**Answers "is train hitting different Python code?":** yes. Train mode exercises `if self.training:` branches that activate dropout, loss computation, auxiliary heads, or quantization paths. Many of those branches contain data-dependent control flow Dynamo can't trace. None of these breaks come from autograd-hook registration — that's a separate phenomenon visible in §5's `torch/utils/hooks.py:27` amplifier (which fires in both modes for graph_break-status models, not specifically in train).
 
-**Answers "is train hitting different Python code?":** yes. Train mode in transformers exercises `if self.training:` branches that activate dropout, loss computation, auxiliary heads, or quantization paths. Many of those branches contain data-dependent control flow Dynamo can't trace. None of these breaks come from autograd-hook registration — that's a separate phenomenon visible in §5's `torch/utils/hooks.py:27` amplifier (which fires in BOTH modes for graph_break-status models, not specifically in train).
+The full per-model roster (all 44 flip models with their train_break_count, sum verified = 215) is in Appendix D.
 
 ### Per-model asymmetry
 
@@ -578,6 +523,60 @@ violations = [r for r in d['results']
 print(f'violations: {len(violations)}')
 "
 ```
+
+## Appendix D — Roster of the 44 train-vs-eval flip models
+
+For reference. Models that flip from `eval=full_graph` to `train=graph_break`, with their train graph_break_count from `explain_results.json`. Sum = 215. The `eval_b` column is from the explain pass (which uses `fullgraph=False`); 4 models show nonzero eval_b in explain even though identify (which uses `fullgraph=True`) reported `full_graph` — see footnote.
+
+| # | Model | eval_b | train_b |
+|---:|---|---:|---:|
+| 1 | IBertModel | 0 | 19 |
+| 2 | ConditionalDetrModel | 0 | 10 |
+| 3 | BartForCausalLM | 0 | 6 |
+| 4 | BigBirdPegasusForCausalLM | 0 | 6 |
+| 5 | PLBartForCausalLM | 0 | 6 |
+| 6 | TableTransformerModel | 0 | 6 |
+| 7 | MBartForCausalLM | 0 | 6 |
+| 8 | WhisperForCausalLM | 0 | 6 |
+| 9 | BlenderbotForCausalLM | 0 | 6 |
+| 10 | Phi4MultimodalAudioModel | 6 | 6 |
+| 11 | TrOCRForCausalLM | 0 | 5 |
+| 12 | MraModel | 0 | 5 |
+| 13 | BioGptForCausalLM | 0 | 5 |
+| 14 | SEWDModel | 0 | 5 |
+| 15 | XGLMForCausalLM | 0 | 5 |
+| 16 | InstructBlipForConditionalGeneration | 0 | 5 |
+| 17 | MarianForCausalLM | 0 | 5 |
+| 18 | PegasusForCausalLM | 0 | 5 |
+| 19 | FlaubertWithLMHeadModel | 2 | 5 |
+| 20 | AutoformerModel | 0 | 5 |
+| 21 | Kosmos2ForConditionalGeneration | 0 | 5 |
+| 22 | BlenderbotSmallForCausalLM | 0 | 5 |
+| 23 | Blip2Model | 0 | 5 |
+| 24 | InstructBlipVideoForConditionalGeneration | 0 | 5 |
+| 25 | Blip2ForConditionalGeneration | 0 | 5 |
+| 26 | FlaubertModel | 1 | 4 |
+| 27 | InstructBlipVideoModel | 0 | 4 |
+| 28 | AudioFlamingo3ForConditionalGeneration | 2 | 4 |
+| 29 | OPTForCausalLM | 0 | 4 |
+| 30 | InstructBlipModel | 0 | 4 |
+| 31 | XGLMModel | 0 | 4 |
+| 32 | CohereAsrForConditionalGeneration | 0 | 4 |
+| 33 | DetrModel | 0 | 4 |
+| 34 | MvpForCausalLM | 0 | 4 |
+| 35 | MusicgenForConditionalGeneration | 0 | 4 |
+| 36 | MusicgenMelodyForConditionalGeneration | 0 | 4 |
+| 37 | BioGptModel | 0 | 4 |
+| 38 | Kosmos2Model | 0 | 3 |
+| 39 | CohereAsrModel | 0 | 3 |
+| 40 | OPTModel | 0 | 3 |
+| 41 | MusicgenForCausalLM | 0 | 2 |
+| 42 | MusicgenMelodyForCausalLM | 0 | 2 |
+| 43 | MusicgenMelodyModel | 0 | 1 |
+| 44 | MusicgenModel | 0 | 1 |
+| | **Sum** | | **215** |
+
+**Footnote on the eval_b column.** Identify pass uses `fullgraph=True` (raises on first break, so success = 0 breaks counted). Explain pass uses `fullgraph=False` and runs `torch._dynamo.explain()`, which counts breaks even on models that would have passed `fullgraph=True`. The 4 models with eval_b > 0 (Phi4MultimodalAudioModel, FlaubertModel, FlaubertWithLMHeadModel, AudioFlamingo3ForConditionalGeneration) still pass `fullgraph=True` in eval — from a user perspective they're full_graph in eval; explain numbers just confirm there exist break locations the `fullgraph=True` happy-path missed.
 
 ## Appendix C — Reference materials
 
