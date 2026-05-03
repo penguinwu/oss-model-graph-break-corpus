@@ -15,12 +15,22 @@
 - **Headline accounting check passes** (Q3): Dynamo's `graph_count = graph_break_count + 1` invariant holds across all 446 explain rows. Subsequent stats can be trusted.
 - **Most graph breaks are concentrated, not scattered** (Q2): of the 215 models with ≥5 breaks, **53% have ≤30% unique break locations** — one root cause amplified into many downstream breaks. Fixing single root causes yields disproportionate impact.
 
-**Top single-target Dynamo improvements that would unlock the most models:**
+**Top single-target Dynamo improvements that would unlock the most models** (each cross-referenced to corpus filed-issue + verified upstream PR/commit):
 
-1. **Deepcopy polyfill (PR #179611) — LANDED 2026-04-11 via ghstack** as commit `61fdec7ddb5d` on pytorch main. The PT 2.12 sweep snapshot used torch `2.12.0.dev20260407` which PRE-DATES the landing — the snapshot still shows the 164 breaks. The fix IS in current/future nightlies (May 2 nightly = `2.13.0.dev20260502` is post-April 11). **Expected: ~164 breaks at `copy.py:151` resolve in the next nightly sweep that uses a torch nightly post-2026-04-11.** Verify against today's in-flight nightly when its explain pass completes.
-2. **`CALL_FUNCTION_EX` (variadic call) better handling** — resolves **~177 of 431 #103 occurrences** (the "Cannot resume from graph break" wrapper). Would also help with the `output_capturing.py:192` cascade (122 breaks).
-3. **Un-skip / polyfill specific functions Dynamo currently skips** — clears ~72 #102 inner reasons.
-4. **`callable()` / `is_torch_compiling()` builtin pattern (issue #20)** — ~248 breaks across `import_utils.py:1525/1538/1540`.
+1. **Deepcopy polyfill — LANDED.** PR #179611 ([dynamo] Support copy.deepcopy via polyfill) landed via ghstack 2026-04-11 as commit `61fdec7ddb5d` on pytorch main. **Already in current torch nightly** (`2.13.0.dev20260502+` and later). **Already in `release/2.12`** (verified: `behind_by=0`). Corpus tracking: Issue #1 (closed 2026-04-19 with verification). Expected impact: ~164 breaks at `copy.py:151` cleared. Will be verified on today's in-flight nightly sweep when explain pass completes.
+
+2. **`CALL_FUNCTION_EX` (variadic call) better handling** — would resolve ~177 of 431 #103 wrapper occurrences. Corpus tracking: Issue #103 (open). Also helps with the `output_capturing.py:192` cascade (122 breaks at that single line). No upstream PR visible yet — would be net-new Dynamo work.
+
+3. **Un-skip / polyfill specific functions Dynamo currently skips** — would clear ~72 #102 inner reasons. **Top concrete targets** (extracted from `break_reasons` text):
+
+   | Skipped function | Occurrences | Notes |
+   |---|---:|---|
+   | `importlib.util.find_spec` | 96 | importlib plumbing — used by transformers' optional-dependency checks |
+   | HF `*Config.__reduce_ex__` (Bart, Moonshine, Blenderbot, M2M100, Marian, NllbMoe, PLBart, Pegasus, ...) | ~250 combined | HF Config object pickle/copy paths — **deepcopy polyfill (#179611, LANDED) likely clears most of these** since they're invoked via `copy.deepcopy(config)` |
+
+   Corpus tracking: parts of Issue #54 (closed) + Issue #102 (open, the wrapper). After #179611 lands in nightly, the `__reduce_ex__` cluster should largely disappear; remaining = `find_spec`-style importlib calls.
+
+4. **`callable()` builtin support for unknown argument types** — ~248 breaks across `import_utils.py:1525/1538/1540` in transformers. **Important clarification:** the break is NOT in `is_torch_compiling()` itself (which Dynamo can constant-fold to True). The break is on `callable(<arg>)` where the arg is a `StringFormatVariable` (an interpolated f-string passed as an argument) — Dynamo doesn't know how to evaluate `callable()` with an interpolated-string variable type. Corpus tracking: Issue #20 (the callable-builtin cluster). Upstream relevant: PR #179629 ([dynamo] Constant-fold importlib functions and fix callable() for StringFormatVariable) — **LANDED via ghstack 2026-04-22** as commit `2c24b04d2d23`; in current nightly but NOT in `release/2.12`.
 
 **Big regressions / wins vs PT 2.11 (intersection of 1420 work items):**
 
@@ -266,7 +276,26 @@ The cascade pattern means **break_count headline numbers significantly overstate
 | PT 2.11 eval | 531 | 176 | — |
 | PT 2.11 train | 488 | 219 | **−43 fullgraph, +43 breaks** |
 
-The train-side fullgraph deficit is **strictly conserved** in both releases — every "missing" fullgraph in train shows up as an additional graph_break model. This means train is *not* failing in different ways (no extra eager_errors, no extra timeouts) — it's specifically losing graph-capture for ~6% of models that work cleanly in eval.
+**Aggregate-level conservation (not per-model):** the *total count* of "missing fullgraph in train" exactly equals the *total count* of "extra graph_break in train" — no models leak into other failure categories (eager_error, timeout, create_error stay constant between modes). This is a corpus-aggregate property: 540−496 = 44 missing, 223−179 = 44 extra. NOT a per-model claim — at the per-model level there's churn (some models are fullgraph in BOTH modes, some break in BOTH, and 44 specifically flip eval=fullgraph→train=graph_break).
+
+### Which 44 specific models flip eval=fullgraph → train=graph_break?
+
+These are the models that drive the asymmetry. Looking at the FIRST break location in each model's train-mode explain output:
+
+| First-break location category | Count | Reading |
+|---|---:|---|
+| **Model-internal train-only branch** (some `modeling_X.py:line`) | **34** | The model's own code has a `self.training`-conditioned branch that hits a data-dep check or unsupported pattern. Train-only forward path. |
+| MusicGen-specific train code | 6 | Train-only code in `modeling_musicgen.py` |
+| DETR family loss/matcher | 2 | `modeling_conditional_detr.py`, `modeling_detr.py` — bipartite-matching loss is data-dep |
+| Autoformer loss path | 1 | `modeling_autoformer.py` train-only loss computation |
+| IBert quantization train path | 1 | `quant_modules.py:173` — quantization-aware training activation range |
+| **Total** | **44** | |
+
+**Concrete example — AutoformerModel:** breaks at `modeling_autoformer.py:886` and `:549`. The break reason is "**Data-dependent branching**" — the model has `if some_tensor_value > 0:` style code that's only reached on the train-mode forward path. Eval mode skips that branch entirely (because of a `self.training`-gated wrapper above), so eval compiles fullgraph; train hits the data-dep branch and breaks.
+
+**Answers the "different forward path?" question (yes):** train mode in transformers models genuinely exercises different Python code than eval — typically via `if self.training:` branches that activate dropout, loss computation, auxiliary heads, or quantization-aware paths. Many of those train-only branches contain data-dependent control flow that Dynamo can't trace.
+
+**Answers the "extra train breaks" categorization** (vs my earlier vague "loss-computation" claim): the dominant pattern (34/44) is **model-internal train-only branches with data-dep control flow**, NOT primarily loss-computation. Loss / matcher (DETR family, Autoformer) is a small subset (~3/44). Quantization-aware train (IBert) is one model. None of the 44 flips are caused by autograd-hook registration — that's a separate phenomenon visible in §5's `torch/utils/hooks.py:27` amplifier.
 
 ### Per-model asymmetry
 
@@ -376,11 +405,11 @@ For #103: ~63% (variadic call handling) is a single Dynamo improvement target.
 
 For the 1420-model **intersection** between PT 2.11 (transformers 5.5.3) and PT 2.12 (transformers 5.6.2), only **7 work items changed status** out of 2840 — the vast majority of models are status-stable across the release.
 
-| Status flip | Models | Cause | Interpretation |
-|---|---|---|---|
-| `compile_error → graph_break` | Gemma4 × 2 modes | PT 2.12 hits the `callable()` graph break (issue #20 cluster) at `import_utils.py:1525` BEFORE reaching the data-dep f-string crash at `gemma4/modeling_gemma4.py:2235`. | **Capability win** — graceful break instead of hard crash. |
-| `graph_break → full_graph` | MraModel (eval only) | Dynamo: speculative `requires_grad_()` handling at `tensor.py:1869`. | **Less restrictive but still correct** — Dynamo improvement. |
-| `full_graph → timeout` | BltForCausalLM, BltModel × 2 modes each | PT 2.12 model-instantiation slowdown. Verified eager-only: PT 2.11 `BltModel(config)` = 111s, PT 2.12 = **374s** (3.4× slowdown in pure `nn.Module` construction, no `torch.compile` invoked). Model code byte-identical between transformers 5.5.3 and 5.6.2. | **Real regression in torch nn.Module construction path. NOT torch.compile related.** Worth filing as a torch issue. |
+| Status flip | Models | Cause | Corpus issue / upstream PR | Interpretation |
+|---|---|---|---|---|
+| `compile_error → graph_break` | Gemma4 × 2 modes | PT 2.12 hits the `callable()` graph break (issue #20 cluster) at `import_utils.py:1525` BEFORE reaching the data-dep f-string crash at `gemma4/modeling_gemma4.py:2235`. | corpus #20 (callable cluster); upstream — no specific PR contributed this win, it's an earlier-break-in-the-stack effect | **Capability win** — graceful break instead of hard crash. |
+| `graph_break → full_graph` | MraModel (eval only) | Dynamo: speculative `requires_grad_()` handling at `tensor.py:1869`. | upstream win contributed by speculative-symbolic-shape work in 2.12 cycle (specific PR not isolated; visible in upstream diff between torch 2.11 and 2.12 nightlies) | **Less restrictive but still correct** — Dynamo improvement. |
+| `full_graph → timeout` | BltForCausalLM, BltModel × 2 modes each | PT 2.12 model-instantiation slowdown. Verified eager-only: PT 2.11 `BltModel(config)` = 111s, PT 2.12 = **374s** (3.4× slowdown in pure `nn.Module` construction, no `torch.compile` invoked). Model code byte-identical between transformers 5.5.3 and 5.6.2. | corpus tracking: needs filing (no issue yet); no upstream PR identified | **Real regression in torch nn.Module construction path. NOT torch.compile related.** Worth filing as a torch issue. |
 
 Net deltas (intersection only):
 - **full_graph: −3** (1019 → 1016) — slight regression driven by Blt timeouts
