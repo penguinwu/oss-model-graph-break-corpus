@@ -1,120 +1,142 @@
 ---
-plan: PT 2.12 graph-break analysis + deep-stack / cascading / accounting investigation
+plan: PT 2.12 graph-break technical report
 status: active
-owner: Otter
+owner: Otter (drafting); Peng (reviewing)
 created: 2026-05-03
-last_check: 2026-05-03
-forcing_function: tools/check_plan.py + daily brief
+last_check: 2026-05-03T13:30Z
+forcing_function: Today's iteration — Peng comments on gdoc draft
+revision: 2
 ---
 
-# Graph-Break Deep-Dive — PT 2.12 release analysis + accounting validation
+# PT 2.12 Graph-Break Technical Report — Project Tracker
 
-> **Origin:** Peng's tomorrow backlog drop on 2026-05-02 22:37 ET (end of session). Three concrete tracks + three investigation questions. Captured here before sleep so tomorrow's session picks up clean.
+> **Rev 2 (2026-05-03):** Reframed from open-ended "deep-dive" to a single-deliverable project: a comprehensive technical report on PT 2.12 graph-break sweep state, targeted at Dynamo compiler developers. Long-form gdoc → corpus repo .md → Workplace post (extracted later).
 
-## Tracks (concrete deliverables)
+## Goal
 
-### Track 1 — PT 2.12 release sweep: detailed analysis with new-model focus
+Produce a technical report that gives Dynamo compiler developers a clear picture of:
+- Where graph capture stands on HF transformers in PT 2.12
+- What changed from PT 2.11 (regressions + improvements)
+- Which remaining breaks are Dynamo-fixable vs require model-side rewrites
+- Train vs eval asymmetry, with explanation
 
-**What:** Produce a detailed analysis of the PT 2.12 release sweep data, with a specific subsection covering graph-break stats for **new models added since PT 2.11**.
+Audience: PT2 / Dynamo team. Scope: stats + trends. Out of scope: corpus infra improvements.
 
-**Why:** Standard release analyses report aggregate numbers. Newer models that landed after the prior release are the highest-leverage signal — they're the "fresh ground" for graph-break work and the first place compiler regressions or improvements show up. Treating them as a first-class subsection ensures we don't lose that signal in the aggregate.
+## Deliverables
 
-**Data:**
-- 2.12 baseline: `sweep_results/baseline/pt2.12-2026-04-30/`
-- 2.11 baseline: `sweep_results/baseline/pt2.11-fresh-2026-04-29/`
-- Diff tool: `tools/compare.py`
-- Model identity tracking: need a "new since 2.11" classifier — check `corpus.json` model-list diff between the two baselines, OR use `created_at` if encoded, OR cross-reference HF `since` field if available
+| # | Item | Status | Where |
+|---|---|---|---|
+| 1 | Long-form draft (gdoc, for Peng comments) | in progress | https://docs.google.com/document/d/1ecTEnmc6J83oPOs5R5YY54ruH1qoqxbSwawZQYDo0BU/edit |
+| 2 | `.md` in corpus repo (publication form, derived from finalized gdoc) | pending | `experiments/pt2.12-sweep-analysis.md` |
+| 3 | Workplace post (short form, extracted from .md) | pending | (drafted after .md is final) |
 
-**Done means:**
-- Analysis doc written, includes section "📊 Aggregate (all models)" + "🆕 New models since PT 2.11"
-- For new-models subsection: gb count distribution, per-model breakdown, comparison to fullgraph rate of older corpus models
-- Land in PARA + post to PT2 working group / Compile Q&A (Peng-guided framing for community release)
+## Sections (status)
 
-### Track 2 — Train vs eval graph-break asymmetry investigation
+| # | Section | Status | Notes |
+|---|---|---|---|
+| 1 | Executive summary / TL;DR | ✅ done | First-pass written; refine after Peng comments |
+| 2 | Top-line stats (eval / train separated) | ✅ done | Includes break-count distribution + top break reasons + top-5 most-broken |
+| 3 | New-models-since-2.11 subsection | ✅ done | 29 added; per-status lineup + new-vs-existing comparison; only 34.5% fullgraph |
+| 4 | Q3: graph_count vs graph_break_count accounting | ✅ done | 0 violations across 446 explain rows |
+| 5 | Q2: deep-stack origin → cascading downstream breaks | ✅ done | 53% concentrated; deepcopy at 164 breaks is biggest amplifier |
+| 6 | Train vs eval asymmetry investigation | 🟡 partial | Headline + top-10 + IBert insight; deeper categorization of train-only extras still TODO |
+| 7 | Deep-dive: #102 + #103 (compiler gives up wrapper pattern) | ✅ done | 193 + 141 models; inner reason categorization; 58% data-dep / 42% Dynamo-fixable for #102; #103 dominated by CALL_FUNCTION_EX |
+| 8 | Regression vs 2.11 (reuse from reference doc) | ✅ done | 7 status flips; Blt eager regression flagged |
+| 9 | Remaining breaks: Dynamo-fixable vs requires-model-rewrite | 🟡 partial | Initial categorization done; cross-reference with filed issues still TODO |
+| 10 | Q1: nested graph break feature impact | LAST | Deferred per Peng directive — requires understanding of nested-GB feature first |
 
-**What:** Dig into why training has more graph breaks than inference; produce insight.
+## Data sources
 
-**Why:** Standing observation in the corpus that training-mode graph break counts exceed eval-mode counts. Hypothesis directions: (a) backward-graph adds breaks (loss.backward path), (b) train-mode-only ops (dropout, batch-norm running stats) add breaks, (c) some break categories specifically affect autograd, (d) model-specific train-only branches.
+| What | Where | State |
+|---|---|---|
+| 2.11 baseline (canonical) | `sweep_results/baseline/pt2.11-fresh-2026-04-29/` | complete, 2026-04-29 |
+| 2.12 baseline (pre-release) | `sweep_results/baseline/pt2.12-2026-04-30/` | partial (INTERRUPTED file present — to investigate) |
+| 2.13-nightly (in-flight today) | `sweep_results/nightly/2026-05-03/` | running, currently 143/1734 |
+| Comparison tool | `tools/compare.py` | existing |
+| Filed issues for current breaks | GitHub `penguinwu/oss-model-graph-break-corpus` | live |
 
-**Data:**
-- Per-model `eval` vs `train` rows in `sweep_results/baseline/pt2.12-2026-04-30/identify_results.json` + `explain_results.json`
-- Compute Δ = train_gb_count - eval_gb_count per model; rank by Δ
-- For top-N models by Δ, drill into break_reasons to identify train-only patterns
+**On 2.12 wheel publication:** PT 2.12 is not yet stable-released. Today's draft uses the 2026-04-30 pre-release sweep. When the stable 2.12 wheel publishes, refresh data and re-run analysis (Peng's plan).
 
-**Done means:**
-- Distribution of Δ characterized (mean / median / tail)
-- Top causes of train-only breaks identified by category (filed_issues classifiers + manual inspection of unmatched)
-- Insight written up; cross-link to any existing dynamo-team issues (#54 data-dep branching, etc.) where relevant
+## Reference materials
 
-### Track 3 — "Compiler gives up" / fallback graph breaks (#102 + #103)
+- **Prior regression analysis (reference doc):** [PT 2.11 vs PT 2.12 — Sweep Comparison & Root-Cause Analysis (2026-04-30)](https://docs.google.com/document/d/1vG0tob5_D6PBPEs84-pe8F0BqV35VqoaKf2htgsAOG8/edit) — author: Otter; comments: Peng. Local: `sweep_results/comparisons/pt2.11-vs-pt2.12-2026-04-30/REPORT.md`
+- **Issue tracker:** [penguinwu/oss-model-graph-break-corpus/issues](https://github.com/penguinwu/oss-model-graph-break-corpus/issues) — #102, #103, #104 are central to §7
 
-**What:** Dig into the two open issues where the graph break is the compiler's fallback rather than a specific user-code pattern:
-- **#102** [dynamo] "Failed to handle graph break gracefully" wrapper — 166 models / 718 breaks
-- **#103** [dynamo] "Cannot resume from graph break" wrapper — 107 models / 345 breaks
-- Related meta-issue **#104** [dynamo] Better error messages + structured fields for wrapper-pattern graph breaks (the systematic ask)
+## Per-section details
 
-**Why:** These breaks have no informative reason — they're "compiler couldn't handle this gracefully" infrastructure fallbacks. Without specificity we can't bucket them or attribute them to root causes. They're presumably MASKING the real upstream bugs.
+### §1 Executive summary
+Headline numbers + 3-5 bullets on key findings. Written LAST so it can summarize what's actually in the report.
 
-**Data + approach:**
-- For each issue, cross-reference all affected models from `sweep-report.json`'s `proposed_body`
-- For top-N most-affected models, inspect `explain_results.json[model].break_reasons` to see if there's structured info beyond the wrapper text (file:line, surrounding context)
-- Identify if these breaks correlate with specific code locations (HF utility files, dynamo internal bailouts, etc.)
-- File a sharpening request upstream OR propose a corpus-side rule that buckets these by some derivable secondary signal
+### §2 Top-line stats (eval / train separated)
+From `identify_results.json`:
+- # models tested (eval count, train count, intersection)
+- # full_graph (% of total) eval, train
+- # graph_break, eager_error, create_error, timeout
+- Break-count distribution: histogram of breaks per model
+- Top break reasons (categorized) — eval vs train differences
 
-**Done means:**
-- Each issue (#102, #103) gets an analysis comment with: bucket distribution, hypothesized root causes, repro recipe for the most concentrated cluster
-- Decision: fixable in corpus (bucket via secondary signal), or needs upstream dynamo work (file detailed asks against #104), or both
+### §3 New-models-since-2.11
+- Identify "new" via model-list diff between 2.11 + 2.12 baselines
+- For each new model: graph break count, status, category
+- Compare new-model fullgraph rate vs older-model fullgraph rate
+- Implication: are newer model architectures more or less amenable to torch.compile?
 
-## Investigation questions (research before deciding)
+### §4 Q3 — graph_count vs graph_break_count accounting
+- Read explain_results.json
+- For each model: extract `graph_count` (total subgraphs) + `graph_break_count` (breaks reported)
+- Expected invariant: `graph_count = graph_break_count + 1`
+- Find violations: which models, by how much, why
+- If invariant holds: increases trust in subsequent stats. If violated: report the gap.
 
-### Q1 — Does nested graph break support change reported counts?
+### §5 Q2 — deep-stack cascading
+- Hypothesis: a single break deep in the call stack causes N downstream breaks
+- Method: for each break, look at frame context (depth in stack); look at follow-on breaks within the same forward
+- Report: distribution of cascade sizes, top "amplifier" patterns
 
-**Hypothesis:** Nested graph break support might reduce the count of breaks that come from "returning from a deep stack." Currently when a graph break happens deep in a call stack, dynamo bails out of the entire frame and reports N breaks instead of 1.
+### §6 Train vs eval asymmetry
+- Per-model: train_breaks - eval_breaks delta
+- Categorize the extra train breaks by reason
+- Hypotheses to test:
+  - Backward graph adds breaks (autograd-specific patterns)
+  - Train-mode-only ops (dropout, batch_norm running stats)
+  - Loss computation differs
 
-**To answer:**
-- Find current state of nested graph break support in dynamo (check torch/_dynamo for `nested_graph_break` / `resume_from_nested` / similar)
-- If feature flag exists: run a small subset (5-10 models) with feature on/off, compare gb counts
-- Look at how break_reasons differ between flat and nested reporting
+### §7 Deep-dive: #102 + #103 wrapper pattern
+- #102: `Failed to handle graph break gracefully` — 166 models
+- #103: `Cannot resume from graph break` — 107 models
+- These are "compiler gives up" wrappers — the real reason hides inside
+- Method: extract inner reason from explain_results.json frames
+- Categorize inner reasons; cross-reference #104 (better error messages)
+- Quantify: how many resolve with better error surfacing vs require model rewrite
 
-### Q2 — Cascading graph breaks from deep-stack origin
+### §8 Regression vs 2.11
+- Reuse from reference doc: 7 work items flipped status
+  - 2 compile_error → graph_break (Gemma4 — strict capability win)
+  - 1 graph_break → full_graph (MraModel — Dynamo improvement)
+  - 4 full_graph → timeout (Blt × 2 modes — eager-side nn.Module construction regression, NOT torch.compile)
+- Add: any newly-found regressions from re-analysis
 
-**Hypothesis:** Not all graph breaks are equal — a break deep in the call stack may produce many cascading downstream breaks. We should be able to characterize "1 deep break causes 12 cascade breaks" vs "1 isolated leaf break."
+### §9 Remaining breaks: Dynamo-fixable vs model-rewrite
+- For each unique break reason in PT 2.12: classify
+  - **Dynamo-fixable** — Dynamo can support this op/pattern with engineering work
+  - **Model-rewrite** — model code needs change (e.g., data-dependent control flow fundamental to algorithm)
+  - **Ambiguous** — could go either way
+- Quantify by count; rank by impact (# models affected)
 
-**To answer:**
-- Inspect `break_reasons` structure — does it include a stack depth or stack trace? (looking at the brief's earlier output, `user_stack_summary` and `user_code_loc` fields exist)
-- Build a small analyzer that groups breaks by stack-depth + code-location proximity to identify cascading clusters
-- Top-N cascading clusters → file as a single root cause + N derivative breaks rather than N independent
+### §10 Q1 — nested graph break feature (LAST)
+- Requires understanding the nested-GB feature in upstream PyTorch first
+- Hypothesis: nested-GB support may reduce reported counts by treating "deep stack returns to capture frame" cases differently
+- Defer to end so other sections aren't blocked
 
-### Q3 — Graph-break count vs subgraph count consistency
+## Open questions / pending decisions
 
-**Hypothesis:** `graph_break_count` and `graph_count` should have a derivable relationship — typically `graph_count = graph_break_count + 1` for sequential breaks (each break splits one graph into two). If the relationship doesn't hold, the accounting is wrong somewhere.
+(captured as work proceeds — Peng's comments on the gdoc accumulate here)
 
-**To answer:**
-- For each model in `explain_results.json`: compute `graph_count - graph_break_count` (expected: 1)
-- Distribution of the delta — anything other than 1 is suspect
-- For deltas != 1: drill into break shapes (parallel breaks? bailouts that don't split?)
-- Cross-link to Q2 if cascading breaks explain non-1 deltas
+## Pick-up state if not finished today
 
-## Sequencing for tomorrow
+When ending a session, update each row in the §Sections table with one of:
+- ✅ done — section text in gdoc; data validated
+- 🟡 partial — outline + some text; gaps marked with TODO
+- pending — not started
 
-Recommended order (Tier 1 = fresh-mind tasks, Tier 2 = needs cross-checking):
-
-**Morning (Tier 1):**
-- Q3 first — pure-data check, fast verification of accounting. If accounting is wrong, everything else builds on shaky ground.
-- Track 1 — produce the 2.12 release analysis with new-models subsection (well-scoped, demonstrable output by EOD)
-
-**Afternoon (Tier 2):**
-- Q2 — cascading analysis (depends on Q3 verifying accounting)
-- Q1 — nested graph break support (research first, then experiment if feature flag exists)
-- Track 2 — train vs eval insight (depends on Q2 if cascading explains the asymmetry)
-- Track 3 — #102 + #103 deep-dive (most valuable when Q1 + Q2 give us better break taxonomy)
-
-## Out of scope
-
-- Performance measurement (Phase 2 of DSV4 plan; separate workstream)
-- Skill discovery work (pt2-skill-discovery scope)
-- Anything requiring external publishing approval (drafts may be ready by EOD; landing them is Peng's call)
-
-## Revision log
-
-- *2026-05-02 22:37 ET:* Drafted from Peng's end-of-session backlog drop. Three tracks + three investigation questions captured. Sequencing sketched but not locked.
+The gdoc has the canonical text; this plan doc tracks what's done. Tomorrow's session reads this table + picks up the highest-priority `pending` or `🟡 partial`.
