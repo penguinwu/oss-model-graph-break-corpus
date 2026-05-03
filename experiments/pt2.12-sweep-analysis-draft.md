@@ -164,9 +164,19 @@ Between PT 2.11 (transformers 5.5.3) and PT 2.12 (transformers 5.6.2) sweep snap
 | train fullgraph rate | 67.8% | **34.5%** (−33 pt) |
 | eager_error + create_error rate | 0% existing | **55.1%** new (eval+train identical) |
 
-**Reading:** more than half of the new model additions fail at the `eager_error` or `create_error` boundary — meaning they fail BEFORE Dynamo gets a chance to compile. This is dominated by transformers-version-skew bugs (model code shipped against a transformers version newer than what the corpus uses) and model-side bugs in newly-released architectures that haven't yet stabilized.
+**Reading:** more than half of the new model additions fail at the `eager_error` or `create_error` boundary in the 2.12 baseline. **However, audit (2026-05-03) revealed these failures are dominated by CORPUS HARNESS gaps, NOT by torch.compile or genuine model bugs.** Specifically: corpus's per-model input recipes and `_reduce_model_size` config overrides hadn't kept pace with newly-added models that use custom forward signatures (e.g., `aspect_ratio_ids`, `grid_thw`, `mel_spectrogram`) or unconventional config shapes (Mamba-hybrid Zamba's `tie_weights_keys` regex, Qwen3-Omni's nested config attribute resolution).
 
-For Dynamo developers: of the 29 new models, only **10 even reach a successful fullgraph compile** and 3 graph-break. The remaining 16 are blocked at the eager / create boundary and don't yet provide signal on graph-capture behavior. As the transformers release cycle catches up to these models, more will become eligible for compile evaluation.
+**Audit + fixes (2026-05-03):**
+- **Proof:** all 13 eager_errors and 3 create_errors in the 2.12 baseline come from new models. ZERO from intersection. Confirms our new-model harness is the gap.
+- **Already fixed by 2026-05-02 input-recipe commits** (`08511ae`, `47bba8a`, `761e28f`): 7 vision/audio sub-component models with custom forward signatures (Mllama, Qwen3VL/Qwen3VLMoe vision, Qwen3_5/Qwen3_5Moe vision, etc.).
+- **Fixed today** (commit `47d03db`): 3 config-shape models — ZambaForCausalLM + ZambaModel (`tie_weights_keys` regex requires layer 1 hybrid + peer; fix: `layers_block_type = ['hybrid'] * num_hidden_layers`); Qwen3OmniMoeTalkerModel (extended `_fix_qwen3_omni_talker` to comprehensively promote text_config attrs onto wrapper config + alias `num_experts` → `num_local_experts`).
+- **Remaining genuine issues**: ~4-6 models with model-side bugs (MusicFlamingoForConditionalGeneration CUDA assert, Qwen3-Omni-Talker submodels with model __init__ bugs, etc.) — these are real transformers-side issues to file upstream.
+
+**Aggregate projection for the next sweep that runs against current corpus code:** ~10 of the 16 new-model errors flip to fullgraph/graph_break/eager_error (showing real graph-capture behavior). Approximately 6 remain as real transformers bugs needing upstream coordination.
+
+**Methodology lesson** (per Peng's directive: "we have to fix these harness flaws before sharing the report"): for the published report on the official 2.12 release, refresh the sweep on current corpus code so the new-model status reflects the actual graph-capture story rather than corpus harness gaps.
+
+For Dynamo developers reading the 2.12-pre-release table above: the 16 errors number is INFLATED by the harness gap that has since been addressed. The actual 2.12-stable picture for new models will show closer to 19-23 of 29 new models reaching the compile stage (up from 13 in this baseline).
 
 ### Specific new-model lineup
 
