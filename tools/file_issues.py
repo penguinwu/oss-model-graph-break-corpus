@@ -35,6 +35,15 @@ ISSUE_MARKER = "<!-- filed-by: otter/file_issues.py -->"
 # Each rule: (key, issue_number, match_fn(explanation, location) → bool)
 
 GRAPH_BREAK_RULES = [
+    # ── EXPLANATION-based rules (more specific; must come first) ──
+    # These match on the actual graph-break reason text. They are MORE specific
+    # than the location-based rules below — a break at import_utils.py:1525
+    # with "find_spec" in the explanation should be classified as find_spec
+    # (Issue #7), NOT as the generic import_utils skip cluster (Issue #5).
+    # Bug fixed 2026-05-03: previously find_spec_skip was after
+    # import_config_skip in the list, causing 96 find_spec breaks/sweep to be
+    # misfiled under Issue #5. Same shadowing pattern would have hit any
+    # explanation-based rule placed below the loc-based catch-alls.
     ("data_dep_shape_ops", 18, lambda exp, loc:
         "aten.nonzero" in exp or "repeat_interleave.Tensor" in exp
         or "masked_select" in exp or "unique_consecutive" in exp
@@ -67,16 +76,21 @@ GRAPH_BREAK_RULES = [
         "Generator.seed()" in exp or "manual_seed" in exp),
     ("uninit_module", 27, lambda exp, loc:
         "uninitialized nn.Module" in exp),
-    ("import_config_skip", 5, lambda exp, loc:
-        "import_utils.py" in loc or "configuration_utils.py" in loc),
-    ("frame_skip", 2, lambda exp, loc:
-        "output_capturing.py" in loc),
     ("find_spec_skip", 7, lambda exp, loc:
         "find_spec" in exp),
     ("tensor_item", 56, lambda exp, loc:
         "Tensor.item()" in exp),
     ("data_dep_branch", 54, lambda exp, loc:
         "data-dependent branching" in exp),
+    # ── LOCATION-based catch-alls (must come LAST) ──
+    # These fire when a break happens at a known transformers wrapper file
+    # but didn't match any explanation-based rule above. They are the
+    # residual bucket for that file — anything specific about the break
+    # text was already handled by an upstream rule.
+    ("import_config_skip", 5, lambda exp, loc:
+        "import_utils.py" in loc or "configuration_utils.py" in loc),
+    ("frame_skip", 2, lambda exp, loc:
+        "output_capturing.py" in loc),
 ]
 
 MODEL_SPECIFIC_ISSUES = {
