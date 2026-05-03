@@ -72,13 +72,11 @@
 
 ## §2. Top-line stats — eval and train, separated
 
-PT 2.12 was tested against **739 unique HF transformer models in each of eval and train modes** (1478 total work items after de-duplication). For comparison, PT 2.11 covered 710 models per mode (1420 work items). The 29-model expansion is the "new-models-since-2.11" set analyzed in §3.
-
-> **Methodology note — duplicate rows (FIXED 2026-05-03):** PT 2.12's `identify_results.json` had 126 byte-identical duplicate rows (63 model-name-source-mode keys appearing twice) — a sweep-orchestrator bug, **root cause identified and fixed**: `orchestrator.py:run_pass` prepopulated its return list with all `resume_from` entries regardless of overlap with the call's spec list. When `run_sweep.py` called `run_pass` twice (multi-worker + single-worker), both calls re-added the resumed entries. Patched in commit `38127cf`. The 2.12 baseline JSON has been deduped in-place (1604 → 1478); pre-dedup file preserved at `.preDedup.bak`. Stats below reflect the corrected 739 unique work items per mode.
+PT 2.12 was tested against **739 unique HF transformer models in each of eval and train modes** (1478 total work items). For comparison, PT 2.11 covered 710 models per mode (1420 work items). The 29-model expansion is the "new-models-since-2.11" set analyzed in §3.
 
 ### Per-mode status counts
 
-| Status | PT 2.12 eval | PT 2.12 train | PT 2.11 eval | PT 2.11 train |
+| Status | PT 2.12 eval (n=739) | PT 2.12 train (n=739) | PT 2.11 eval (n=710) | PT 2.11 train (n=710) |
 |---|---:|---:|---:|---:|
 | **full_graph** | **540 (73.1%)** | **496 (67.1%)** | 531 (74.8%) | 488 (68.7%) |
 | graph_break | 179 (24.2%) | 223 (30.2%) | 176 (24.8%) | 219 (30.8%) |
@@ -86,13 +84,12 @@ PT 2.12 was tested against **739 unique HF transformer models in each of eval an
 | timeout | 4 (0.5%) | 4 (0.5%) | 2 (0.3%) | 2 (0.3%) |
 | create_error | 3 (0.4%) | 3 (0.4%) | — | — |
 | compile_error | — | — | 1 (0.1%) | 1 (0.1%) |
-| **Total** | **739** | **739** | **710** | **710** |
 
 **Observations:**
 
 - **Train fullgraph rate consistently ~6 pts lower than eval** (73.1% vs 67.1% in PT 2.12; 74.8% vs 68.7% in PT 2.11). The asymmetry persists across releases — investigated in §6.
 - **`compile_error` disappeared in 2.12** (was 1 each in 2.11). Per the regression analysis (Gemma4 case), Dynamo now graph-breaks earlier on the data-dependent f-string pattern instead of crashing. Strict capability win.
-- **`eager_error` + `create_error` grew** (16 each in 2.12 vs 1 compile_error in 2.11). Most of this growth comes from newly-added models (§3) — these are model-side bugs surfaced by adding the model, not torch.compile regressions.
+- **`eager_error` + `create_error` grew** (16 each in 2.12 vs 1 compile_error in 2.11). Audit (2026-05-03) confirmed all 16 are from new models added between 2.11 and 2.12 (zero from intersection); ~10 are corpus-harness gaps already addressed in current corpus code; ~6 are real transformers/model-side bugs. **Tracked at corpus Issue [#109](https://github.com/penguinwu/oss-model-graph-break-corpus/issues/109)** with per-model breakdown + status.
 - **Fullgraph rate dropped slightly eval-side** (74.8% → 73.1%, Δ−1.7pt) and **dropped slightly train-side** (68.7% → 67.1%, Δ−1.6pt). The drop is dominated by new-model additions having a lower fullgraph rate; for the 710-model intersection the fullgraph counts are nearly identical (see §8 regression analysis).
 
 ### Break-count distribution
