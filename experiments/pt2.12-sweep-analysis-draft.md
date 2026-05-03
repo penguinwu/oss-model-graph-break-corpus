@@ -21,14 +21,14 @@
 
 2. **`CALL_FUNCTION_EX` (variadic call) better handling** — would resolve ~177 of 431 #103 wrapper occurrences. Corpus tracking: Issue #103 (open). Also helps with the `output_capturing.py:192` cascade (122 breaks at that single line). No upstream PR visible yet — would be net-new Dynamo work.
 
-3. **Un-skip / polyfill specific functions Dynamo currently skips** — would clear ~72 #102 inner reasons. **Top concrete targets** (extracted from `break_reasons` text):
+3. **Un-skip / polyfill specific functions Dynamo currently skips** — would clear ~72 #102 inner reasons. **Top concrete targets** (extracted directly from `break_reasons` text):
 
    | Skipped function | Occurrences | Notes |
    |---|---:|---|
    | `importlib.util.find_spec` | 96 | importlib plumbing — used by transformers' optional-dependency checks |
    | HF `*Config.__reduce_ex__` (Bart, Moonshine, Blenderbot, M2M100, Marian, NllbMoe, PLBart, Pegasus, ...) | ~250 combined | HF Config object pickle/copy paths — **deepcopy polyfill (#179611, LANDED) likely clears most of these** since they're invoked via `copy.deepcopy(config)` |
 
-   Corpus tracking: parts of Issue #54 (closed) + Issue #102 (open, the wrapper). After #179611 lands in nightly, the `__reduce_ex__` cluster should largely disappear; remaining = `find_spec`-style importlib calls.
+   Corpus tracking: filed-issue cross-references for these were partially incorrect prior to a 2026-05-03 classifier-bug fix in `tools/file_issues.py` (commit `4b28545`) — the classifier's location-based rules were shadowing more-specific explanation-based rules, so 96 `find_spec` breaks were misfiled against Issue #5 ("import_utils.py skip cluster") instead of Issue #7 ("find_spec skip"). Both issues are closed; future sweep runs will categorize correctly. After #179611 lands in nightly, the `__reduce_ex__` cluster should largely disappear; remaining = `find_spec`-style importlib calls under Issue #7.
 
 4. **`callable()` builtin support for unknown argument types** — ~248 breaks across `import_utils.py:1525/1538/1540` in transformers. **Important clarification:** the break is NOT in `is_torch_compiling()` itself (which Dynamo can constant-fold to True). The break is on `callable(<arg>)` where the arg is a `StringFormatVariable` (an interpolated f-string passed as an argument) — Dynamo doesn't know how to evaluate `callable()` with an interpolated-string variable type. Corpus tracking: Issue #20 (the callable-builtin cluster). Upstream relevant: PR #179629 ([dynamo] Constant-fold importlib functions and fix callable() for StringFormatVariable) — **LANDED via ghstack 2026-04-22** as commit `2c24b04d2d23`; in current nightly but NOT in `release/2.12`.
 
