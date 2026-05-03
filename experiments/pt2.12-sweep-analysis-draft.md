@@ -17,7 +17,7 @@
 
 **Top single-target Dynamo improvements that would unlock the most models:**
 
-1. **Deepcopy polyfill** — would close **~164 breaks** at `copy.py:151` across many models. **The proposed fix (PR #179611) was closed-without-merging on 2026-04-11.** Path forward needs clarification: revival of #179611, a successor PR, or alternative approach. Until then, this remains the largest standing single-source amplifier.
+1. **Deepcopy polyfill (PR #179611) — LANDED 2026-04-11 via ghstack** as commit `61fdec7ddb5d` on pytorch main. The PT 2.12 sweep snapshot used torch `2.12.0.dev20260407` which PRE-DATES the landing — the snapshot still shows the 164 breaks. The fix IS in current/future nightlies (May 2 nightly = `2.13.0.dev20260502` is post-April 11). **Expected: ~164 breaks at `copy.py:151` resolve in the next nightly sweep that uses a torch nightly post-2026-04-11.** Verify against today's in-flight nightly when its explain pass completes.
 2. **`CALL_FUNCTION_EX` (variadic call) better handling** — resolves **~177 of 431 #103 occurrences** (the "Cannot resume from graph break" wrapper). Would also help with the `output_capturing.py:192` cascade (122 breaks).
 3. **Un-skip / polyfill specific functions Dynamo currently skips** — clears ~72 #102 inner reasons.
 4. **`callable()` / `is_torch_compiling()` builtin pattern (issue #20)** — ~248 breaks across `import_utils.py:1525/1538/1540`.
@@ -231,7 +231,11 @@ These models have effectively one root cause expanding into 11-28 downstream bre
 
 **Highest-leverage targets identified:**
 
-1. **`copy.py:151` — 164 breaks**. This is the **deepcopy regression**. The trace pattern stems from PT 2.12's PR #177443/#177484 changes. **The proposed fix — Animesh's polyfill PR #179611 ("[dynamo] Support copy.deepcopy via polyfill") — is CLOSED-WITHOUT-MERGING (closed 2026-04-11, never landed).** A successor PR or reopen is required for these 164 breaks to be addressed; without it, the deepcopy issue persists indefinitely across 2.12 and future releases. **Action: clarify the path forward with the dynamo team.**
+1. **`copy.py:151` — 164 breaks**. This is the **deepcopy regression** stemming from PT 2.12's PR #177443/#177484 changes. **The fix — Animesh's polyfill PR #179611 — LANDED 2026-04-11 via ghstack** (commit `61fdec7ddb5d` on pytorch main). The PT 2.12 sweep snapshot used `torch=2.12.0.dev20260407` which is from April 7 — PRE-DATES the polyfill landing. The CURRENT torch nightly (`2.13.0.dev20260502`) post-dates April 11 and includes the polyfill. **Expected: the 164 deepcopy breaks at `copy.py:151` resolve in the next sweep that uses a post-2026-04-11 torch nightly.** Today's in-flight nightly will be the first observable verification.
+
+   *Note on PR status:* GitHub's UI / API shows PR #179611 as `closed: merged=false` because ghstack lands via internal merge flow (PyTorch MergeBot), not via GitHub's Merge button. The GitHub `merged` field reflects button-click only. Same applies to PR #180585 (also from Animesh, also landed via ghstack 2026-04-17, also shows `merged: false` on GitHub).
+
+
 
 2. **`output_capturing.py:192` — 122 breaks**. This is the transformers wrapper for output post-processing. Many models hit it on `CALL_FUNCTION_EX` with model-specific output object construction. Could be addressed either Dynamo-side (better variadic call handling — same pattern that resolves most #103 cases) or transformers-side (refactor wrapper).
 
