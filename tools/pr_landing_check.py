@@ -179,6 +179,124 @@ def is_ancestor(commit_sha: str, branch: str, token: str) -> dict | None:
         return None
 
 
+def find_possible_successors(pr_data: dict, token: str) -> list[dict]:
+    """When a PR is closed-not-landed, search for likely successor PRs by the
+    same author created on/around the closure date with overlapping title
+    keywords. Used to surface 'this fix may have been pivoted, not abandoned'
+    cases for human inspection.
+
+    Heuristic:
+      - Same author
+      - Created within ±7 days of the original PR's closure
+      - Shares >=2 distinctive title words (excluding stopwords)
+    """
+    import re
+    author = pr_data.get("user", {}).get("login", "")
+    title = pr_data.get("title", "")
+    closed_at = pr_data.get("closed_at", "")
+    if not author or not closed_at:
+        return []
+
+    # Extract distinctive title keywords (drop stopwords + bracketed prefixes)
+    title_clean = re.sub(r"\[.*?\]", "", title).lower()
+    stopwords = {"add", "fix", "support", "make", "use", "the", "a", "an",
+                 "and", "for", "in", "to", "of", "on", "with", "by", "or",
+                 "via", "as", "be", "is", "are", "from", "during", "all",
+                 "during", "it", "this", "that", "compile", "compiling",
+                 "compilation", "dynamo"}
+    words = [w for w in re.findall(r"[a-z_][a-z0-9_]{2,}", title_clean)
+             if w not in stopwords]
+    if not words:
+        return []
+    # Use ALL distinctive keywords for overlap matching, but only the most
+    # distinctive ones (long words first) as search terms.
+    all_keywords = set(words)
+    # Sort by length desc so we search the most distinctive terms first
+    search_terms = sorted(set(words), key=lambda w: -len(w))[:5]
+
+    # Search GitHub for candidates by same author in a window around closure.
+    from datetime import datetime, timedelta
+    try:
+        closed_dt = datetime.fromisoformat(closed_at.replace("Z", "+00:00"))
+    except Exception:
+        return []
+    win_start = (closed_dt - timedelta(days=14)).date().isoformat()
+    win_end = (closed_dt + timedelta(days=21)).date().isoformat()
+
+    candidates: list[dict] = []
+    seen_pr_numbers: set[int] = {pr_data["number"]}
+
+    # Strategy A: fast — search by author + window without keyword filter,
+    # then locally compute keyword overlap. This finds successors even when
+    # title wording diverged significantly (e.g., "make X traceable" → "add
+    # handlers for X variants"). Use small per_page + regex extraction to
+    # avoid hitting proxy max_size on PR-body-heavy responses.
+    q = f"repo:{PYTORCH_REPO}+author:{author}+is:pr+created:{win_start}..{win_end}"
+    items: list[dict] = []
+    # Author can have many PRs in a 5-week window; paginate to be safe.
+    for page in (1, 2, 3):
+        url = (f"https://api.github.com/search/issues?q={q}"
+               f"&sort=created&order=desc&per_page=30&page={page}")
+        try:
+            import urllib.request
+            payload = json.dumps({
+                "url": url, "method": "GET", "max_size": 600_000,
+                "headers": {"Accept": "application/vnd.github+json",
+                            "Authorization": f"Bearer {token}"},
+            }).encode()
+            req = urllib.request.Request(
+                PROXY, data=payload,
+                headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                wrapper = json.loads(resp.read())
+            content = wrapper.get("content", "")
+            # Parse only (number, title) — search results have nested
+            # objects (pull_request, user, etc.) that confuse non-greedy
+            # multi-field regex. State + date are not strictly needed for
+            # successor-detection (we already know the original PR's closure
+            # date and use that to scope the search).
+            page_items = []
+            for m in re.finditer(
+                r'"number":\s*(\d+)[^{}]*?"title":\s*"((?:[^"\\]|\\.)*)"',
+                content,
+            ):
+                page_items.append({
+                    "number": int(m.group(1)),
+                    "title": m.group(2).encode().decode("unicode_escape"),
+                    "state": "",  # not extracted — see comment above
+                    "created_at": "",
+                })
+            if not page_items:
+                break  # no more results
+            items.extend(page_items)
+            if len(page_items) < 30:
+                break  # last page
+        except Exception:
+            break
+
+    for item in items:
+        n = item.get("number")
+        if n in seen_pr_numbers:
+            continue
+        seen_pr_numbers.add(n)
+        cand_title = item.get("title", "")
+        cand_title_clean = re.sub(r"\[.*?\]", "", cand_title).lower()
+        cand_words = set(re.findall(r"[a-z_][a-z0-9_]{2,}", cand_title_clean))
+        shared = (all_keywords & cand_words) - stopwords
+        if len(shared) >= 2:  # require >=2 keyword overlap (excluding stopwords)
+            candidates.append({
+                "pr_number": n,
+                "title": cand_title,
+                "state": item.get("state"),
+                "created_at": item.get("created_at"),
+                "shared_keywords": sorted(shared),
+            })
+
+    # Sort: open or closed-after-original first, then by recency
+    candidates.sort(key=lambda c: c["created_at"], reverse=True)
+    return candidates
+
+
 def check_pr(pr_number: int, branch: str | None, token: str) -> dict:
     """Authoritative check: did this PR land?"""
     pr = get_pr(pr_number, token)
@@ -227,6 +345,17 @@ def check_pr(pr_number: int, branch: str | None, token: str) -> dict:
             result["landed_message_subject"] = landed["commit"]["message"].split("\n")[0]
         else:
             result["verdict"] = "NOT_LANDED"
+            # Surface possible successor PRs for human inspection.
+            # NOT_LANDED is not the same as "abandoned" — author may have
+            # pivoted to a broader / cleaner approach. We've been bitten by
+            # this with PR #179630 (closed-not-landed but successor #181552
+            # landed). Check candidates so the human reviewer can verify.
+            try:
+                successors = find_possible_successors(pr, token)
+                if successors:
+                    result["possible_successors"] = successors
+            except Exception as e:
+                result["successor_search_error"] = str(e)
 
     # Optional: check if landed commit is in a specific release branch
     if branch and result["landed_commit"]:
@@ -264,6 +393,17 @@ def format_text(r: dict) -> str:
     elif verdict == "NOT_LANDED":
         lines.append(f"  → VERDICT: ❌ NOT LANDED — closed without any commit reaching main")
         lines.append(f"     (no '(#{r['pr_number']})' commit found in pytorch/pytorch)")
+        succ = r.get("possible_successors", [])
+        if succ:
+            lines.append(f"     ⚠️  POSSIBLE SUCCESSOR PRs found ({len(succ)} candidate{'s' if len(succ) > 1 else ''}):")
+            lines.append(f"        Author may have pivoted to a different approach. INSPECT MANUALLY:")
+            for s in succ[:5]:
+                lines.append(f"          • #{s['pr_number']} [{s['state']}] {s['title'][:80]}")
+                lines.append(f"            created {s['created_at'][:10]}, shared keywords: {s['shared_keywords']}")
+            if len(succ) > 5:
+                lines.append(f"          + {len(succ)-5} more (run --json for full list)")
+        else:
+            lines.append(f"     (no successor candidates found by same-author + similar-title heuristic)")
     # Branch ancestry result
     for k, v in r.items():
         if k.startswith("in_release_"):
