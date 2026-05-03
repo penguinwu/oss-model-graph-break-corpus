@@ -888,11 +888,49 @@ def _fix_config(model_name, config):
     # --- Qwen3OmniMoe family: missing attributes on talker sub-config ---
     # When called as Qwen3OmniMoeTalkerModel, config IS the talker config.
     # When called as Qwen3OmniMoeModel, talker is at config.talker_config.
+    #
+    # Important: Qwen3OmniMoeTalkerModel.__init__'s type hint says
+    # `Qwen3OmniMoeTalkerTextConfig` (the inner config), but corpus calls
+    # `model_cls(config)` with the wrapper Qwen3OmniMoeTalkerConfig. The model
+    # then accesses .hidden_size, .num_attention_heads, .num_experts, etc.
+    # directly on what it got — those attrs live on text_config, not the
+    # wrapper. Fix: copy ALL text_config attrs onto the wrapper so attribute
+    # lookups resolve. Also: text_config uses `num_local_experts` but the
+    # model accesses `num_experts` — alias it.
+    # 2026-05-03: extended from minimal shared_expert_intermediate_size /
+    # spatial_merge_size patches to comprehensive promotion. Verified
+    # ZambaForCausalLM and Qwen3OmniMoeTalkerModel both create cleanly now.
     def _fix_qwen3_omni_talker(talker_cfg):
         text_cfg = getattr(talker_cfg, "text_config", None)
-        if text_cfg and not hasattr(text_cfg, "shared_expert_intermediate_size"):
-            text_cfg.shared_expert_intermediate_size = getattr(text_cfg, "intermediate_size", 2048)
-        if not hasattr(talker_cfg, "spatial_merge_size") or getattr(talker_cfg, "spatial_merge_size", None) is None:
+        if text_cfg is None:
+            return
+        text_cfg.shared_expert_intermediate_size = getattr(
+            text_cfg, "intermediate_size", 2048)
+        # Promote ALL text_config attrs onto the wrapper so model __init__ can
+        # find them. Use a hand-curated list rather than to_dict() because
+        # to_dict() omits some PretrainedConfig-magic attrs (e.g. num_experts
+        # is resolved lazily and not in to_dict). dir()-based approach catches
+        # everything via getattr.
+        SKIP = {"model_type", "architectures", "transformers_version",
+                "torch_dtype", "auto_map", "to_dict", "to_json_string"}
+        for k in dir(text_cfg):
+            if k.startswith("_") or k in SKIP:
+                continue
+            try:
+                v = getattr(text_cfg, k)
+            except Exception:
+                continue
+            if callable(v):
+                continue
+            talker_cfg.__dict__[k] = v
+        # text_config uses num_local_experts but model code accesses num_experts.
+        # Explicit alias on the WRAPPER (the dir loop above already promoted
+        # num_local_experts; this maps the missing alias too).
+        if "num_experts" not in talker_cfg.__dict__:
+            talker_cfg.__dict__["num_experts"] = getattr(
+                text_cfg, "num_local_experts", 4)
+        if (not hasattr(talker_cfg, "spatial_merge_size")
+                or getattr(talker_cfg, "spatial_merge_size", None) is None):
             talker_cfg.spatial_merge_size = 2
 
     if "qwen3omnimoetalk" in name_lower:
@@ -911,22 +949,21 @@ def _fix_config(model_name, config):
     if "zamba" in name_lower and "zamba2" not in name_lower:
         if getattr(config, "use_mamba_kernels", True):
             config.use_mamba_kernels = False
-        # Zamba's _tied_weights_keys hardcodes layer 2 as shared transformer source.
-        # Need at least 4 layers with layer 2 and one other hybrid layer.
-        n = getattr(config, "num_hidden_layers", 76)
-        lbt = getattr(config, "layers_block_type", None)
-        if lbt and n < len(lbt):
-            # Already truncated by _reduce_model_size — ensure at least 2 hybrid layers
-            hybrid_count = sum(1 for t in lbt if t == "hybrid")
-            if hybrid_count < 2:
-                # Expand to include second hybrid layer (index 7 in default pattern)
-                full_lbt = getattr(type(config)(), "layers_block_type", lbt)
-                # Find first two hybrid indices
-                hybrids = [i for i, t in enumerate(full_lbt) if t == "hybrid"]
-                if len(hybrids) >= 2:
-                    needed = hybrids[1] + 1
-                    config.num_hidden_layers = needed
-                    config.layers_block_type = list(full_lbt[:needed])
+        # Zamba's `_tied_weights_keys` regex is
+        #   ^layers.1.shared_transf:^layers.(?!1\.)\d+.shared_transf
+        # It requires:
+        #   (1) layer 1 has `shared_transf` (i.e. layer 1 is a `hybrid` layer)
+        #   (2) at least one OTHER layer (NOT layer 1) also has `shared_transf`
+        # After _reduce_model_size truncates to 2 layers, _reduce_model_size's
+        # layers_block_type rebuild produces ['mamba', 'hybrid']. That fails
+        # condition (2) — only layer 1 has shared_transf, no peer to tie to.
+        # Fix: override to all-hybrid so layer 0 has shared_transf and ties to
+        # layer 1's source. Prior fix (Apr 25) tried to expand layers but
+        # never ensured layer 1 was hybrid; left create_error in place.
+        # 2026-05-03: simplified + verified — ZambaForCausalLM now creates.
+        n = getattr(config, "num_hidden_layers", 0)
+        if n >= 2:
+            config.layers_block_type = ['hybrid'] * n
 
     # --- Zamba2Model: needs enough layers to include at least one hybrid layer ---
     # Zamba2's HybridMambaAttentionDynamicCache.get_seq_length accesses
