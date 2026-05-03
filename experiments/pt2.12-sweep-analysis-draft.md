@@ -40,6 +40,12 @@
 - 3 graph_break (manageable)
 - 16 fail at the eager / create boundary (model-side / transformers-version issues — not yet ready for compile evaluation)
 
+**Updated comparison: PT 2.12 RC vs our pre-release snapshot (2026-04-30).** The actual `release/2.12` branch (head SHA `06f10d088229...` as of 2026-05-03) contains:
+- ✅ **PR #179611 (deepcopy polyfill)** — IS in release/2.12. Our 2026-04-30 snapshot used April-7 torch which predates this. The 164 deepcopy breaks at `copy.py:151` will be GONE in 2.12 stable.
+- ❌ **PR #180585 (`object.__getattribute__` fallback)** — NOT in release/2.12. Branched off main before the April-17 landing; not cherry-picked. Breaks this would have addressed remain in 2.12 stable.
+
+**Both verified via `tools/pr_landing_check.py 179611 180585 --branch release/2.12`.** This script is now mandatory for pytorch PR status checks (see CLAUDE.md "Checking pytorch/pytorch PR Status" rule) — added 2026-05-03 after we initially misclassified #179611 as not-merged due to ghstack's merge-via-MergeBot pattern (GitHub shows `merged: false` even when ghstack has landed the change).
+
 **Bottom line for Dynamo developers:** PT 2.12 is approximately even with PT 2.11 on the model intersection (Δ−3 fullgraph, +1 graph_break, +4 timeout — all explained). The headline regression is BltModel (eager-side, file separately). For forward-leaning improvements, the deepcopy polyfill + `CALL_FUNCTION_EX` work are the highest-leverage targets.
 
 **Sections that follow:**
