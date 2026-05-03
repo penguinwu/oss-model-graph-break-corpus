@@ -11,7 +11,7 @@
 
 **State of graph capture in PT 2.12 (pre-release sweep, 2026-04-30):**
 
-- **Eval fullgraph rate: 73.1%** (540 / 739 models compile without breaks). **Train: 67.1%** (496 / 739). The ~6pt train-side deficit is **strictly conserved**: every "missing" train fullgraph is exactly one extra graph_break — train doesn't fail in different ways, it fails at graph capture in ~6% more cases than eval.
+- **Eval fullgraph rate: 73.1%** (540 / 739 models compile without breaks). **Train: 67.1%** (496 / 739). The ~6pt train-side gap shows up entirely as additional `graph_break` models — none of the missing fullgraph leak into other failure categories (eager_error, timeout, create_error counts are identical in both modes). At the per-model level, **44 specific models flip eval=fullgraph → train=graph_break**; the dominant cause is model-internal `self.training`-conditioned forward branches with data-dep control flow (34 of 44; see §6 for full categorization including IBert quantization, DETR-family loss/matcher, etc.).
 - **Headline accounting check passes** (Q3): Dynamo's `graph_count = graph_break_count + 1` invariant holds across all 446 explain rows. Subsequent stats can be trusted.
 - **Most graph breaks are concentrated, not scattered** (Q2): of the 215 models with ≥5 breaks, **53% have ≤30% unique break locations** — one root cause amplified into many downstream breaks. Fixing single root causes yields disproportionate impact.
 
