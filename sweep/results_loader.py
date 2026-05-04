@@ -91,3 +91,56 @@ def load_results_list(path_or_dir: Path | str) -> list[dict]:
     Convenience for consumers that prefer list shape over dict-keyed-by-key.
     """
     return list(load_effective_results(path_or_dir).values())
+
+
+def _resolve_explain(path_or_dir: Path | str) -> Path:
+    p = Path(path_or_dir)
+    if p.is_file():
+        return p
+    if p.is_dir():
+        return p / "explain_checkpoint.jsonl"
+    if p.name.endswith(".jsonl"):
+        return p
+    return p / "explain_checkpoint.jsonl"
+
+
+def load_effective_explain(path_or_dir: Path | str) -> dict[tuple[str, str], dict]:
+    """Return effective (name, mode) → explain entry, last-write-wins.
+
+    Reads explain_checkpoint.jsonl and returns one entry per (name, mode).
+    When amend_sweep.py amends an explain pass, it APPENDS new lines for the
+    affected (name, mode) keys; this loader returns the LAST entry per key,
+    so amended entries supersede originals automatically.
+
+    Each returned entry has a `result_source` field:
+      - "original"               — first entry seen for this key
+      - "amended:<amendment_id>" — later entry overriding it (carries the
+                                   amendment_id field set by amend_sweep)
+
+    Use this in EVERY consumer that reads explain data alongside identify.
+    Direct line-by-line read of explain_checkpoint.jsonl is the wrong access
+    path — it would silently use stale pre-amendment break_reasons for
+    models whose harness was fixed after the original sweep.
+    """
+    p = _resolve_explain(path_or_dir)
+    if not p.exists():
+        return {}
+    effective: dict[tuple[str, str], dict] = {}
+    with open(p) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if "name" not in row or "mode" not in row:
+                continue
+            key = (row["name"], row["mode"])
+            # last-write-wins; amended entries carry amendment_id which we
+            # surface as result_source for symmetry with load_effective_results
+            aid = row.get("amendment_id")
+            tagged = {**row, "result_source": f"amended:{aid}" if aid else "original"}
+            effective[key] = tagged
+    return effective

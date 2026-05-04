@@ -84,6 +84,41 @@ def _run_harness_for_models(
     return data["results"]
 
 
+def _run_explain_for_amended(
+    python_bin: str, identify_results_path: Path, workers: int,
+    timeout_s: int, output_dir: Path,
+) -> list[dict]:
+    """Run explain pass on the amended identify results.
+
+    The explain pass reads identify_results.json and only processes rows with
+    status='graph_break'. Returns the list of explain entries written to
+    explain_checkpoint.jsonl. Returns [] if no amended row needs explain.
+    """
+    cmd = [
+        python_bin, str(REPO_ROOT / "tools" / "run_experiment.py"), "explain",
+        str(identify_results_path),
+        "--workers", str(workers),
+        "--timeout", str(timeout_s),
+        "--output-dir", str(output_dir),
+    ]
+    print(f"  Running: {' '.join(cmd)}", file=sys.stderr)
+    result = subprocess.run(cmd, cwd=REPO_ROOT, check=False)
+    if result.returncode != 0:
+        raise RuntimeError(f"explain harness exited {result.returncode}")
+    explain_ckpt = output_dir / "explain_checkpoint.jsonl"
+    if not explain_ckpt.exists():
+        # No graph_break rows in this amendment → nothing to explain
+        return []
+    rows = []
+    with open(explain_ckpt) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            rows.append(json.loads(line))
+    return rows
+
+
 def _verify_env_match(
     python_bin: str, sweep_metadata: dict,
 ) -> dict[str, str]:
@@ -212,14 +247,37 @@ def main() -> int:
         supersedes = amendment_id
         amendment_id = f"{amendment_id}-r{uuid.uuid4().hex[:6]}"
 
-    # Run the harness
+    # Run the identify harness
     print(f"Amendment id: {amendment_id}", file=sys.stderr)
     work_dir = args.sweep_dir / f"_amend_workspace_{amendment_id}"
+    explain_rows: list[dict] = []
     try:
         rows = _run_harness_for_models(
             args.python, args.models, args.modes, args.workers,
             args.timeout, work_dir,
         )
+        # Run explain on amended rows that ended up as graph_break.
+        # Explain pass only runs on graph_break (full_graph has 0 breaks; errors
+        # don't compile). Skip the explain step if no row qualifies.
+        gb_rows = [r for r in rows if r.get("status") == "graph_break"]
+        if gb_rows:
+            print(f"\n  Running explain pass on {len(gb_rows)} graph_break rows...",
+                  file=sys.stderr)
+            workspace_identify = work_dir / "identify_results.json"
+            if not workspace_identify.exists():
+                raise RuntimeError(f"workspace identify_results.json missing: {workspace_identify}")
+            explain_rows = _run_explain_for_amended(
+                args.python, workspace_identify, args.workers,
+                args.timeout, work_dir,
+            )
+            # Filter explain_rows to only the (name, mode) pairs we just amended
+            # (the explain pass may reuse a stale checkpoint or include extras)
+            new_keys = {(r["name"], r["mode"]) for r in rows}
+            explain_rows = [er for er in explain_rows
+                            if (er.get("name"), er.get("mode")) in new_keys]
+        else:
+            print(f"\n  No graph_break rows in amendment — skipping explain pass.",
+                  file=sys.stderr)
     finally:
         # Clean up the workspace; keep only the amended rows
         if work_dir.exists():
@@ -236,6 +294,7 @@ def main() -> int:
         "supersedes": supersedes,
         "row_count": len(rows),
         "rows": rows,
+        "explain_row_count": len(explain_rows),
     }
 
     # Append to amendments + atomic write
@@ -244,8 +303,21 @@ def main() -> int:
     tmp.write_text(json.dumps(sweep_data, indent=2))
     os.replace(tmp, results_path)
 
+    # Append explain rows to the sweep's explain_checkpoint.jsonl, tagged with
+    # amendment_id so load_effective_explain can identify them as amended.
+    # JSONL append is atomic enough for our use case (no concurrent writers).
+    if explain_rows:
+        explain_path = args.sweep_dir / "explain_checkpoint.jsonl"
+        with open(explain_path, "a") as f:
+            for er in explain_rows:
+                tagged = {**er, "amendment_id": amendment_id}
+                f.write(json.dumps(tagged) + "\n")
+
     print(f"\n  ✓ Amendment {amendment_id} applied to {results_path}", file=sys.stderr)
-    print(f"    {len(rows)} rows added; original results[] untouched.", file=sys.stderr)
+    print(f"    {len(rows)} identify rows added; original results[] untouched.", file=sys.stderr)
+    if explain_rows:
+        print(f"    {len(explain_rows)} explain rows appended to explain_checkpoint.jsonl.",
+              file=sys.stderr)
     print(f"    Total amendments in this sweep: {len(sweep_data['amendments'])}", file=sys.stderr)
     return 0
 
