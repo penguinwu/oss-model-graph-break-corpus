@@ -168,8 +168,40 @@ def main() -> int:
     timestamp = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H-%MZ")
     amendment_id = f"{timestamp}-{args.reason}"
 
-    # Check for collisions
-    existing_ids = {a.get("amendment_id") for a in sweep_data.get("amendments", [])}
+    # Dedup guard: refuse if a previous amendment with the SAME fix_commit covers
+    # the SAME (name, mode) keys. Catches accidental re-runs from misdiagnosed
+    # "killed" processes (the disowned child often completed even when the
+    # foreground Bash wrapper got SIGTERM'd) — we lost trust by writing 3 dup
+    # amendments on 2026-05-04 morning.
+    existing_amendments = sweep_data.get("amendments", [])
+    new_keys = set()
+    with open(args.models) as f:
+        spec_list = json.load(f)
+    for spec in spec_list:
+        for mode in args.modes:
+            new_keys.add((spec["name"], mode))
+    for prior in existing_amendments:
+        if prior.get("fix_commit") != args.fix_commit:
+            continue
+        prior_keys = {(r["name"], r["mode"]) for r in prior.get("rows", [])}
+        if new_keys.issubset(prior_keys):
+            if not args.force_supersede:
+                print(
+                    f"ERROR: a prior amendment with fix_commit={args.fix_commit} "
+                    f"already covers all {len(new_keys)} (name, mode) keys "
+                    f"you're about to amend.\n"
+                    f"  Prior amendment_id: {prior['amendment_id']!r}\n"
+                    f"  Applied at: {prior['applied_at']}\n"
+                    f"  This is usually a duplicate run after a misdiagnosed "
+                    f"'killed' process (the disowned child likely ran to completion).\n"
+                    f"  Verify with: ls {results_path.parent}/_amend_workspace_*\n"
+                    f"  Use --force-supersede to add a new amendment anyway.",
+                    file=sys.stderr,
+                )
+                return 1
+
+    # Check for ID collisions
+    existing_ids = {a.get("amendment_id") for a in existing_amendments}
     supersedes = None
     if amendment_id in existing_ids:
         if not args.force_supersede:
