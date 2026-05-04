@@ -38,10 +38,12 @@ def load_experiment(path):
 
 
 def load_sweep(path):
-    with open(path) as f:
-        data = json.load(f)
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+    from sweep.results_loader import load_results_list
     results = {}
-    for r in data["results"]:
+    for r in load_results_list(path):
         name = r["name"]
         key = (name, r.get("mode", "eval"))
         results[key] = r["status"]

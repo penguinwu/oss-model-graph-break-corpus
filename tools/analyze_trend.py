@@ -44,21 +44,23 @@ from corpus_constants import (
 
 def load_identify(path):
     """Load identify results into {name: {mode: status}}."""
-    with open(path) as f:
-        data = json.load(f)
-
+    from pathlib import Path as _Path
+    p = _Path(path)
     d = defaultdict(dict)
-    if isinstance(data, dict) and "models" in data:
-        # corpus.json format
+    if p.name == "corpus.json":
+        with open(path) as f:
+            data = json.load(f)
         for m in data["models"]:
             for mode in ("eval", "train"):
                 if mode in m:
                     d[m["name"]][mode] = m[mode].get("status", "unknown")
-    else:
-        # identify_results.json format (flat list or {results: [...]})
-        results = data if isinstance(data, list) else data.get("results", [])
-        for r in results:
-            d[r["name"]][r.get("mode", "eval")] = r.get("status", "unknown")
+        return d
+    # identify_results.json — route through canonical loader (merges amendments)
+    import sys as _sys
+    _sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+    from sweep.results_loader import load_results_list
+    for r in load_results_list(path):
+        d[r["name"]][r.get("mode", "eval")] = r.get("status", "unknown")
     return d
 
 

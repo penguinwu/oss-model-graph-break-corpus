@@ -231,10 +231,14 @@ def load_correctness_data(correctness_path, pytorch_version="unknown",
 
 
 def load_identify_data(identify_path):
-    with open(identify_path) as f:
-        data = json.load(f)
-    results = data.get("results", data) if isinstance(data, dict) else data
-    meta = data.get("metadata", {}) if isinstance(data, dict) else {}
+    # Route through canonical loader so amendments are merged
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+    from sweep.results_loader import load_raw, load_results_list
+    results = load_results_list(identify_path)
+    raw = load_raw(identify_path)
+    meta = raw.get("metadata", {})
     versions = meta.get("versions", {})
     metadata = {
         "pytorch_version": versions.get("torch", meta.get("pytorch_version", "unknown")),

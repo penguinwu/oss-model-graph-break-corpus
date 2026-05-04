@@ -43,9 +43,11 @@ def infer_source(name: str) -> str:
 
 
 def report(path: Path) -> None:
-    with open(path) as f:
-        data = json.load(f)
-    results = data.get("results", data) if isinstance(data, dict) else data
+    # Route through canonical loader so amendments are merged
+    import sys as _sys
+    _sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from sweep.results_loader import load_results_list
+    results = load_results_list(path)
 
     # Backfill source on rows that don't have it
     backfilled = 0

@@ -70,7 +70,14 @@ EXPLAIN_FIELDS = [
 
 
 def load_sweep_results(path):
-    """Load results from a JSON file (supports {results: [...]} or [...])."""
+    """Load results from a JSON file. For identify_results.json, route through
+    sweep.results_loader so amendments are merged."""
+    path = Path(path)
+    if path.name == "identify_results.json":
+        import sys as _sys
+        _sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from sweep.results_loader import load_results_list
+        return load_results_list(path)
     with open(path) as f:
         data = json.load(f)
     if isinstance(data, dict):

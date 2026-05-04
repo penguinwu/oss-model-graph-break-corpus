@@ -17,22 +17,19 @@ import sys
 
 
 def load_results(path):
-    """Load results from JSON or JSONL file.
-
-    Supports:
-    - Standard JSON: array of results or {"results": [...]}
-    - JSONL: one JSON object per line (sweep checkpoint format)
-    """
-    with open(path) as f:
-        content = f.read()
-
-    content = content.strip()
-    if content.startswith('[') or (content.startswith('{') and '\n' not in content):
-        # Standard JSON array, or single-line JSON object
-        data = json.loads(content)
-        results = data if isinstance(data, list) else data.get("results", [])
+    """Load results from JSON or JSONL file. For identify_results.json,
+    routes through sweep.results_loader so amendments are merged."""
+    from pathlib import Path
+    p = Path(path)
+    if p.name == "identify_results.json":
+        import sys as _sys
+        _sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from sweep.results_loader import load_results_list
+        results = load_results_list(p)
     else:
-        # JSONL or multi-line JSON object — try JSON first, fall back to JSONL
+        with open(path) as f:
+            content = f.read()
+        content = content.strip()
         try:
             data = json.loads(content)
             results = data if isinstance(data, list) else data.get("results", [])

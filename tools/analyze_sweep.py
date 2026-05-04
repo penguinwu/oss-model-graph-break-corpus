@@ -13,9 +13,10 @@ from pathlib import Path
 
 
 def load_results(path):
-    """Load results from JSON or JSONL checkpoint file."""
+    """Load results from JSON (with amendments merged) or JSONL checkpoint file."""
     path = Path(path)
     if path.suffix == ".jsonl":
+        # Streaming/checkpoint files are intra-sweep state — no amendments yet
         results = []
         with open(path) as f:
             for line in f:
@@ -23,9 +24,10 @@ def load_results(path):
                 if line:
                     results.append(json.loads(line))
         return results
-    else:
-        data = json.load(open(path))
-        return data.get("results", data)
+    # identify_results.json: route through canonical loader to merge amendments
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from sweep.results_loader import load_results_list
+    return load_results_list(path)
 
 
 def analyze(results):

@@ -28,27 +28,32 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def load_results(path):
-    """Load identify_results.json into {(name, mode): status} map."""
-    with open(path) as f:
-        data = json.load(f)
-    results = data.get("results", data) if isinstance(data, dict) else data
+    """Load identify_results.json (with amendments merged) into {(name, mode): status} map."""
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+    from sweep.results_loader import load_raw, load_results_list
+    results = load_results_list(path)
+    raw = load_raw(path)
     m = {}
     for r in results:
         if isinstance(r, dict) and "name" in r:
             m[(r["name"], r.get("mode", "eval"))] = r.get("status", "unknown")
-    return m, data.get("metadata", {})
+    return m, raw.get("metadata", {})
 
 
 def load_versions(base_dir):
     """Load versions from results metadata (embedded in identify_results.json)."""
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
     identify_path = os.path.join(base_dir, "identify_results.json")
     if os.path.exists(identify_path):
-        with open(identify_path) as f:
-            data = json.load(f)
-        if isinstance(data, dict):
-            versions = data.get("metadata", {}).get("versions", {})
-            if versions:
-                return versions
+        from sweep.results_loader import load_raw
+        data = load_raw(identify_path)
+        versions = data.get("metadata", {}).get("versions", {})
+        if versions:
+            return versions
     return {}
 
 
