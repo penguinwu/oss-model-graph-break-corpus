@@ -204,8 +204,13 @@ def main():
     last_completed_for_phase = last_obs.get("completed", -1) if last_obs.get("phase") == phase else -1
     last_at = last_obs.get("at")
     first_obs = wd.get("first_observation")
-    if first_obs is None or first_obs.get("phase") != phase:
-        first_obs = {"phase": phase, "completed": completed,
+    # Reset first_observation when phase OR pid changes, so progress-this-run
+    # always reflects the CURRENT sweep instance (not a stale baseline carried
+    # across kills+relaunches).
+    if (first_obs is None
+            or first_obs.get("phase") != phase
+            or first_obs.get("pid") != pid):
+        first_obs = {"phase": phase, "completed": completed, "pid": pid,
                      "at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
         wd["first_observation"] = first_obs
 
