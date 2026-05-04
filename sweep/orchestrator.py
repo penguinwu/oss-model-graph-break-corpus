@@ -86,6 +86,37 @@ class WorkerHandle:
         self.stderr_path = stderr_path
 
 
+def _wait_for_cuda_ready(pid: int, timeout_s: float = 60.0) -> bool:
+    """Block until worker `pid` writes /tmp/sweep-cuda-ready-{pid}.flag.
+
+    Returns True if the flag appears within timeout, False otherwise.
+    Removes the flag on success so /tmp doesn't accumulate stale files.
+
+    Used by the first-pool sequential-spawn path (Option 1) to confirm a
+    worker has finished CUDA-context init before spawning the next worker —
+    eliminates the CUDA-context-init race documented at
+    aten/src/ATen/Context.cpp:166-172 (CUDA_ERROR_INVALID_HANDLE under
+    concurrent cuInit() on the same GPU).
+    """
+    from pathlib import Path
+    flag = Path(f"/tmp/sweep-cuda-ready-{pid}.flag")
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if flag.exists():
+            try:
+                flag.unlink()
+            except OSError:
+                pass
+            return True
+        # Also bail if the worker died — no point waiting on a corpse.
+        try:
+            os.kill(pid, 0)
+        except (OSError, ProcessLookupError):
+            return False
+        time.sleep(0.2)
+    return False
+
+
 def spawn_worker(python_bin, spec, pass_num, device, mode, timeout_s,
                  dynamic=False, extra_args=None):
     """Spawn a worker subprocess in its own process group.
@@ -341,6 +372,28 @@ def run_pass(python_bin, specs, pass_num, device, modes, workers, timeout_s,
     # steady-state spawns (one slot at a time) pay zero overhead.
     SPAWN_STAGGER_S = float(os.environ.get("SWEEP_SPAWN_STAGGER_S", "3.0"))
 
+    # Option 1: sequential first-pool spawns. For the first `current_max`
+    # workers, wait for each to confirm CUDA-context init via the rendezvous
+    # flag at /tmp/sweep-cuda-ready-{pid}.flag (written by worker.py after
+    # _warm_cudnn_with_retry). After the first pool is warmed, enter
+    # steady-state where new spawns don't wait — driver is fully primed.
+    # This eliminates the CUDA-context-init race that the in-worker retry
+    # works around. The retry stays as belt-and-suspenders.
+    FIRST_POOL_READY_TIMEOUT_S = float(os.environ.get("SWEEP_FIRST_POOL_TIMEOUT_S", "60.0"))
+    spawns_so_far = 0  # for first-pool sequential gating
+
+    # Sweep stale rendezvous flags from prior runs (workers leak these on exit;
+    # orchestrator only consumes during first-pool window).
+    try:
+        import glob as _glob
+        for _stale in _glob.glob("/tmp/sweep-cuda-ready-*.flag"):
+            try:
+                os.unlink(_stale)
+            except OSError:
+                pass
+    except Exception:
+        pass
+
     # Build work queue
     pending = deque()
     for spec in specs:
@@ -494,10 +547,29 @@ def run_pass(python_bin, specs, pass_num, device, modes, workers, timeout_s,
                         model_timeout, dynamic, extra_args=extra_worker_args
                     )
                     active[handle.proc.pid] = handle
-                    # Stagger before the next consecutive spawn to give the
-                    # just-spawned worker a head start on cudnn lazy-load
-                    # initialization (see SPAWN_STAGGER_S comment for context).
-                    if SPAWN_STAGGER_S > 0 and pending and len(active) < current_max:
+                    spawns_so_far += 1
+
+                    # Inter-spawn pacing: during first-pool warm-up
+                    # (spawns_so_far <= current_max), block on each worker's
+                    # cuda-ready rendezvous flag — guarantees no two workers
+                    # are in CUDA-context init at the same time. After
+                    # first-pool, the driver is fully primed; fall back to
+                    # the existing 3s stagger.
+                    if spawns_so_far <= current_max:
+                        ready = _wait_for_cuda_ready(
+                            handle.proc.pid, FIRST_POOL_READY_TIMEOUT_S)
+                        if not ready:
+                            print(f"  ⚠ Worker {handle.proc.pid} ({spec['name']}) "
+                                  f"did not signal cuda-ready in "
+                                  f"{int(FIRST_POOL_READY_TIMEOUT_S)}s — proceeding "
+                                  f"(in-worker retry will catch dlopen race if it fires)",
+                                  flush=True)
+                        if spawns_so_far == current_max:
+                            print(f"  ✓ First-pool CUDA init complete "
+                                  f"({current_max} workers); steady-state spawning",
+                                  flush=True)
+                    elif SPAWN_STAGGER_S > 0 and pending and len(active) < current_max:
+                        # Steady-state stagger (driver already warm).
                         time.sleep(SPAWN_STAGGER_S)
                 except Exception as e:
                     # If we can't even spawn, record as error and continue

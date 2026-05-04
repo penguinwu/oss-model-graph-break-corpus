@@ -224,6 +224,28 @@ def _warm_cudnn_with_retry(max_attempts: int = 3) -> None:
 
 _warm_cudnn_with_retry()
 
+# Signal cuda-ready to orchestrator (Option 1: sequential first-pool spawns).
+# Orchestrator polls for /tmp/sweep-cuda-ready-{pid}.flag with a timeout to
+# decide when it's safe to spawn the next first-pool worker. Steady-state
+# spawns (after first-pool init) skip this wait. Failure to write the flag
+# is non-fatal — orchestrator falls back to its own timeout. Worker unlinks
+# its own flag on exit via atexit, so /tmp doesn't accumulate stale flags
+# from steady-state workers (orchestrator only consumes during first-pool).
+try:
+    from pathlib import Path as _RendezvousPath
+    import atexit as _atexit
+    _rendezvous_flag = _RendezvousPath(f"/tmp/sweep-cuda-ready-{os.getpid()}.flag")
+    _rendezvous_flag.touch()
+
+    def _cleanup_rendezvous_flag():
+        try:
+            _rendezvous_flag.unlink()
+        except (OSError, FileNotFoundError):
+            pass
+    _atexit.register(_cleanup_rendezvous_flag)
+except OSError:
+    pass
+
 
 # ─── Model creation ──────────────────────────────────────────────────────────
 
@@ -3732,6 +3754,17 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
     if not do_numeric:
         result["numeric_status"] = "skipped"
         result["numeric_skip_reason"] = "custom_compile_kwargs"
+    elif spec.get("name") in NON_DETERMINISTIC_MODELS:
+        # Mirror HF benchmarks's full pattern (common.py:2183): for models
+        # in the non-det opt-out set, accuracy comparison is unreliable
+        # (the model uses ops without deterministic CUDA impl, so two
+        # consecutive eager runs can produce slightly-different outputs;
+        # eager-vs-compiled divergence cannot be cleanly attributed to
+        # compiler bugs vs op non-determinism). HF maps "fail_accuracy"
+        # → "pass" for these. Our equivalent: explicit skip with reason,
+        # so downstream analysis doesn't false-positive on op flake.
+        result["numeric_status"] = "skipped"
+        result["numeric_skip_reason"] = "non_deterministic_model"
     elif out_eager is None:
         result["numeric_status"] = "skipped"
         result["numeric_skip_reason"] = "no_eager_output"
