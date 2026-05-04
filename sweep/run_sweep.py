@@ -529,6 +529,11 @@ def run_sweep(args):
         "Qwen3_5MoeForConditionalGeneration",
         "Qwen3NextModel", "Qwen3NextForCausalLM",
         "OlmoHybridModel", "OlmoHybridForCausalLM",
+        # Added 2026-05-04 after nightly week-over-week regression triage:
+        # AutoencoderTiny, SEWModel, SEWDModel intermittently hit
+        # eager_error/worker_error under 2-worker contention; pass cleanly
+        # at --workers 1.
+        "AutoencoderTiny", "SEWModel", "SEWDModel",
     }
 
     multi_specs = [s for s in specs if s["name"] not in _SINGLE_WORKER_MODELS]

@@ -1,71 +1,167 @@
 {
-  "_doc": "Models that legitimately fail with stable known unfixed bugs. The sweep skips these entirely AND validates that no NEW failure of the same class appears outside this list. New failures during a sweep MUST be either (a) added here with a reason, or (b) fixed at root. Goal: zero unexplained create_error/eager_error per sweep, so setup-side issues never mask real graph-break improvements/regressions.",
-  "_workflow": [
-    "1. To add an entry: append to `entries[]` with status (one of 'create_error' or 'eager_error'), model, modes, error_pattern (substring of the actual error message), added (ISO date), reason (one-line + issue link if applicable).",
-    "2. (REQUIRED) Add `applies_to_versions`: a list of major.minor torch versions where the bug is observed (e.g. ['2.10', '2.11']). The entry only applies when the active torch's major.minor matches one of these. Without this field, the entry applies universally — DO NOT do that for new entries. Force re-verification on each new release so we learn when a bug is fixed.",
-    "3. The sweep skips any (model, mode) pair whose entry applies to the active torch version. Skip is logged.",
-    "4. After identify pass, the sweep validates: every create_error or eager_error in results must match a known entry's (model, mode, status, error_pattern). Unmatched ones print a loud warning and (with --strict-known-errors) cause a non-zero exit.",
-    "5. To remove an entry: when the underlying bug is fixed (or worked around), delete it. Next sweep re-tests the model and surfaces the new status. Alternatively, narrow `applies_to_versions` to exclude the fixed releases."
-  ],
-  "_status_field": "Each entry's `status` must be either 'create_error' (model build/config fails) or 'eager_error' (model builds but pure-eager forward fails). The validator gates both classes with the same per-class strictness.",
-  "entries": [
-    {
-      "status": "create_error",
-      "model": "ZambaForCausalLM",
-      "modes": ["eval", "train"],
-      "error_pattern": "tie_weights_keys",
-      "applies_to_versions": ["2.11", "2.12", "2.13"],
-      "added": "2026-04-28",
-      "reason": "tie_weights_keys definition bug confirmed on PT 2.11 baseline, PT 2.12 nightly, AND torch-181552 (PT 2.13-dev a0). Re-verify on 2.14+ — drop the entry if the bug clears."
-    },
-    {
-      "status": "create_error",
-      "model": "ZambaModel",
-      "modes": ["eval", "train"],
-      "error_pattern": "tie_weights_keys",
-      "applies_to_versions": ["2.11", "2.12", "2.13"],
-      "added": "2026-04-28",
-      "reason": "Same root cause as ZambaForCausalLM."
-    },
-    {
-      "status": "create_error",
-      "model": "Qwen3OmniMoeTalkerModel",
-      "modes": ["eval", "train"],
-      "error_pattern": "Qwen3OmniMoeTalkerTextConfig",
-      "applies_to_versions": ["2.12", "2.13"],
-      "added": "2026-04-28",
-      "reason": "transformers config drift — Qwen3OmniMoeTalkerTextConfig missing 'shared_expert_intermediate_size' attribute. Surfaced on torch-181552 (PT 2.13-dev) AND PT 2.12 nightly. Not observed in PT 2.11 sweep (model wasn't in transformers 5.5.3). Re-verify on 2.14+."
-    },
-    {
-      "status": "eager_error",
-      "model": "PeAudioVideoModel",
-      "modes": ["eval", "train"],
-      "error_pattern": "None",
-      "applies_to_versions": ["2.11", "2.12", "2.13"],
-      "added": "2026-04-28",
-      "reason": "KeyError(None) in pure-eager forward. Confirmed on PT 2.11 baseline, PT 2.12 nightly, and PT 2.13-dev (Animesh sweep, after timm install). Re-verify on 2.14+."
-    },
-    {
-      "status": "eager_error",
-      "model": "MusicFlamingoForConditionalGeneration",
-      "modes": ["eval", "train"],
-      "error_pattern": "CUDA error: device-side assert triggered",
-      "applies_to_versions": ["2.11", "2.12", "2.13"],
-      "added": "2026-04-29",
-      "reason": "CUDA device-side assert in pure-eager forward (likely out-of-range index in embedding/scatter). Observed on PT 2.11 baseline, PT 2.12 nightly, AND PT 2.13-dev. Filed as #89. Re-verify on 2.14+."
-    },
-    {
-      "status": "eager_error",
-      "model": "PI0Model",
-      "modes": ["eval", "train"],
-      "error_pattern": "'NoneType' object has no attribute 'get_seq_length'",
-      "applies_to_versions": ["2.11", "2.12"],
-      "added": "2026-04-29",
-      "reason": "KV cache contract mismatch — model expects a non-None Cache object, corpus harness passes None. Observed on PT 2.11 and PT 2.12. Filed under #88 (corpus-harness escapee). Re-verify on 2.13+ — likely persists until the harness is fixed."
-    }
-  ],
-  "_notes_2026_04_30": [
-    "PT 2.12 sweep validation pass dropped Zamba2ForCausalLM and Zamba2Model entries — both eager_error on PT 2.11 (#90) but FULL_GRAPH on PT 2.12. Real PT 2.12 win.",
-    "8 cuDNN worker_errors (Ernie/Esm/EuroBert/Evolla/Exaone4 family) NOT added — confirmed transient via auto-retry pass which resolved all 8 to full_graph. Single worker died with broken CUDA context in a 44-second window during the main pass. Infrastructure noise, not a stable bug."
-  ]
+    "_doc": "Models that legitimately fail with stable known unfixed bugs. The sweep skips these entirely AND validates that no NEW failure of the same class appears outside this list. New failures during a sweep MUST be either (a) added here with a reason, or (b) fixed at root. Goal: zero unexplained create_error/eager_error per sweep, so setup-side issues never mask real graph-break improvements/regressions.",
+    "_workflow": [
+        "1. To add an entry: append to `entries[]` with status (one of 'create_error' or 'eager_error'), model, modes, error_pattern (substring of the actual error message), added (ISO date), reason (one-line + issue link if applicable).",
+        "2. (REQUIRED) Add `applies_to_versions`: a list of major.minor torch versions where the bug is observed (e.g. ['2.10', '2.11']). The entry only applies when the active torch's major.minor matches one of these. Without this field, the entry applies universally \u2014 DO NOT do that for new entries. Force re-verification on each new release so we learn when a bug is fixed.",
+        "3. The sweep skips any (model, mode) pair whose entry applies to the active torch version. Skip is logged.",
+        "4. After identify pass, the sweep validates: every create_error or eager_error in results must match a known entry's (model, mode, status, error_pattern). Unmatched ones print a loud warning and (with --strict-known-errors) cause a non-zero exit.",
+        "5. To remove an entry: when the underlying bug is fixed (or worked around), delete it. Next sweep re-tests the model and surfaces the new status. Alternatively, narrow `applies_to_versions` to exclude the fixed releases."
+    ],
+    "_status_field": "Each entry's `status` must be either 'create_error' (model build/config fails) or 'eager_error' (model builds but pure-eager forward fails). The validator gates both classes with the same per-class strictness.",
+    "entries": [
+        {
+            "status": "create_error",
+            "model": "ZambaForCausalLM",
+            "modes": [
+                "eval",
+                "train"
+            ],
+            "error_pattern": "tie_weights_keys",
+            "applies_to_versions": [
+                "2.11",
+                "2.12",
+                "2.13"
+            ],
+            "added": "2026-04-28",
+            "reason": "tie_weights_keys definition bug confirmed on PT 2.11 baseline, PT 2.12 nightly, AND torch-181552 (PT 2.13-dev a0). Re-verify on 2.14+ \u2014 drop the entry if the bug clears."
+        },
+        {
+            "status": "create_error",
+            "model": "ZambaModel",
+            "modes": [
+                "eval",
+                "train"
+            ],
+            "error_pattern": "tie_weights_keys",
+            "applies_to_versions": [
+                "2.11",
+                "2.12",
+                "2.13"
+            ],
+            "added": "2026-04-28",
+            "reason": "Same root cause as ZambaForCausalLM."
+        },
+        {
+            "status": "create_error",
+            "model": "Qwen3OmniMoeTalkerModel",
+            "modes": [
+                "eval",
+                "train"
+            ],
+            "error_pattern": "Qwen3OmniMoeTalkerTextConfig",
+            "applies_to_versions": [
+                "2.12",
+                "2.13"
+            ],
+            "added": "2026-04-28",
+            "reason": "transformers config drift \u2014 Qwen3OmniMoeTalkerTextConfig missing 'shared_expert_intermediate_size' attribute. Surfaced on torch-181552 (PT 2.13-dev) AND PT 2.12 nightly. Not observed in PT 2.11 sweep (model wasn't in transformers 5.5.3). Re-verify on 2.14+."
+        },
+        {
+            "status": "eager_error",
+            "model": "PeAudioVideoModel",
+            "modes": [
+                "eval",
+                "train"
+            ],
+            "error_pattern": "None",
+            "applies_to_versions": [
+                "2.11",
+                "2.12",
+                "2.13"
+            ],
+            "added": "2026-04-28",
+            "reason": "KeyError(None) in pure-eager forward. Confirmed on PT 2.11 baseline, PT 2.12 nightly, and PT 2.13-dev (Animesh sweep, after timm install). Re-verify on 2.14+."
+        },
+        {
+            "status": "eager_error",
+            "model": "MusicFlamingoForConditionalGeneration",
+            "modes": [
+                "eval",
+                "train"
+            ],
+            "error_pattern": "CUDA error: device-side assert triggered",
+            "applies_to_versions": [
+                "2.11",
+                "2.12",
+                "2.13"
+            ],
+            "added": "2026-04-29",
+            "reason": "CUDA device-side assert in pure-eager forward (likely out-of-range index in embedding/scatter). Observed on PT 2.11 baseline, PT 2.12 nightly, AND PT 2.13-dev. Filed as #89. Re-verify on 2.14+."
+        },
+        {
+            "status": "eager_error",
+            "model": "PI0Model",
+            "modes": [
+                "eval",
+                "train"
+            ],
+            "error_pattern": "'NoneType' object has no attribute 'get_seq_length'",
+            "applies_to_versions": [
+                "2.11",
+                "2.12"
+            ],
+            "added": "2026-04-29",
+            "reason": "KV cache contract mismatch \u2014 model expects a non-None Cache object, corpus harness passes None. Observed on PT 2.11 and PT 2.12. Filed under #88 (corpus-harness escapee). Re-verify on 2.13+ \u2014 likely persists until the harness is fixed."
+        },
+        {
+            "status": "eager_error",
+            "model": "AriaTextModel",
+            "modes": [
+                "eval",
+                "train"
+            ],
+            "error_pattern": "_histc_cuda with floating point input does not have a deterministic implementation",
+            "applies_to_versions": [
+                "2.13"
+            ],
+            "added": "2026-05-04",
+            "reason": "Aria models call _histc_cuda which has no deterministic CUDA impl. Surfaces under harness's default-determinism (commit 816a203, 2026-05-01) per design \u2014 the determinism setup is intended to flag non-deterministic eager paths as eager_error rather than hide them as tolerance noise. Re-verify on torch 2.14+ when _histc_cuda may gain deterministic impl."
+        },
+        {
+            "status": "eager_error",
+            "model": "AriaTextForCausalLM",
+            "modes": [
+                "eval",
+                "train"
+            ],
+            "error_pattern": "_histc_cuda with floating point input does not have a deterministic implementation",
+            "applies_to_versions": [
+                "2.13"
+            ],
+            "added": "2026-05-04",
+            "reason": "See AriaTextModel \u2014 same _histc_cuda determinism path."
+        },
+        {
+            "status": "eager_error",
+            "model": "AriaModel",
+            "modes": [
+                "eval",
+                "train"
+            ],
+            "error_pattern": "_histc_cuda with floating point input does not have a deterministic implementation",
+            "applies_to_versions": [
+                "2.13"
+            ],
+            "added": "2026-05-04",
+            "reason": "See AriaTextModel \u2014 same _histc_cuda determinism path."
+        },
+        {
+            "status": "eager_error",
+            "model": "AriaForConditionalGeneration",
+            "modes": [
+                "eval",
+                "train"
+            ],
+            "error_pattern": "_histc_cuda with floating point input does not have a deterministic implementation",
+            "applies_to_versions": [
+                "2.13"
+            ],
+            "added": "2026-05-04",
+            "reason": "See AriaTextModel \u2014 same _histc_cuda determinism path."
+        }
+    ],
+    "_notes_2026_04_30": [
+        "PT 2.12 sweep validation pass dropped Zamba2ForCausalLM and Zamba2Model entries \u2014 both eager_error on PT 2.11 (#90) but FULL_GRAPH on PT 2.12. Real PT 2.12 win.",
+        "8 cuDNN worker_errors (Ernie/Esm/EuroBert/Evolla/Exaone4 family) NOT added \u2014 confirmed transient via auto-retry pass which resolved all 8 to full_graph. Single worker died with broken CUDA context in a 44-second window during the main pass. Infrastructure noise, not a stable bug."
+    ]
 }

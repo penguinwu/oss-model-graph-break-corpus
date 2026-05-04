@@ -17,7 +17,7 @@
 
 **Top single-target Dynamo improvements that would unlock the most models** (each cross-referenced to corpus filed-issue + verified upstream PR/commit):
 
-1. **Deepcopy polyfill — LANDED.** PR #179611 ([dynamo] Support copy.deepcopy via polyfill) landed via ghstack 2026-04-11 as commit `61fdec7ddb5d` on pytorch main. **Already in current torch nightly** (`2.13.0.dev20260502+` and later). **Already in `release/2.12`** (verified: `behind_by=0`). Corpus tracking: Issue #1 (closed 2026-04-19 with verification). Expected impact: ~164 breaks at `copy.py:151` cleared. Will be verified on today's in-flight nightly sweep when explain pass completes.
+1. **Deepcopy polyfill — LANDED + VERIFIED.** PR #179611 ([dynamo] Support copy.deepcopy via polyfill) landed via ghstack 2026-04-11 as commit `61fdec7ddb5d` on pytorch main. **Already in current torch nightly** (`2.13.0.dev20260502+` and later) and `release/2.12` (verified: `behind_by=0`). Corpus tracking: Issue #1 (closed 2026-04-19 with verification). **Empirically verified on 2026-05-03 nightly sweep:** ZERO `copy.py:151` / `copy.deepcopy` break entries in explain output (was ~108 entries in PT 2.12 baseline). The single largest break-cluster from PT 2.11/2.12 is fully cleared.
 
 2. **`CALL_FUNCTION_EX` (variadic call) better handling** — would resolve ~177 of 431 #103 wrapper occurrences. Corpus tracking: Issue #103 (open). Also helps with the `output_capturing.py:192` cascade (122 breaks at that single line). No upstream PR visible yet — would be net-new Dynamo work.
 
@@ -359,13 +359,17 @@ Looking at the 223 models with `graph_break` status in either mode (where we hav
 
 ## §7. Deep-dive — `Failed to handle graph break gracefully` (#102) and `Cannot resume from graph break` (#103)
 
-**Scale (PT 2.12, de-duplicated):**
+**Scale (PT 2.12 baseline, de-duplicated):**
 
 | Wrapper issue | Models affected | Total occurrences |
 |---|---:|---:|
 | **#102** "Failed to handle graph break gracefully" | **193** | 1001 |
-| **#103** "Cannot resume from graph break" | **141** | 431 |
+| **#103** "Cannot resume from graph break" | **141**¹ | 431¹ |
 | **#104** (meta — better error messages) | n/a | n/a |
+
+¹ The #103 numbers come from earlier issue-filing data, not from the PT 2.12 explain output directly. Verification on 2026-05-04: a substring search for "Cannot resume from graph break" in `pt2.12-2026-04-30/explain_results.json` returns ZERO entries — same for the 2026-05-03 nightly. Either (a) the wrapper text changed in torch versions between when the issue-filing data was captured and the PT 2.12 baseline run, or (b) the 141/431 figures were computed via a different classifier path that's not currently in the repo. Treat #103 numbers as **needs source verification** before publishing externally.
+
+**Update on the 2026-05-03 nightly:** #102 wrapper persists at scale — **949 entries / 195 models** (vs PT 2.12 baseline 1001/193). Net flat. The frame-skip over-match fix (commit `a62a63d`, 2026-05-02) improved corpus-side classification but did NOT clear underlying torch-side breaks. **#102 remains the largest single-target Dynamo improvement opportunity.**
 
 Both wrappers grew slightly from the issue-filing data (#102: 166→193; #103: 107→141) due to the 29 newly-added models in 2.12 hitting them as well.
 
@@ -439,6 +443,17 @@ Net deltas (intersection only):
 - **timeout: +4** (Blt cases)
 
 The "deepcopy shape shift" pattern (PT 2.11 break type `gb0179` at user's call site → PT 2.12 break type `gb0007` deep in copy module internals at `__reduce_ex__`) was investigated as a candidate regression. Verified with controlled probe — it's a real different graph break, caused by Animesh's PR #177443/#177484 (in PT 2.12). The polyfill PR #179611 is NOT in PT 2.12 (closed 2026-04-11, after the 2026-04-07 snapshot). When the polyfill lands the deepcopy break should resolve.
+
+### Week-over-week regression watch (2026-04-26 → 2026-05-03 nightlies)
+
+Both nightlies on torch 2.13.dev stack (8 days apart, ~7 days of nightly commits + transformers 5.7→5.8.0.dev0 update + harness default-determinism added 2026-05-01). 96-97% of common 747 models unchanged. 8 models regressed; all have a clear resolution.
+
+| Model(s) | Transition | Root cause | Resolution |
+|---|---|---|---|
+| AutoencoderTiny | full_graph → eager_error | Flaky under multi-worker GPU contention; passes serial | Added to `_SINGLE_WORKER_MODELS` registry (commit pending) |
+| SEWModel, SEWDModel | (worker_error or graph_break)→worker_error | Flaky under multi-worker contention; passes serial | Added to `_SINGLE_WORKER_MODELS` registry |
+| AriaTextModel, AriaTextForCausalLM, AriaModel, AriaForConditionalGeneration | (full_graph or graph_break) → eager_error | `_histc_cuda` has no deterministic CUDA implementation; harness default-determinism (commit `816a203`, 2026-05-01) correctly surfaces this as eager_error per design (not a regression — *exposed* a pre-existing model-side issue) | Added 4 entries to `sweep/known_errors.json` with `error_pattern: "_histc_cuda…does not have a deterministic implementation"` and `applies_to_versions: ["2.13"]`. Re-verify on 2.14+ |
+| MimiModel | graph_break → eager_error | `RuntimeError: _unsafe_index found unexpected index type Float` in pure eager. Reproduces at torch `2.13.0.dev20260502` (git `671f5614`) but not at `2.13.0.dev20260425` (git `6992d018`). Probable regression in indexing op validation in that ~7-day commit window | Issue draft prepared at `/tmp/mimi-pytorch-issue-draft.md`. Pending Peng review before filing pytorch issue + corpus issue. Cannot bisect locally — only have endpoints in venv pool |
 
 ---
 
