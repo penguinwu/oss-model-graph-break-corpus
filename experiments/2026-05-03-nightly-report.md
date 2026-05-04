@@ -27,7 +27,7 @@ Comparison restricted to (name, mode) pairs present in BOTH nightlies. New model
 
 **Net fullgraph delta on common models: +25 work items** (eval +16, train +9). All four worker_errors from baseline are gone (one was a real cudnn race that the harness fix addressed; the rest matured into clean eager paths). Notable: −12 eager_errors across both modes — the harness fix lifted Qwen3VL/Qwen3.5 vision encoders out of `eager_error` cleanly.
 
-**Note:** An earlier revision of this section had numerically incorrect entries (the per-status column counts mixed in non-intersection rows asymmetrically — e.g., counted 20 work items for 10 models that were REMOVED from 05-03 in the 04-26 column, and partially included new models in the 05-03 column). The narrative below — improvement counts, transitions, regression list, +25 net delta — was derived from the correct intersection logic and is unchanged. Only the per-status table above was fixed (commit `<TBD>`).
+**Note:** An earlier revision of this section had numerically incorrect entries (the per-status column counts mixed in non-intersection rows asymmetrically — e.g., counted 20 work items for 10 models that were REMOVED from 05-03 in the 04-26 column, and partially included new models in the 05-03 column). The narrative below — improvement counts, transitions, regression list, +25 net delta — was derived from the correct intersection logic and is unchanged. Only the per-status table above was fixed (commit `647330e`).
 
 ### Improvements (transitions to better state)
 
