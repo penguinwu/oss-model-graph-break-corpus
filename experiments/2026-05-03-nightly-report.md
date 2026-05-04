@@ -1,208 +1,195 @@
-# 2026-05-03 Nightly Sweep Report
+# Sweep comparison report — 2026-05-03 vs 2026-04-26
 
-**Baseline:** 2026-04-26 nightly (Sunday) — `torch=2.13.0.dev20260425+cu126`, `transformers=5.6.2`, `diffusers=0.37.1`
-**Current:** 2026-05-03 nightly (Sunday) — `torch=2.13.0.dev20260502+cu126`, `transformers=5.8.0.dev0`, `diffusers=0.38.0`
-**Window:** 7 days of torch nightly head + transformers 5.6→5.8 + diffusers 0.37→0.38
+**Baseline:** `sweep_results/nightly/2026-04-26`  (1514 work items)
+**Current:**  `sweep_results/nightly/2026-05-03`  (1724 work items)
+**Common:**   1494 work items
+**New:**      230 work items (in current only)
+**Removed:**  20 work items (in baseline only)
+**Skipped (known_errors.json gated, in either nightly):** 4 work items
 
-**Amendment applied:** `2026-05-04T14-59Z-aria-sew-autotiny-fix` (commit `588b659`) — folds in 2026-05-04 morning's harness fixes for AutoencoderTiny + SEW family + Aria family. Original sweep `results[]` is byte-identical to last night's data; amendment data is in `identify_results.json`'s new `amendments[]` array. All consumer tools route through `sweep/results_loader.py` which merges amendments transparently.
-
----
-
-## Part 1 — Apple-to-apple: Common models only (1494 work items)
-
-Comparison restricted to (name, mode) pairs present in BOTH nightlies. New models added in 2026-05-03 are excluded here and analyzed separately in Part 2.
-
-### Status counts on common models
-
-| Status | 04-26 eval | 05-03 eval | Δ eval | 04-26 train | 05-03 train | Δ train |
-|---|---|---|---|---|---|---|
-| full_graph | 581 | 597 | **+16** | 509 | 518 | **+9** |
-| graph_break | 137 | 131 | **−6** | 205 | 206 | +1 |
-| eager_error | 9 | 3 | **−6** | 9 | 3 | **−6** |
-| worker_error | 2 | 0 | **−2** | 2 | 0 | **−2** |
-| timeout | 4 | 2 | **−2** | 4 | 2 | **−2** |
-| create_error | 14 | 14 | 0 | 14 | 14 | 0 |
-| skipped | 0 | 0 | 0 | 4 | 4 | 0 |
-| **TOTAL** | **747** | **747** | 0 | **747** | **747** | 0 |
-
-**Net fullgraph delta on common models: +25 work items** (eval +16, train +9). All four worker_errors from baseline are gone (one was a real cudnn race that the harness fix addressed; the rest matured into clean eager paths). Notable: −12 eager_errors across both modes — the harness fix lifted Qwen3VL/Qwen3.5 vision encoders out of `eager_error` cleanly.
-
-**Note:** An earlier revision of this section had numerically incorrect entries (the per-status column counts mixed in non-intersection rows asymmetrically — e.g., counted 20 work items for 10 models that were REMOVED from 05-03 in the 04-26 column, and partially included new models in the 05-03 column). The narrative below — improvement counts, transitions, regression list, +25 net delta — was derived from the correct intersection logic and is unchanged. Only the per-status table above was fixed (commit `647330e`).
-
-### Improvements (transitions to better state)
-
-37 work items moved to better state on common models:
-
-- **graph_break → full_graph: 15 work items** — compiler now traces these without breaks
-  - Siglip2VisionModel (eval), Siglip2Model (train)
-  - PPDocLayoutV2Model (eval), SmolVLMForConditionalGeneration (eval)
-  - LwDetrModel (eval), RTDetrV2Model (eval), GroundingDinoModel (eval), DFineModel (eval)
-  - ... and 7 more
-- **eager_error → graph_break: 8 work items** — Qwen3VL/Qwen3.5 vision encoders now load + run eager
-  - Qwen3_5VisionModel, Qwen3_5MoeVisionModel, Qwen3VLVisionModel, Qwen3VLMoeVisionModel (both modes each)
-- **eager_error → full_graph: 6 work items**
-  - Qwen2_5OmniToken2WavDiTModel, MllamaVisionModel, Qwen2_5OmniToken2WavBigVGANModel (both modes each)
-- **worker_error → graph_break: 4 work items** — GPT-SoVITS variants no longer crash workers
-- **timeout → full_graph: 4 work items** — Blt models now finish + compile clean
-  - BltModel, BltForCausalLM (both modes each)
-
-### GB shape changes (graph_break in BOTH nightlies, count differs)
-
-14 models had `graph_break` in both nightlies but with different break counts. **Net delta: −24 graph breaks** (29 fewer minus 5 more).
-
-**Reductions (improvements):**
-
-| Model | Mode | 04-26 GBs | 05-03 GBs | Δ |
-|---|---|---|---|---|
-| PPDocLayoutV3Model | train | 21 | 11 | **−10** |
-| RTDetrModel | train | 14 | 8 | **−6** |
-| PPDocLayoutV2Model | train | 14 | 8 | **−6** |
-| TimeSeriesTransformerModel | train | 11 | 9 | −2 |
-| GraniteMoeHybridForCausalLM | eval | 10 | 9 | −1 |
-| GraniteMoeHybridForCausalLM | train | 10 | 9 | −1 |
-| GraniteMoeHybridModel | eval | 9 | 8 | −1 |
-| GraniteMoeHybridModel | train | 9 | 8 | −1 |
-| LongcatFlashForCausalLM | eval | 13 | 12 | −1 |
-
-PPDocLayoutV3 train −10 is the standout — likely a single hot break-pattern got fixed upstream. Worth investigating which `break_reason` no longer appears.
-
-**Increases:**
-
-| Model | Mode | 04-26 GBs | 05-03 GBs | Δ |
-|---|---|---|---|---|
-| LongcatFlashModel | eval | 11 | 12 | +1 |
-| M2M100ForConditionalGeneration | train | 7 | 8 | +1 |
-| SeamlessM4TModel | train | 5 | 6 | +1 |
-| LongcatFlashModel | train | 11 | 12 | +1 |
-| LongcatFlashForCausalLM | train | 12 | 13 | +1 |
-
-All +1, no large new break clusters.
-
-### Regressions
-
-**Zero real upstream torch regressions** in this nightly post-amendment.
-
-The 2 surface-level MimiModel regressions (eval + train, `graph_break → eager_error` with `_unsafe_index found unexpected index type Float`) were initially diagnosed as a torch nightly regression in the 04-25 → 05-02 window, but verification on 2026-05-04 across torch 2.8 / 2.9 / 2.10 / 2.11 / 2.12-dev / 2.13-dev showed the bug **reproduces unchanged on every version**. It is a long-standing PyTorch decomp bug in `_replication_pad` (filed as [pytorch/pytorch#182339](https://github.com/pytorch/pytorch/issues/182339)) exposed only because we enabled `torch.use_deterministic_algorithms(True)` by default in commit `816a203` on 2026-05-01. MimiModel is the only model in the corpus that hits the trigger condition (`nn.functional.pad(mode='replicate')` with a tensor padding amount); EncodecModel uses identical `_pad1d` code but `mode='reflect'` and is unaffected. Added to `sweep/known_errors.json` (eager_error, all observed versions) — will be skipped on future sweeps until pytorch/pytorch#182339 lands.
-
-| Model | Mode | 04-26 | 05-03 | Status |
-|---|---|---|---|---|
-| MimiModel | eval | graph_break | eager_error | known_errors (PT decomp bug, pytorch#182339) |
-| MimiModel | train | graph_break | eager_error | known_errors (PT decomp bug, pytorch#182339) |
-
-The other 8 surface-level regressions detected in the raw sweep (AutoencoderTiny, SEW family, Aria family) were resolved in code by 2026-05-04 commits and folded in via the amendment. Their `result_source` field reads `amended:2026-05-04T14-59Z-aria-sew-autotiny-fix`.
+**Invariants:** ✓ all passed  (partition complete, explain coverage complete)
 
 ---
 
-## Part 2 — Detailed analysis: NEW models (in 05-03 only)
+## 1. Improvements: error → compile-success (22 work items)
 
-230 new work items across **115 new models** added between sweeps — driven by `transformers 5.6.2 → 5.8.0.dev0` and `diffusers 0.37.1 → 0.38.0`.
+| Model | Mode | baseline | → | current | GB count |
+|---|---|---|---|---|---|
+| BltForCausalLM | eval | timeout | → | full_graph | 0 |
+| BltForCausalLM | train | timeout | → | full_graph | 0 |
+| BltModel | eval | timeout | → | full_graph | 0 |
+| BltModel | train | timeout | → | full_graph | 0 |
+| GPT-SoVITS-SynthesizerTrn | eval | worker_error | → | graph_break | 6 |
+| GPT-SoVITS-SynthesizerTrn | train | worker_error | → | graph_break | 6 |
+| GPT-SoVITS-SynthesizerTrn-forward | eval | worker_error | → | graph_break | 10 |
+| GPT-SoVITS-SynthesizerTrn-forward | train | worker_error | → | graph_break | 10 |
+| MllamaVisionModel | eval | eager_error | → | full_graph | 0 |
+| MllamaVisionModel | train | eager_error | → | full_graph | 0 |
+| Qwen2_5OmniToken2WavBigVGANModel | eval | eager_error | → | full_graph | 0 |
+| Qwen2_5OmniToken2WavBigVGANModel | train | eager_error | → | full_graph | 0 |
+| Qwen2_5OmniToken2WavDiTModel | eval | eager_error | → | full_graph | 0 |
+| Qwen2_5OmniToken2WavDiTModel | train | eager_error | → | full_graph | 0 |
+| Qwen3VLMoeVisionModel | eval | eager_error | → | graph_break | 14 |
+| Qwen3VLMoeVisionModel | train | eager_error | → | graph_break | 14 |
+| Qwen3VLVisionModel | eval | eager_error | → | graph_break | 14 |
+| Qwen3VLVisionModel | train | eager_error | → | graph_break | 14 |
+| Qwen3_5MoeVisionModel | eval | eager_error | → | graph_break | 14 |
+| Qwen3_5MoeVisionModel | train | eager_error | → | graph_break | 14 |
+| Qwen3_5VisionModel | eval | eager_error | → | graph_break | 14 |
+| Qwen3_5VisionModel | train | eager_error | → | graph_break | 14 |
 
-### Status distribution on new models
+## 2. Regressions: compile-success → error (2 work items)
 
-| Status | eval | train |
+| Model | Mode | baseline | → | current | error message |
+|---|---|---|---|---|---|
+| MimiModel | eval | graph_break | → | eager_error | `_unsafe_index found unexpected index type Float` |
+| MimiModel | train | graph_break | → | eager_error | `_unsafe_index found unexpected index type Float` |
+
+## 3. Steady-state: compile-success in both (1430 work items)
+
+**GB-count: improved 20 / regressed 10 / unchanged 1400.** Net GB delta across category: **-124**
+
+### 3a. GB-count improved (fewer breaks)
+
+| Model | Mode | baseline GB | current GB | Δ | shift class |
+|---|---|---|---|---|---|
+| SmolVLMForConditionalGeneration | train | 20 | 0 | -20 | REAL_NEW |
+| SmolVLMForConditionalGeneration | eval | 20 | 0 | -20 | REAL_NEW |
+| LwDetrModel | train | 12 | 0 | -12 | REAL_NEW |
+| LwDetrModel | eval | 12 | 0 | -12 | REAL_NEW |
+| PPDocLayoutV3Model | eval | 12 | 0 | -12 | REAL_NEW |
+| RTDetrModel | eval | 9 | 0 | -9 | REAL_NEW |
+| Siglip2Model | eval | 9 | 0 | -9 | REAL_NEW |
+| PPDocLayoutV2Model | eval | 9 | 0 | -9 | REAL_NEW |
+| Siglip2Model | train | 9 | 0 | -9 | REAL_NEW |
+| PPDocLayoutV3Model | train | 17 | 9 | -8 | REAL_NEW |
+| Siglip2VisionModel | eval | 7 | 0 | -7 | REAL_NEW |
+| Siglip2VisionModel | train | 7 | 0 | -7 | REAL_NEW |
+| PPDocLayoutV2Model | train | 14 | 9 | -5 | REAL_NEW |
+| RTDetrModel | train | 14 | 9 | -5 | REAL_NEW |
+| Qwen2AudioForConditionalGeneration | train | 11 | 10 | -1 | REAL_NEW |
+| Qwen2AudioForConditionalGeneration | eval | 5 | 4 | -1 | REAL_NEW |
+| GraniteMoeHybridModel | train | 11 | 10 | -1 | REAL_NEW |
+| GraniteMoeHybridForCausalLM | train | 13 | 12 | -1 | REAL_NEW |
+| GraniteMoeHybridModel | eval | 11 | 10 | -1 | REAL_NEW |
+| GraniteMoeHybridForCausalLM | eval | 13 | 12 | -1 | REAL_NEW |
+
+### 3b. GB-count regressed (more breaks)
+
+| Model | Mode | baseline GB | current GB | Δ | shift class |
+|---|---|---|---|---|---|
+| InstructBlipVideoModel | train | 0 | 9 | +9 | REAL_NEW |
+| InstructBlipModel | train | 0 | 9 | +9 | REAL_NEW |
+| MMGroundingDinoModel | train | 11 | 12 | +1 | REAL_NEW |
+| GroundingDinoModel | train | 11 | 12 | +1 | REAL_NEW |
+| DFineModel | train | 15 | 16 | +1 | REAL_NEW |
+| MMGroundingDinoModel | eval | 10 | 11 | +1 | REAL_NEW |
+| GroundingDinoModel | eval | 10 | 11 | +1 | REAL_NEW |
+| RTDetrV2Model | train | 15 | 16 | +1 | REAL_NEW |
+| DFineModel | eval | 10 | 11 | +1 | REAL_NEW |
+| RTDetrV2Model | eval | 10 | 11 | +1 | REAL_NEW |
+
+
+## 4. New models in current (230 work items)
+
+**Distinct new models:** 115
+
+**Status distribution:**
+
+| Status | Count |
+|---|---|
+| full_graph | 109 |
+| eager_error | 65 |
+| create_error | 23 |
+| timeout | 18 |
+| graph_break | 15 |
+
+**Compile-clean (full_graph):** 109 of 230 work items
+**Total graph breaks across new work items:** 143
+
+### Top 10 break reasons in new models
+
+| Count | Location | Op / Explanation |
 |---|---|---|
-| full_graph | 55 | 54 |
-| graph_break | 7 | 8 |
-| eager_error | 33 | 32 |
-| timeout | 9 | 9 |
-| create_error | 11 | 12 |
+| 57 | `unknown` | `Detected data-dependent branching (e.g. `if my_tensor.sum() > 0:`). Dynamo does not support tracing dynamic control flow` |
+| 16 | `unknown` | `aten.bincount.default` |
+| 9 | `unknown` | `aten._local_scalar_dense.default` |
+| 6 | `unknown` | `Dynamo does not know how to trace builtin operator `reversed` with argument types ['ModuleList'] (has_kwargs False)` |
+| 5 | `transformers/utils/output_capturing.py:239` | `Dynamo has no bytecode reconstruction implemented for sourceless variable DictItemsIterator().` |
+| 5 | `transformers/utils/output_capturing.py:224` | `Dynamo has no bytecode reconstruction implemented for sourceless variable DictIterator().` |
+| 4 | `diffusers/models/transformers/transformer_hidream_image.py:392` | `aten.bincount.default` |
+| 4 | `transformers/models/qwen3_5/modeling_qwen3_5.py:1312` | `Detected data-dependent branching (e.g. `if my_tensor.sum() > 0:`). Dynamo does not support tracing dynamic control flow` |
+| 4 | `diffusers/models/autoencoders/autoencoder_kl_hunyuanimage_refiner.py:209` | `Detected data-dependent branching (e.g. `if my_tensor.sum() > 0:`). Dynamo does not support tracing dynamic control flow` |
+| 4 | `diffusers/models/autoencoders/autoencoder_kl_hunyuanimage_refiner.py:166` | `Detected data-dependent branching (e.g. `if my_tensor.sum() > 0:`). Dynamo does not support tracing dynamic control flow` |
 
-**109 of 230 work items (47%) compile cleanly out of the box** — strong landing rate for diffusers / transformers additions.
+### NEW break reasons (not seen in any baseline model)
 
-### A. Full_graph new models (109 work items, 55 distinct models)
-
-Grouped by family — these are "free wins" the corpus picked up:
-
-**Transformer{N}D family (19 models):** AllegroTransformer3DModel, AuraFlowTransformer2DModel, BriaTransformer2DModel, ChromaTransformer2DModel, CogVideoXTransformer3DModel, CogView3PlusTransformer2DModel, CogView4Transformer2DModel, ConsisIDTransformer3DModel, and 11 more
-
-**AutoencoderKL family (15 models):** AsymmetricAutoencoderKL, AutoencoderKLAllegro, AutoencoderKLCogVideoX, AutoencoderKLCosmos, AutoencoderKLFlux2, AutoencoderKLHunyuanVideo, AutoencoderKLKVAE, AutoencoderKLKVAEVideo, and 7 more
-
-**Other Autoencoders (3):** AutoencoderOobleck, AutoencoderRAE, AutoencoderVidTok
-
-**DeepseekV4 (2):** DeepseekV4ForCausalLM, DeepseekV4Model
-
-**UNet (2):** UNetControlNetXSModel, UNetMotionModel
-
-**Single-model standouts:** AudioLDM2UNet2DConditionModel, GraniteSpeechPlusForConditionalGeneration, LagunaForCausalLM, LagunaModel, LongCatAudioDiTVae, LuminaNextDiT2DModel, MotionAdapter, PriorTransformer, UNet1DModel, UNet3DConditionModel, VQModel, etc.
-
-The diffusers transformer/autoencoder ecosystem dominates the wins.
-
-### B. Graph breaks in new models
-
-**15 work items in `graph_break` status, 164 total breaks. Mean: 10.9 GBs per work item.**
-
-Top new models by GB count:
-
-| Model | Mode | GBs |
+| Count | Location | Op / Explanation |
 |---|---|---|
-| AutoencoderKLHunyuanImageRefiner | eval | 26 |
-| AutoencoderKLHunyuanImageRefiner | train | 26 |
-| HiDreamImageTransformer2DModel | eval | 19 |
-| HiDreamImageTransformer2DModel | train | 19 |
-| ConsistencyDecoderVAE | train | 13 |
-| AutoencoderDC | eval | 12 |
-| AutoencoderDC | train | 12 |
-| ConsistencyDecoderVAE | eval | 10 |
-| PPFormulaNetForConditionalGeneration | train | 7 |
-| MiniCPMV4_6ForConditionalGeneration | eval | 4 |
+| 16 | `unknown` | `aten.bincount.default` |
+| 4 | `diffusers/models/transformers/transformer_hidream_image.py:392` | `aten.bincount.default` |
+| 4 | `transformers/models/qwen3_5/modeling_qwen3_5.py:1312` | `Detected data-dependent branching (e.g. `if my_tensor.sum() > 0:`). Dynamo does not support tracing dynamic control flow` |
+| 4 | `diffusers/models/autoencoders/autoencoder_kl_hunyuanimage_refiner.py:209` | `Detected data-dependent branching (e.g. `if my_tensor.sum() > 0:`). Dynamo does not support tracing dynamic control flow` |
+| 4 | `diffusers/models/autoencoders/autoencoder_kl_hunyuanimage_refiner.py:166` | `Detected data-dependent branching (e.g. `if my_tensor.sum() > 0:`). Dynamo does not support tracing dynamic control flow` |
+| 2 | `transformers/models/pp_formulanet/modeling_pp_formulanet.py:923` | `Detected data-dependent branching (e.g. `if my_tensor.sum() > 0:`). Dynamo does not support tracing dynamic control flow` |
+| 2 | `diffusers/models/transformers/transformer_hidream_image.py:396` | `Detected data-dependent branching (e.g. `if my_tensor.sum() > 0:`). Dynamo does not support tracing dynamic control flow` |
+| 2 | `diffusers/models/transformers/transformer_hidream_image.py:699` | `Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False.` |
+| 2 | `diffusers/models/transformers/transformer_lumina2.py:271` | `aten._local_scalar_dense.default` |
+| 2 | `diffusers/models/autoencoders/autoencoder_kl_hunyuanimage_refiner.py:211` | `Detected data-dependent branching (e.g. `if my_tensor.sum() > 0:`). Dynamo does not support tracing dynamic control flow` |
 
-The two AutoencoderKLHunyuanImageRefiner work items contribute 52/164 (32%) of all new-model GBs alone — a single fix on this model could move the needle substantially.
+## 5. Removed models (in baseline only) — 20 work items
 
-### C. Top GB reasons across new models
+**Distinct removed models:** 10
 
-```
-   79× Detected data-dependent branching (e.g. `if my_tensor.sum() > 0:`)
-   20× Operator `aten.bincount.default`'s output shape depends on input Tensor data.   [NEW]
-   17× Operator `aten._local_scalar_dense.default` has a non-Tensor output...
-    8× Dynamo does not know how to trace builtin operator `reversed`...
-    5× Dynamo has no bytecode reconstruction implemented for sourceless DictItemsIterator
-    5× Dynamo has no bytecode reconstruction implemented for sourceless DictIterator
-    3× Operator `aten.nonzero.default`'s output shape depends on input Tensor data
-    2× Dynamo does not support tracing `Tensor.item()` with config.capture_scalar_outputs=False
-    2× Dynamo does not know how to iterate over `UserDefinedObjectVariable(reversed)`
-```
+DinatModel, LayoutLMv2Model, MusicFlamingoForConditionalGeneration, PeAudioVideoModel, Qwen2_5OmniThinkerTextModel, Qwen3OmniMoeTalkerCodePredictorModel, Qwen3OmniMoeTalkerCodePredictorModelForConditionalGeneration, Qwen3OmniMoeTalkerModel, ZambaForCausalLM, ZambaModel
 
-Most patterns are well-known Dynamo limitations (data-dep branching → #54/#77/#78; `_local_scalar_dense` → #55; `Tensor.item()` → #56; DictIterator → #96; reversed → no existing issue). New models are exhibiting the same break-pattern catalogue as the baseline corpus, not introducing fundamentally new failure modes.
+## 6. Stable failures: error in both (36 work items)
 
-### D. New GB reasons surfaced (not seen in baseline)
-
-**Exactly ONE explanation cluster appears in new models that wasn't in the 04-26 baseline:**
-
-```
-   20× Operator `aten.bincount.default`'s output shape depends on input Tensor data.
-```
-
-This is a data-dependent output shape op (same family as `aten.nonzero` / `aten.repeat_interleave` already covered by issue #18). The `bincount` op is structurally identical: output shape depends on input data. **Not a new class of break — fits cleanly under issue #18.** Worth adding `bincount` to that issue's covered ops list, or filing a follow-up if there's a path to fix it independently.
-
-All other 8 distinct explanations seen in new models also appear in baseline — the new models are exercising existing break patterns, not introducing surprises.
+| Model | Mode | status (both) | error message |
+|---|---|---|---|
+| ConditionalDetrModel | eval | create_error | `TimmBackbone requires the timm library but it was not found in your environment. You can install it with pip:` |
+| ConditionalDetrModel | train | create_error | `TimmBackbone requires the timm library but it was not found in your environment. You can install it with pip:` |
+| DabDetrModel | eval | create_error | `TimmBackbone requires the timm library but it was not found in your environment. You can install it with pip:` |
+| DabDetrModel | train | create_error | `TimmBackbone requires the timm library but it was not found in your environment. You can install it with pip:` |
+| DeformableDetrModel | eval | create_error | `TimmBackbone requires the timm library but it was not found in your environment. You can install it with pip:` |
+| DeformableDetrModel | train | create_error | `TimmBackbone requires the timm library but it was not found in your environment. You can install it with pip:` |
+| DetrModel | eval | create_error | `TimmBackbone requires the timm library but it was not found in your environment. You can install it with pip:` |
+| DetrModel | train | create_error | `TimmBackbone requires the timm library but it was not found in your environment. You can install it with pip:` |
+| FLUX.1-DiT | eval | create_error | `No module named 'einops'` |
+| FLUX.1-DiT | train | create_error | `No module named 'einops'` |
+| FastVlmForConditionalGeneration | eval | create_error | `TimmWrapperModel requires the timm library but it was not found in your environment. You can install it with pip:` |
+| FastVlmForConditionalGeneration | train | create_error | `TimmWrapperModel requires the timm library but it was not found in your environment. You can install it with pip:` |
+| FastVlmModel | eval | create_error | `TimmWrapperModel requires the timm library but it was not found in your environment. You can install it with pip:` |
+| FastVlmModel | train | create_error | `TimmWrapperModel requires the timm library but it was not found in your environment. You can install it with pip:` |
+| Gemma3nForConditionalGeneration | eval | create_error | `TimmWrapperModel requires the timm library but it was not found in your environment. You can install it with pip:` |
+| Gemma3nForConditionalGeneration | train | create_error | `TimmWrapperModel requires the timm library but it was not found in your environment. You can install it with pip:` |
+| Gemma3nModel | eval | create_error | `TimmWrapperModel requires the timm library but it was not found in your environment. You can install it with pip:` |
+| Gemma3nModel | train | create_error | `TimmWrapperModel requires the timm library but it was not found in your environment. You can install it with pip:` |
+| HiggsAudioV2TokenizerModel | eval | eager_error | `Audio must be mono, but got 16000` |
+| HiggsAudioV2TokenizerModel | train | eager_error | `Audio must be mono, but got 16000` |
+| PI0Model | eval | eager_error | `'NoneType' object has no attribute 'get_seq_length'` |
+| PI0Model | train | eager_error | `'NoneType' object has no attribute 'get_seq_length'` |
+| PeVideoModel | eval | create_error | `TimmWrapperConfig requires the timm library but it was not found in your environment. You can install it with pip:` |
+| PeVideoModel | train | create_error | `TimmWrapperConfig requires the timm library but it was not found in your environment. You can install it with pip:` |
+| PerceptionLMForConditionalGeneration | eval | create_error | `TimmWrapperModel requires the timm library but it was not found in your environment. You can install it with pip:` |
+| PerceptionLMForConditionalGeneration | train | create_error | `TimmWrapperModel requires the timm library but it was not found in your environment. You can install it with pip:` |
+| PerceptionLMModel | eval | create_error | `TimmWrapperModel requires the timm library but it was not found in your environment. You can install it with pip:` |
+| PerceptionLMModel | train | create_error | `TimmWrapperModel requires the timm library but it was not found in your environment. You can install it with pip:` |
+| RwkvForCausalLM | eval | timeout | `` |
+| RwkvForCausalLM | train | timeout | `` |
+| RwkvModel | eval | timeout | `` |
+| RwkvModel | train | timeout | `` |
+| TableTransformerModel | eval | create_error | `TimmBackbone requires the timm library but it was not found in your environment. You can install it with pip:` |
+| TableTransformerModel | train | create_error | `TimmBackbone requires the timm library but it was not found in your environment. You can install it with pip:` |
+| TimmWrapperModel | eval | create_error | `TimmWrapperModel requires the timm library but it was not found in your environment. You can install it with pip:` |
+| TimmWrapperModel | train | create_error | `TimmWrapperModel requires the timm library but it was not found in your environment. You can install it with pip:` |
 
 ---
 
-## Amendment metadata (provenance)
+_Generated by `tools/sweep_compare.py`. Reproduce with:_
 
 ```
-amendment_id:       2026-05-04T14-59Z-aria-sew-autotiny-fix
-applied_at:         2026-05-04T15:03:40+00:00
-fix_commit:         588b659
-fix_description:    HF non_deterministic_models pattern + cuDNN warm-with-retry + Option 1 first-pool gating
-trigger:            post-nightly regression triage 2026-05-04 morning
-env_constraints:    torch=2.13.0.dev20260502+cu126, transformers=5.8.0.dev0, diffusers=0.38.0
-rows:               14 (all 7 Aria/SEW/AutoencoderTiny models × 2 modes)
+python3 tools/sweep_compare.py \
+    --baseline sweep_results/nightly/2026-04-26 \
+    --current  sweep_results/nightly/2026-05-03
 ```
-
-Original `results[]` array (1724 rows) is byte-identical to what the sweep wrote at 2026-05-03T22:01:59. Amendment was authored 2026-05-04 morning per `amend_sweep.py` workflow (commit `588b659`, dedup guard added in `8955184`).
-
----
-
-## Open follow-ups
-
-- **MimiModel pytorch issue:** filed as [pytorch/pytorch#182339](https://github.com/pytorch/pytorch/issues/182339) on 2026-05-04. Added to `sweep/known_errors.json`. Re-verify on torch 2.14+.
-- **Issue #110:** Switch identify_results.json to JSONL for true append-only amendments — scheduled for tomorrow
-- **PPDocLayoutV3Model train −10 GB reduction:** worth investigating which break_reason got fixed (could close out a corpus issue)
-- **Issue #18 update:** add `aten.bincount.default` to covered ops (20 occurrences in new models)
-
-## Corpus dynamo issues — status check
-
-Cross-checked named-model issues against the 04-26 → 05-03 transition. **No named models in any open issue changed status.** Specifically checked: #14 (OpenVoice), #16 (MiniCPMV), #17 (Gemma3/4), #76 (Gemma3n), #98 (EncodecModel) — all still in the same status as when the issues were filed.
-
-Wrapper-pattern issues (#102, #103) and pattern-aggregate issues (#77, #78) need verification — issue #79 was queued exactly for this purpose. Following up on #79 with a comment containing the 05-03 baseline numbers + regex-extraction notes for #78.
