@@ -32,9 +32,22 @@ MAX_ERR_CHARS = 8000
 # Models that use ops without a deterministic CUDA implementation. For these,
 # we skip the strict torch.use_deterministic_algorithms(True) call (still seed
 # torch+numpy+python.random for reproducibility, but allow non-det ops to run).
-# Pattern adapted from pytorch/benchmarks/dynamo/common.py:4000-4030: the
-# benchmark harness inverts the predicate (`args.only not in {...}`) — same
-# semantics, this is the explicit opt-out form.
+#
+# Pattern adapted from pytorch/benchmarks/dynamo/common.py:4000-4030. The HF
+# benchmark harness uses an inline `args.only not in {...}` predicate to skip
+# strict determinism for known non-det-op models. Examples in their set:
+# Wav2Vec2ForCTC (cites pytorch#96724), Super_SloMo / sam_fast / detectron2_*
+# (use grid_sample / interpolation / index_put_), quantized models. The error
+# raised by torch.use_deterministic_algorithms(True) hitting a non-det op is
+# defined in aten/src/ATen/Context.cpp:166-172 — TORCH_CHECK-fatal unless
+# warn_only=True.
+#
+# TRADE-OFF: opt-out models lose strict eager-vs-compile equality; tolerance-
+# band variance becomes possible in numeric comparisons. The less_flaky retry
+# path in run_identify (commit 816a203) handles this — when default-determinism
+# comparison shows divergence, the retry with HF less_flaky helpers gives a
+# second data point that distinguishes "tolerance noise" from "real compiler
+# bug". Opt-out is therefore safe in our setup.
 #
 # Adding a model here is a per-op opt-out, not a permanent shortcut. Re-test
 # on torch versions where the missing deterministic impl may have landed.
@@ -160,6 +173,56 @@ import torch
 import torch._dynamo
 
 from explain import run_graph_break_analysis
+
+
+def _warm_cudnn_with_retry(max_attempts: int = 3) -> None:
+    """Force cuDNN to dlopen + initialize early, retrying on the dlopen race.
+
+    The cuDNN dlopen race manifests when N>=2 worker processes import torch and
+    touch CUDA at near-simultaneous wall-clock instants — `libcudnn_graph.so`
+    fails to load with `Cannot load symbol cudnnGetVersion` and the worker
+    dies. Existing mitigation (orchestrator's SWEEP_SPAWN_STAGGER_S=3.0s
+    inter-spawn delay, commit e6f2206) helps but is occasionally insufficient
+    when cuDNN init takes >3s or workers complete near-simultaneously.
+
+    This function is the surgical fix at the point of failure: try to do a
+    no-op cuDNN-touching op (matmul triggers cuDNN); on dlopen error, sleep
+    with exponential backoff and retry. Runs once per worker process before
+    any model work.
+
+    Returns silently on success. Re-raises the original error if all attempts
+    fail (caller will surface as worker_error in the result row).
+    """
+    if not torch.cuda.is_available():
+        return
+    for attempt in range(max_attempts):
+        try:
+            # Trigger cuDNN dlopen via a small CUDA op.
+            torch.zeros(8, 8, device="cuda") @ torch.zeros(8, 8, device="cuda")
+            torch.cuda.synchronize()
+            return
+        except RuntimeError as e:
+            err_str = str(e)
+            is_dlopen_race = (
+                "Cannot load symbol cudnnGetVersion" in err_str
+                or "Unable to load any of {libcudnn" in err_str
+                or "Invalid handle" in err_str
+            )
+            if is_dlopen_race and attempt < max_attempts - 1:
+                # Exponential backoff: 2s, 4s, 8s
+                delay = 2.0 * (2 ** attempt)
+                print(
+                    f"PHASE:cudnn_dlopen_race attempt={attempt + 1}/{max_attempts} "
+                    f"sleep={delay}s err={err_str[:120]!r}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                time.sleep(delay)
+                continue
+            raise
+
+
+_warm_cudnn_with_retry()
 
 
 # ─── Model creation ──────────────────────────────────────────────────────────
