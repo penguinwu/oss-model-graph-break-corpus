@@ -102,6 +102,25 @@
             ],
             "added": "2026-04-29",
             "reason": "KV cache contract mismatch \u2014 model expects a non-None Cache object, corpus harness passes None. Observed on PT 2.11 and PT 2.12. Filed under #88 (corpus-harness escapee). Re-verify on 2.13+ \u2014 likely persists until the harness is fixed."
+        },
+        {
+            "status": "eager_error",
+            "model": "MimiModel",
+            "modes": [
+                "eval",
+                "train"
+            ],
+            "error_pattern": "_unsafe_index found unexpected index type Float",
+            "applies_to_versions": [
+                "2.8",
+                "2.9",
+                "2.10",
+                "2.11",
+                "2.12",
+                "2.13"
+            ],
+            "added": "2026-05-04",
+            "reason": "PyTorch decomp bug exposed under use_deterministic_algorithms(True). nn.functional.pad(mode='replicate') with tuple containing 0-d int64 tensor padding amount routes through torch._decomp.decompositions._replication_pad which produces Float index for aten._unsafe_index. Long-standing \u2014 reproduces unchanged in PT 2.8 through 2.13-dev. Filed as pytorch/pytorch#182339. EncodecModel uses identical _pad1d code but mode='reflect' which is unaffected. Re-verify on 2.14+."
         }
     ],
     "_notes_2026_04_30": [

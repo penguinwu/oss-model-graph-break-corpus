@@ -77,14 +77,14 @@ All +1, no large new break clusters.
 
 ### Regressions
 
-**Only 2 work items** are real regressions on common models post-amendment:
+**Zero real upstream torch regressions** in this nightly post-amendment.
 
-| Model | Mode | 04-26 | 05-03 | Cause |
+The 2 surface-level MimiModel regressions (eval + train, `graph_break → eager_error` with `_unsafe_index found unexpected index type Float`) were initially diagnosed as a torch nightly regression in the 04-25 → 05-02 window, but verification on 2026-05-04 across torch 2.8 / 2.9 / 2.10 / 2.11 / 2.12-dev / 2.13-dev showed the bug **reproduces unchanged on every version**. It is a long-standing PyTorch decomp bug in `_replication_pad` (filed as [pytorch/pytorch#182339](https://github.com/pytorch/pytorch/issues/182339)) exposed only because we enabled `torch.use_deterministic_algorithms(True)` by default in commit `816a203` on 2026-05-01. MimiModel is the only model in the corpus that hits the trigger condition (`nn.functional.pad(mode='replicate')` with a tensor padding amount); EncodecModel uses identical `_pad1d` code but `mode='reflect'` and is unaffected. Added to `sweep/known_errors.json` (eager_error, all observed versions) — will be skipped on future sweeps until pytorch/pytorch#182339 lands.
+
+| Model | Mode | 04-26 | 05-03 | Status |
 |---|---|---|---|---|
-| MimiModel | eval | graph_break | eager_error | `_unsafe_index found unexpected index type Float` |
-| MimiModel | train | graph_break | eager_error | same |
-
-MimiModel is the **only real upstream torch regression** in this nightly. Reproduces at `2.13.0.dev20260502` but not at `2.13.0.dev20260425`. Cannot bisect locally.
+| MimiModel | eval | graph_break | eager_error | known_errors (PT decomp bug, pytorch#182339) |
+| MimiModel | train | graph_break | eager_error | known_errors (PT decomp bug, pytorch#182339) |
 
 The other 8 surface-level regressions detected in the raw sweep (AutoencoderTiny, SEW family, Aria family) were resolved in code by 2026-05-04 commits and folded in via the amendment. Their `result_source` field reads `amended:2026-05-04T14-59Z-aria-sew-autotiny-fix`.
 
@@ -193,7 +193,7 @@ Original `results[]` array (1724 rows) is byte-identical to what the sweep wrote
 
 ## Open follow-ups
 
-- **MimiModel pytorch issue:** filing approach awaiting Peng's call (i / ii / iii from earlier surfacing)
+- **MimiModel pytorch issue:** filed as [pytorch/pytorch#182339](https://github.com/pytorch/pytorch/issues/182339) on 2026-05-04. Added to `sweep/known_errors.json`. Re-verify on torch 2.14+.
 - **Issue #110:** Switch identify_results.json to JSONL for true append-only amendments — scheduled for tomorrow
 - **PPDocLayoutV3Model train −10 GB reduction:** worth investigating which break_reason got fixed (could close out a corpus issue)
 - **Issue #18 update:** add `aten.bincount.default` to covered ops (20 occurrences in new models)
