@@ -446,14 +446,17 @@ The "deepcopy shape shift" pattern (PT 2.11 break type `gb0179` at user's call s
 
 ### Week-over-week regression watch (2026-04-26 → 2026-05-03 nightlies)
 
-Both nightlies on torch 2.13.dev stack (8 days apart, ~7 days of nightly commits + transformers 5.7→5.8.0.dev0 update + harness default-determinism added 2026-05-01). 96-97% of common 747 models unchanged. 8 models regressed; all have a clear resolution.
+Both nightlies on torch 2.13.dev stack (8 days apart, ~7 days of nightly commits + transformers 5.7→5.8.0.dev0 update + harness default-determinism added 2026-05-01). 96-97% of common 747 models unchanged. 8 models showed status changes — only **5 are real, only 1 needs upstream action**:
 
-| Model(s) | Transition | Root cause | Resolution |
+| Model(s) | Surface transition | Real status | Resolution |
 |---|---|---|---|
-| AutoencoderTiny | full_graph → eager_error | Flaky under multi-worker GPU contention; passes serial | Added to `_SINGLE_WORKER_MODELS` registry (commit pending) |
-| SEWModel, SEWDModel | (worker_error or graph_break)→worker_error | Flaky under multi-worker contention; passes serial | Added to `_SINGLE_WORKER_MODELS` registry |
-| AriaTextModel, AriaTextForCausalLM, AriaModel, AriaForConditionalGeneration | (full_graph or graph_break) → eager_error | `_histc_cuda` has no deterministic CUDA implementation; harness default-determinism (commit `816a203`, 2026-05-01) correctly surfaces this as eager_error per design (not a regression — *exposed* a pre-existing model-side issue) | Added 4 entries to `sweep/known_errors.json` with `error_pattern: "_histc_cuda…does not have a deterministic implementation"` and `applies_to_versions: ["2.13"]`. Re-verify on 2.14+ |
-| MimiModel | graph_break → eager_error | `RuntimeError: _unsafe_index found unexpected index type Float` in pure eager. Reproduces at torch `2.13.0.dev20260502` (git `671f5614`) but not at `2.13.0.dev20260425` (git `6992d018`). Probable regression in indexing op validation in that ~7-day commit window | Issue draft prepared at `/tmp/mimi-pytorch-issue-draft.md`. Pending Peng review before filing pytorch issue + corpus issue. Cannot bisect locally — only have endpoints in venv pool |
+| AutoencoderTiny | full_graph → eager_error | **Infrastructure flake** (multi-worker shape-gen race; auto-retry would catch). Not a regression. | No code change needed — auto-retry path handles it. F1-F3 single-worker registry shortcut was reverted. |
+| SEWModel, SEWDModel | various → worker_error | **Infrastructure flake** — cudnn dlopen race despite 3s stagger (commit `e6f2206`). Not a regression in model behavior. | No code change needed — auto-retry handles. If recurrence becomes frequent, bump `SWEEP_SPAWN_STAGGER_S` env var (currently 3s). |
+| AriaTextModel, AriaTextForCausalLM | full_graph → eager_error (`_histc_cuda` det) | **Real** — harness May 1 default-determinism surfaces real `_histc_cuda` non-determinism. Models legitimately cannot run with `torch.use_deterministic_algorithms(True)`. | **Real fix landed** — adopted HF benchmarks's `non_deterministic_models` pattern (`pytorch/benchmarks/dynamo/common.py:4000-4030`). Added `NON_DETERMINISTIC_MODELS` set + `_seed_for_spec()` helper in `sweep/worker.py`. Aria models now compile cleanly: `full_graph` (both modes). |
+| AriaModel, AriaForConditionalGeneration | graph_break → eager_error (`_histc_cuda` det) | Same as above — real determinism opt-out needed. | Same fix. Models now produce real `graph_break` signal as before regression-introducing commit. |
+| MimiModel | graph_break → eager_error | **Real torch regression** — `RuntimeError: _unsafe_index found unexpected index type Float` in pure eager. Reproduces at torch `2.13.0.dev20260502` (git `671f5614`) but not at `2.13.0.dev20260425` (git `6992d018`). Probable regression in indexing op validation in that ~7-day commit window. | Issue draft prepared at `/tmp/mimi-pytorch-issue-draft.md`. Pending Peng review before filing pytorch issue + corpus issue. Cannot bisect locally — only have endpoints in venv pool. |
+
+**Corrected verdict:** of 8 surface-level "regressions", only 1 is a real upstream issue (MimiModel). 4 are real harness/model interactions resolved by porting HF benchmarks's determinism-opt-out pattern. 3 are infrastructure flakes already mitigated by existing auto-retry path.
 
 ---
 

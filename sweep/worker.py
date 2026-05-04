@@ -29,6 +29,41 @@ import warnings
 # without bloating result.json beyond a few MB even for full sweeps.
 MAX_ERR_CHARS = 8000
 
+# Models that use ops without a deterministic CUDA implementation. For these,
+# we skip the strict torch.use_deterministic_algorithms(True) call (still seed
+# torch+numpy+python.random for reproducibility, but allow non-det ops to run).
+# Pattern adapted from pytorch/benchmarks/dynamo/common.py:4000-4030: the
+# benchmark harness inverts the predicate (`args.only not in {...}`) — same
+# semantics, this is the explicit opt-out form.
+#
+# Adding a model here is a per-op opt-out, not a permanent shortcut. Re-test
+# on torch versions where the missing deterministic impl may have landed.
+NON_DETERMINISTIC_MODELS = {
+    # Aria family — call _histc_cuda which has no deterministic CUDA impl on
+    # torch 2.13.dev. Re-verify on torch 2.14+. Surfaced 2026-05-04 by
+    # week-over-week nightly regression diff (commit 0c8c375 → reverted →
+    # this fix).
+    "AriaTextModel",
+    "AriaTextForCausalLM",
+    "AriaModel",
+    "AriaForConditionalGeneration",
+}
+
+
+def _seed_for_spec(spec_name: str, seed: int = 42) -> None:
+    """HF set_seed wrapper that respects NON_DETERMINISTIC_MODELS opt-out.
+
+    For models in the opt-out set: seed RNGs but DO NOT call
+    torch.use_deterministic_algorithms(True). These models can then use
+    non-deterministic ops (like _histc_cuda) without raising a RuntimeError.
+
+    Output divergence on these models gets caught by the less_flaky retry
+    path (see run_identify's "less_flaky retry on divergence" block), which
+    re-runs with HF less_flaky helpers as a second data point.
+    """
+    from transformers import set_seed
+    set_seed(seed, deterministic=spec_name not in NON_DETERMINISTIC_MODELS)
+
 
 def _record_error(result: dict, e: Exception, context: str = "") -> None:
     """Set `result["error"]` + `result["error_type"]` from `e`.
@@ -3473,7 +3508,7 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
     result["phase"] = "eager"
     print("PHASE:eager", file=sys.stderr, flush=True)
     torch._dynamo.reset()
-    set_seed(42, deterministic=True)
+    _seed_for_spec(spec.get("name") or "")
     t_eager = time.perf_counter()
     try:
         with ctx:
@@ -3524,7 +3559,7 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
                         inputs_dict["token_type_ids"] = torch.zeros(
                             B, new_seq_len, dtype=torch.long, device=device)
                     print("PHASE:eager_retry_image_tokens", file=sys.stderr, flush=True)
-                    set_seed(42, deterministic=True)
+                    _seed_for_spec(spec.get("name") or "")
                     try:
                         with ctx:
                             out_eager = model(**inputs_dict)
@@ -3576,7 +3611,7 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
         if "dynamic" not in effective_kwargs:
             effective_kwargs["dynamic"] = compile_dynamic
         compiled = torch.compile(model, **effective_kwargs)
-        set_seed(42, deterministic=True)
+        _seed_for_spec(spec.get("name") or "")
         with ctx:
             if inputs_tuple:
                 out_compiled = compiled(*inputs_tuple)
@@ -3686,7 +3721,7 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
             retry_ctx = torch.no_grad() if mode == "eval" else torch.enable_grad()
 
             torch._dynamo.reset()
-            set_seed(42, deterministic=True)
+            _seed_for_spec(spec.get("name") or "")
             with retry_ctx:
                 if retry_inputs_tuple:
                     retry_eager = retry_model(*retry_inputs_tuple)
@@ -3695,7 +3730,7 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
 
             torch._dynamo.reset()
             retry_compiled_fn = torch.compile(retry_model, **effective_kwargs)
-            set_seed(42, deterministic=True)
+            _seed_for_spec(spec.get("name") or "")
             with retry_ctx:
                 if retry_inputs_tuple:
                     retry_compiled = retry_compiled_fn(*retry_inputs_tuple)
@@ -3975,7 +4010,7 @@ def run_correctness(spec, device, mode):
     # Phase 2: Eager forward
     print("PHASE:eager", file=sys.stderr, flush=True)
     torch._dynamo.reset()
-    set_seed(42, deterministic=True)
+    _seed_for_spec(spec.get("name") or "")
     try:
         with ctx:
             if inputs_tuple:
@@ -4000,7 +4035,7 @@ def run_correctness(spec, device, mode):
         return result
 
     print("PHASE:compiled_forward", file=sys.stderr, flush=True)
-    set_seed(42, deterministic=True)
+    _seed_for_spec(spec.get("name") or "")
     try:
         with ctx:
             if inputs_tuple:

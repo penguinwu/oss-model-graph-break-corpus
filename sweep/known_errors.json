@@ -102,62 +102,6 @@
             ],
             "added": "2026-04-29",
             "reason": "KV cache contract mismatch \u2014 model expects a non-None Cache object, corpus harness passes None. Observed on PT 2.11 and PT 2.12. Filed under #88 (corpus-harness escapee). Re-verify on 2.13+ \u2014 likely persists until the harness is fixed."
-        },
-        {
-            "status": "eager_error",
-            "model": "AriaTextModel",
-            "modes": [
-                "eval",
-                "train"
-            ],
-            "error_pattern": "_histc_cuda with floating point input does not have a deterministic implementation",
-            "applies_to_versions": [
-                "2.13"
-            ],
-            "added": "2026-05-04",
-            "reason": "Aria models call _histc_cuda which has no deterministic CUDA impl. Surfaces under harness's default-determinism (commit 816a203, 2026-05-01) per design \u2014 the determinism setup is intended to flag non-deterministic eager paths as eager_error rather than hide them as tolerance noise. Re-verify on torch 2.14+ when _histc_cuda may gain deterministic impl."
-        },
-        {
-            "status": "eager_error",
-            "model": "AriaTextForCausalLM",
-            "modes": [
-                "eval",
-                "train"
-            ],
-            "error_pattern": "_histc_cuda with floating point input does not have a deterministic implementation",
-            "applies_to_versions": [
-                "2.13"
-            ],
-            "added": "2026-05-04",
-            "reason": "See AriaTextModel \u2014 same _histc_cuda determinism path."
-        },
-        {
-            "status": "eager_error",
-            "model": "AriaModel",
-            "modes": [
-                "eval",
-                "train"
-            ],
-            "error_pattern": "_histc_cuda with floating point input does not have a deterministic implementation",
-            "applies_to_versions": [
-                "2.13"
-            ],
-            "added": "2026-05-04",
-            "reason": "See AriaTextModel \u2014 same _histc_cuda determinism path."
-        },
-        {
-            "status": "eager_error",
-            "model": "AriaForConditionalGeneration",
-            "modes": [
-                "eval",
-                "train"
-            ],
-            "error_pattern": "_histc_cuda with floating point input does not have a deterministic implementation",
-            "applies_to_versions": [
-                "2.13"
-            ],
-            "added": "2026-05-04",
-            "reason": "See AriaTextModel \u2014 same _histc_cuda determinism path."
         }
     ],
     "_notes_2026_04_30": [
