@@ -73,6 +73,30 @@ EXPERIMENTS_OUTPUT_DIR = SWEEP_DIR.parent / "sweep_results" / "experiments"
 LARGE_MODELS_FILE = SWEEP_DIR / "large_models.json"
 
 
+def _update_phase(state_file, phase, **extras):
+    """Update sweep_state.json with current phase + optional metadata.
+
+    Watchdog reads `phase` and `phase_total` to know which streaming file
+    to monitor and what denominator to use. Survives the sweep process
+    being killed mid-write (atomic write via tmp + rename).
+    """
+    try:
+        if not state_file.exists():
+            return
+        with open(state_file) as f:
+            state = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return
+    state["phase"] = phase
+    state["phase_updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+    for k, v in extras.items():
+        state[k] = v
+    tmp = state_file.with_suffix(state_file.suffix + ".tmp")
+    with open(tmp, "w") as f:
+        json.dump(state, f, indent=2)
+    os.replace(tmp, state_file)
+
+
 def _parse_kv_overrides(items):
     """Parse repeated KEY=VAL flags into a dict.
 
@@ -516,6 +540,8 @@ def run_sweep(args):
         print(f"  {len(multi_specs)} multi-worker, {len(single_specs)} single-worker (flaky under contention)")
     print(f"{'=' * 70}")
 
+    _update_phase(state_file, "identify", phase_total=total_work_items)
+
     # Streaming callback: write each result to checkpoint as it completes
     streaming_file = output_dir / "identify_streaming.jsonl"
     streaming_fh = open(streaming_file, "a")
@@ -612,17 +638,28 @@ def run_sweep(args):
 
         print(f"\n{'─' * 70}")
         print(f"AUTO-RETRY: {len(retry_specs)} timed-out models with extended timeout ({timeout_large}s)")
+        print(f"  Total work items in this phase: {len(retry_specs) * len(modes)}")
         print(f"{'─' * 70}")
 
         # Build retry overrides — all get the large timeout
         retry_overrides = {s["name"]: timeout_large for s in retry_specs}
+
+        # Resumable checkpoint for auto-retry timeouts
+        auto_retry_to_ckpt = str(output_dir / "auto_retry_timeout_checkpoint.jsonl")
+        auto_retry_to_resume = {}
+        if args.resume and os.path.exists(auto_retry_to_ckpt):
+            auto_retry_to_resume = load_checkpoint(auto_retry_to_ckpt)
+            print(f"  Loaded {len(auto_retry_to_resume)} completed auto-retry results from checkpoint")
+
+        _update_phase(state_file, "auto_retry_timeout",
+                      phase_total=len(retry_specs) * len(modes))
 
         retry_start = time.perf_counter()
         retry_results = run_pass(
             python_bin, retry_specs, pass_num=1, device=args.device, modes=modes,
             workers=max(1, args.workers // 2),  # fewer workers for large models
             timeout_s=timeout_large,
-            checkpoint_file=None,  # don't mix with main checkpoint
+            checkpoint_file=auto_retry_to_ckpt, resume_from=auto_retry_to_resume,
             dynamic=dynamic, timeout_overrides=retry_overrides,
             extra_worker_args=extra_worker_args,
         )
@@ -704,7 +741,18 @@ def run_sweep(args):
         print(f"\n{'─' * 70}")
         print(f"AUTO-RETRY ERRORS: {len(retry_error_specs)} error models, "
               f"serial (1 worker) to rule out GPU contention")
+        print(f"  Total work items in this phase: {len(retry_error_specs) * len(modes)}")
         print(f"{'─' * 70}")
+
+        # Resumable checkpoint for auto-retry errors
+        auto_retry_err_ckpt = str(output_dir / "auto_retry_errors_checkpoint.jsonl")
+        auto_retry_err_resume = {}
+        if args.resume and os.path.exists(auto_retry_err_ckpt):
+            auto_retry_err_resume = load_checkpoint(auto_retry_err_ckpt)
+            print(f"  Loaded {len(auto_retry_err_resume)} completed auto-retry-error results from checkpoint")
+
+        _update_phase(state_file, "auto_retry_errors",
+                      phase_total=len(retry_error_specs) * len(modes))
 
         retry_err_start = time.perf_counter()
         retry_err_results = run_pass(
@@ -712,7 +760,7 @@ def run_sweep(args):
             modes=modes,
             workers=1,  # serial — no GPU contention
             timeout_s=args.timeout,
-            checkpoint_file=None,
+            checkpoint_file=auto_retry_err_ckpt, resume_from=auto_retry_err_resume,
             dynamic=dynamic, timeout_overrides=timeout_overrides,
             skip_models=skip_models, extra_worker_args=extra_worker_args,
         )
@@ -772,12 +820,15 @@ def run_sweep(args):
 
     # Identify broken models for explain pass
     explain_specs = _specs_for_graph_break_models(identify_results, specs)
+    explain_total_work = len(explain_specs) * len(modes)
     print(f"\n→ {len(explain_specs)} models need explain pass (will test {modes})")
+    print(f"  Total explain work items: {explain_total_work}")
 
     # ══════════════════════════════════════════════════════════════════════
     # EXPLAIN: Detailed analysis (broken models only)
     # ══════════════════════════════════════════════════════════════════════
     if explain_specs and not args.identify_only:
+        _update_phase(state_file, "explain", phase_total=explain_total_work)
         explain_results, _ = _execute_explain_pass(
             python_bin, explain_specs, device=args.device,
             workers=args.workers, timeout_s=args.timeout,
@@ -790,6 +841,8 @@ def run_sweep(args):
         explain_results = []
         if args.identify_only:
             print("\nSkipping explain pass (--identify-only)")
+
+    _update_phase(state_file, "report")
 
     # ══════════════════════════════════════════════════════════════════════
     # MERGED CORPUS
