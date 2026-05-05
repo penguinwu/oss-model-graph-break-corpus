@@ -42,9 +42,11 @@ gh issue list --repo penguinwu/oss-model-graph-break-corpus --state all --search
 
 Per Peng (2026-05-04): any flip from error to eager-success/compile-success counts as a "new model" for brief purposes. Don't report cat 4 alone as "new models added" — it under-reports the actual newly-testable surface.
 
-### R7 — Feedback space is only reachable via `tools/post_to_feedback.py`
+### R7 — Broadcast posts to feedback space go through the gated wrapper
 
-Direct `gchat send spaces/AAQABmB_3Is "..."` is forbidden (mechanical block in `~/.myclaw/spaces/AAQANraxXE4/.claude/settings.json`). Signal-boost step in the workflow uses the gated wrapper. (Reason: 2026-05-03 watchdog status leak.)
+For weekly briefs / daily standups / any broadcast announcement to `spaces/AAQABmB_3Is`, the signal-boost step uses `python3 ~/.myclaw/spaces/AAQANraxXE4/tools/post_to_feedback.py send "..."` so it picks up dedup + audit logging + weekend gates.
+
+Direct `gchat send spaces/AAQABmB_3Is "..."` is fine for thread replies (someone asked a question, you're answering — match the conversational tone). The discipline check before any send is "is this internal sweep ops state?" If yes, wrong space. (Reason: 2026-05-03 watchdog status leak. Discipline-only — Peng confirmed normal interaction is approved.)
 
 ## Soft rules (judgment, no mechanical guard)
 
