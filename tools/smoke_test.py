@@ -21,7 +21,60 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKER_SCRIPT = REPO_ROOT / "sweep" / "worker.py"
+MODELLIBS_CONFIG = REPO_ROOT / "sweep" / "modellibs.json"
+MODELLIBS_ROOT = Path.home() / "envs" / "modellibs"
 TIMEOUT_PER_MODEL = 120  # generous; models take 10-30s
+
+
+def _venv_name_from_python(python_bin: str):
+    """Extract venv name from a python interpreter path. Mirrors run_sweep.py.
+
+    Uses lexical path (NOT .resolve()) since venvs symlink to system python.
+    Returns None if path doesn't look like a ~/envs/<name>/ venv.
+    """
+    try:
+        p = Path(python_bin).absolute()
+        if p.parent.name == "bin" and p.parent.parent.parent.name == "envs":
+            return p.parent.parent.name
+    except (OSError, IndexError):
+        pass
+    return None
+
+
+def build_modellibs_env(python_bin):
+    """Return env dict with PYTHONPATH injecting modellibs per defaults_per_venv.
+
+    Mirrors sweep/run_sweep.py's _resolve_modellib_paths + _ensure_modellib_pythonpath
+    so that subprocess invocations from smoke_test (which bypass run_sweep)
+    still get the modellibs after the Phase 5 cleanup.
+
+    Returns dict suitable for subprocess.run(env=...). Always includes the
+    full current os.environ so other vars (CUDA, HF_HOME, ...) carry through.
+    """
+    env = dict(os.environ)
+    venv_name = _venv_name_from_python(python_bin)
+    if not venv_name:
+        return env
+    try:
+        with open(MODELLIBS_CONFIG) as f:
+            cfg = json.load(f)
+    except (OSError, ValueError):
+        return env
+    venv_defaults = cfg.get("defaults_per_venv", {}).get(venv_name, {})
+    if not venv_defaults:
+        return env
+    paths = []
+    for pkg in ("transformers", "diffusers", "timm"):
+        ver = venv_defaults.get(pkg)
+        if not ver:
+            continue
+        tree = MODELLIBS_ROOT / f"{pkg}-{ver}"
+        if tree.exists():
+            paths.append(str(tree))
+    if paths:
+        existing = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = ":".join(paths + ([existing] if existing else []))
+    return env
 
 # Fixed set of 8 models covering all status categories.
 # Each entry: (spec_dict, expected_eval_status)
@@ -66,6 +119,7 @@ def run_single_model(python_bin, spec, device):
         proc = subprocess.run(
             cmd, capture_output=True, text=True,
             timeout=TIMEOUT_PER_MODEL,
+            env=build_modellibs_env(python_bin),
         )
         if proc.returncode != 0 and not proc.stdout.strip():
             return {"status": "worker_crash", "error": proc.stderr[-500:]}
@@ -94,6 +148,7 @@ def check_enumerate_count(python_bin):
             [python_bin, "-c", script],
             capture_output=True, text=True, timeout=60,
             cwd=str(REPO_ROOT),
+            env=build_modellibs_env(python_bin),
         )
         if proc.returncode != 0:
             return False, 0, proc.stderr[-200:]
@@ -110,6 +165,23 @@ def main():
                         help="Python binary (default: current interpreter)")
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
+
+    # Sanity check: smoke_test needs a venv-aware python (not bare system python)
+    # so that build_modellibs_env can resolve PYTHONPATH for the post-Phase-5
+    # cleanup. If user passes /usr/local/fbcode/.../python3 they'll just see
+    # 8 worker_crash failures from `import torch` failing.
+    venv_name = _venv_name_from_python(args.python)
+    if not venv_name:
+        print(f"ERROR: --python must point at a torch venv (e.g. ~/envs/torch211/bin/python3),",
+              file=sys.stderr)
+        print(f"       not bare system python. Got: {args.python}", file=sys.stderr)
+        print(f"       (After Phase 5 modellibs cleanup, smoke_test relies on resolving",
+              file=sys.stderr)
+        print(f"        venv name → sweep/modellibs.json defaults_per_venv → PYTHONPATH.",
+              file=sys.stderr)
+        print(f"        System python is not in any venv so no defaults can be resolved.)",
+              file=sys.stderr)
+        sys.exit(2)
 
     n_models = len(SMOKE_MODELS)
     print("=" * 60)
