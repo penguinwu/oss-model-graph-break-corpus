@@ -9,7 +9,7 @@ description: Compose the weekly nightly-sweep brief for the PT2 dynamo team / Co
 
 - **Audience:** PT2 dynamo team, model owners, skill maintainers (technical readers)
 - **Scope:** Dynamo-relevant changes only. Eager-side timeouts, harness gaps, and create-error infra are tracked separately and excluded.
-- **Cadence:** Weekly. Post to Workplace group 1251481819891072 (PT2 Compile Q&A). Signal-boost to user group via `post_to_feedback.py`.
+- **Cadence:** Weekly. Post to Workplace group `1251481819891072` (**PyTorch Compiler AI-native Working Group** — always verify name via `meta workplace.group details --group-id=1251481819891072` before referring by name; do NOT trust memory). Signal-boost to user group via `post_to_feedback.py`.
 
 ## Workflow (run in order, no shortcuts)
 
@@ -82,9 +82,14 @@ meta workplace.post create \
 
 # Capture the returned permalink URL.
 
-# 7b: Signal boost via gated wrapper (NEVER raw `gchat send` — see local CLAUDE.md § Feedback space)
+# 7b: Verify the destination group name BEFORE composing the signal boost
+#     (do NOT trust memory — USER.md lists similar-sounding groups with different IDs)
+GROUP_NAME=$(meta workplace.group details --group-id=1251481819891072 2>&1 | grep "^  name:" | sed 's/  name: //')
+echo "Posting to group: $GROUP_NAME"
+
+# 7c: Signal boost via gated wrapper (NEVER raw `gchat send` — see local CLAUDE.md § Feedback space)
 python3 ~/.myclaw/spaces/AAQANraxXE4/tools/post_to_feedback.py send \
-    "[🦦 Otter]: Weekly nightly-sweep brief for <date> is now posted to PT2 Compile Q&A: <permalink>
+    "[🦦 Otter]: Weekly nightly-sweep brief for <date> is now posted to the $GROUP_NAME: <permalink>
 
 TL;DR: <2-3 line headline>"
 ```

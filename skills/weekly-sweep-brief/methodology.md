@@ -48,6 +48,12 @@ For weekly briefs / daily standups / any broadcast announcement to `spaces/AAQAB
 
 Direct `gchat send spaces/AAQABmB_3Is "..."` is fine for thread replies (someone asked a question, you're answering — match the conversational tone). The discipline check before any send is "is this internal sweep ops state?" If yes, wrong space. (Reason: 2026-05-03 watchdog status leak. Discipline-only — Peng confirmed normal interaction is approved.)
 
+### R8 — Verify the destination group's actual name before referring to it by name
+
+`meta workplace.group details --group-id=<ID>` returns the canonical name. Always run it and use the output, NOT a name from memory or a USER.md group list (which can have similar-sounding groups with different IDs).
+
+(Reason: 2026-05-04 signal boost called the brief's destination "PT2 Compile Q&A" — wrong; the actual group is "PyTorch Compiler AI-native Working Group" (`1251481819891072`). The PT2 Compile Q&A group exists separately at `1075192433118967`. Peng caught and corrected. The Workflow Step 7b now mechanically captures the name into a shell variable before composing the signal-boost.)
+
 ## Soft rules (judgment, no mechanical guard)
 
 ### S1 — Numbers in the headline must reconcile with body sections
@@ -80,6 +86,7 @@ Walk through every item. Each must pass.
 - [ ] R5: every new issue filed today was preceded by a `gh issue list --search` against existing
 - [ ] R6: "newly compile-testable" includes cat 1 + cat 4, not just cat 4
 - [ ] R7: signal-boost message goes through `post_to_feedback.py`, not raw `gchat send`
+- [ ] R8: destination group name in the signal-boost matches `meta workplace.group details` output (verified, not from memory)
 - [ ] S1: headline numbers reconcile with body sub-totals
 - [ ] S2: no "likely" / "substantially" / "some" / "a few" in load-bearing claims
 - [ ] S3: audience can read this without our internal context (no bare #N, no "cat 3" load-bearing without intro)
@@ -95,4 +102,5 @@ If any item fails: fix it, then re-run the checklist (don't selectively re-check
 - **R5** added 2026-05-04 — split of #8 created 3 duplicates of #11/#23/#24. Settings deny rule + grep workflow added.
 - **R6** added 2026-05-04 — initial brief reported only cat 4 as "new"; missed Qwen3VL/Qwen3.5 vision encoders that flipped from eager_error.
 - **R7** added 2026-05-04 — watchdog status leaked to user group via raw `gchat send --as-user`. Settings deny + this rule added.
+- **R8** added 2026-05-04 — signal-boost called destination "PT2 Compile Q&A" (wrong); actual group is "PyTorch Compiler AI-native Working Group". Workflow Step 7b now captures name into shell variable mechanically.
 - **S1, S2, S3, S4** consolidated 2026-05-04 from iterations during the 2026-05-03 brief composition.
