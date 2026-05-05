@@ -64,7 +64,7 @@ Before referring to any tracked issue:
 
 ### Step 5 — Compose brief from template
 
-Use `templates/template.md` (in this skill dir). 8 fixed sections, all required. See `methodology.md` for what each section must contain + forbidden patterns.
+Use `template.md` (in this skill dir). 8 fixed sections, all required. See `methodology.md` for what each section must contain + forbidden patterns.
 
 ### Step 6 — Self-check before posting
 
