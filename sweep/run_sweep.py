@@ -297,30 +297,92 @@ def _log_versions(python_bin, output_dir):
     return log_versions(python_bin)
 
 
-def _resolve_modellib_paths(args):
+def _venv_name_from_python(python_bin: str) -> str | None:
+    """Extract venv name from a python interpreter path.
+
+    `/home/pengwu/envs/torch211/bin/python3` → `torch211`.
+    `/home/pengwu/envs/torch-nightly-cu128/bin/python3` → `torch-nightly-cu128`.
+    Returns None if the path doesn't look like one of our ~/envs/ venvs.
+    """
+    try:
+        # Use lexical path (not .resolve()) — venvs are symlinks to system python;
+        # resolving would jump to /usr/local/fbcode/... and lose the venv name.
+        p = Path(python_bin).absolute()
+        # Expect .../envs/<name>/bin/<python_exe>
+        if (p.parent.name == "bin"
+                and p.parent.parent.parent.name == "envs"):
+            return p.parent.parent.name
+    except (OSError, IndexError):
+        pass
+    return None
+
+
+def _load_modellibs_defaults() -> dict:
+    """Read defaults_per_venv from sweep/modellibs.json. Returns {} if missing/unreadable.
+
+    Per design/venv-decouple-modellibs.md §"defaults_per_venv".
+    """
+    cfg_path = Path(__file__).parent / "modellibs.json"
+    try:
+        with open(cfg_path) as f:
+            cfg = json.load(f)
+        return cfg.get("defaults_per_venv", {})
+    except (OSError, ValueError) as e:
+        print(f"[run_sweep] WARN: could not load modellibs defaults: {e}", file=sys.stderr)
+        return {}
+
+
+def _resolve_modellib_paths(args, python_bin: str | None = None):
     """Resolve --transformers/--diffusers/--timm flags to absolute paths.
 
     Returns list of absolute paths (in --transformers, --diffusers, --timm order)
     that should be prepended to PYTHONPATH. Returns empty list if no modellib
-    flag was passed. Exits with non-zero if a flag points at a non-existent tree.
+    flag was passed AND no defaults_per_venv entry applies.
+
+    Resolution order per (pkg):
+      1. Explicit CLI flag (--transformers/--diffusers/--timm)
+      2. defaults_per_venv[<venv_name>][<pkg>] from sweep/modellibs.json
+      3. None → not injected (falls back to torch venv's site-packages copy,
+         which after Phase 5 cleanup will be absent → ImportError at use site).
 
     Per design/venv-decouple-modellibs.md.
     """
+    # Step 1: explicit CLI values
+    explicit = {
+        "transformers": getattr(args, "transformers", None),
+        "diffusers": getattr(args, "diffusers", None),
+        "timm": getattr(args, "timm", None),
+    }
+    # Step 2: fill missing from defaults_per_venv if we know the venv
+    venv_name = _venv_name_from_python(python_bin) if python_bin else None
+    defaults = _load_modellibs_defaults().get(venv_name, {}) if venv_name else {}
+    resolved = {}
+    for pkg in ("transformers", "diffusers", "timm"):
+        if explicit[pkg]:
+            resolved[pkg] = (explicit[pkg], "flag")
+        elif defaults.get(pkg):
+            resolved[pkg] = (defaults[pkg], f"default for {venv_name}")
+
+    # Mirror resolved values back onto args so downstream code (e.g.
+    # _warn_or_error_missing_modellibs) sees the effective version, not just
+    # the explicit CLI value.
+    for pkg, (ver, _src) in resolved.items():
+        setattr(args, pkg, ver)
+
     paths = []
-    for pkg, ver in (("transformers", getattr(args, "transformers", None)),
-                     ("diffusers", getattr(args, "diffusers", None)),
-                     ("timm", getattr(args, "timm", None))):
-        if not ver:
+    for pkg in ("transformers", "diffusers", "timm"):
+        if pkg not in resolved:
             continue
+        ver, src = resolved[pkg]
         tree = Path.home() / "envs" / "modellibs" / f"{pkg}-{ver}"
         if not tree.exists():
-            print(f"[run_sweep] ERROR: --{pkg} {ver} requested but tree not found: {tree}",
+            print(f"[run_sweep] ERROR: --{pkg} {ver} requested ({src}) but tree not found: {tree}",
                   file=sys.stderr)
             print(f"[run_sweep] Bootstrap with: python3 tools/bootstrap_modellibs.py "
                   f"--pkg {pkg} --ver {ver}", file=sys.stderr)
             sys.exit(1)
         paths.append(str(tree))
-        print(f"[run_sweep] modellibs: {pkg}=={ver} → {tree}")
+        print(f"[run_sweep] modellibs: {pkg}=={ver} ({src}) → {tree}")
     return paths
 
 
@@ -429,7 +491,7 @@ def run_sweep(args):
     # Independent of --torch/--cuda-variant: any --transformers/--diffusers/--timm
     # flag triggers PYTHONPATH injection + re-exec under whatever python_bin we
     # have (the torch-venv-resolved one, or SWEEP_PYTHON if invoked directly).
-    modellib_paths = _resolve_modellib_paths(args)
+    modellib_paths = _resolve_modellib_paths(args, python_bin=python_bin)
     _ensure_modellib_pythonpath(modellib_paths, python_bin)
 
     # ── Phase 4: warn (eventually error) when a source is enabled without an

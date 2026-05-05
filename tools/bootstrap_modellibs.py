@@ -75,10 +75,11 @@ def tree_is_ready(pkg: str, ver: str, python_bin: str, verbose: bool = False) ->
     return True
 
 
-def bootstrap_tree(pkg: str, ver: str, python_bin: str, dry_run: bool = False) -> int:
+def bootstrap_tree(pkg: str, ver: str, python_bin: str, dry_run: bool = False, no_deps: bool = False) -> int:
     """Pip-install pkg==ver into the tree dir. Returns shell exit code."""
     path = tree_path(pkg, ver)
-    print(f"  bootstrapping {pkg}=={ver} into {path}", file=sys.stderr)
+    suffix = " (--no-deps)" if no_deps else ""
+    print(f"  bootstrapping {pkg}=={ver} into {path}{suffix}", file=sys.stderr)
     if dry_run:
         print(f"    DRY RUN — skipping pip install", file=sys.stderr)
         return 0
@@ -88,6 +89,8 @@ def bootstrap_tree(pkg: str, ver: str, python_bin: str, dry_run: bool = False) -
         "--target", str(path),
         f"{pkg}=={ver}",
     ]
+    if no_deps:
+        cmd.append("--no-deps")
     print(f"    {' '.join(cmd)}", file=sys.stderr)
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
     if result.returncode != 0:
@@ -118,6 +121,9 @@ def main() -> int:
                     help="Plan-only; print what would be installed but don't pip install")
     ap.add_argument("--force", action="store_true",
                     help="Re-install even if tree appears ready")
+    ap.add_argument("--no-deps", action="store_true",
+                    help="Pass --no-deps to pip. Required when a package transitively pulls "
+                         "cuda-toolkit (BPF-blocked under agent identity). E.g. timm 1.0.26+.")
     args = ap.parse_args()
 
     if args.ver and not args.pkg:
@@ -157,7 +163,7 @@ def main() -> int:
                 print(f"  ✓ already ready: {tree_path(pkg, ver)}", file=sys.stderr)
                 skipped += 1
                 continue
-            rc = bootstrap_tree(pkg, ver, args.python, dry_run=args.dry_run)
+            rc = bootstrap_tree(pkg, ver, args.python, dry_run=args.dry_run, no_deps=args.no_deps)
             if rc == 3:
                 bpf = True
                 failures.append((pkg, ver, "BPF jail"))

@@ -1,6 +1,16 @@
 {
-  "_comment": "Versions of pure-Python model libs we maintain as standalone modellibs trees under ~/envs/modellibs/<pkg>-<ver>/. Edit + run tools/bootstrap_modellibs.py to provision missing trees. Dev/nightly versions (e.g. 5.8.0.dev0) are NOT included here — they stay in their torch venv until reproducibly pip-installable. Per design/venv-decouple-modellibs.md.",
+  "_comment": "Versions of pure-Python model libs we maintain as standalone modellibs trees under ~/envs/modellibs/<pkg>-<ver>/. Edit + run tools/bootstrap_modellibs.py to provision missing trees. defaults_per_venv: which modellib tree to use when a torch venv runs without explicit --transformers/--diffusers/--timm CLI flags. Override with CLI flags. Per design/venv-decouple-modellibs.md.",
   "transformers": ["5.4.0", "5.5.3", "5.6.2"],
   "diffusers": ["0.37.1", "0.38.0"],
-  "timm": ["0.9.2"]
+  "timm": ["0.9.2", "1.0.26"],
+  "defaults_per_venv": {
+    "torch28":             {"transformers": "5.4.0", "diffusers": "0.37.1"},
+    "torch29":             {"transformers": "5.4.0", "diffusers": "0.37.1"},
+    "torch210":            {"transformers": "5.4.0", "diffusers": "0.37.1", "timm": "1.0.26"},
+    "torch211":            {"transformers": "5.5.3", "diffusers": "0.37.1", "timm": "1.0.26"},
+    "torch212-rc":         {"transformers": "5.5.3"},
+    "torch-181552":        {"transformers": "5.6.2", "diffusers": "0.37.1"},
+    "torch-nightly-cu126": {"transformers": "5.6.2", "diffusers": "0.38.0"},
+    "torch-nightly-cu128": {"transformers": "5.6.2", "diffusers": "0.37.1", "timm": "1.0.26"}
+  }
 }
