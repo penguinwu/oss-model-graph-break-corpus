@@ -56,6 +56,26 @@ SUCCESS_STATUSES = {"full_graph", "graph_break"}
 ERROR_STATUSES = {"eager_error", "create_error", "worker_error", "timeout"}
 SKIP_STATUSES = {"skipped"}  # known_errors.json gates these
 
+SKIP_MODELS_FILE = REPO_ROOT / "sweep" / "skip_models.json"
+
+
+def _load_skip_models() -> set[str]:
+    """Load model names from sweep/skip_models.json (out-of-scope models).
+
+    These are MODEL NAMES (not (name, mode) keys) that the sweep is
+    configured to skip entirely — currently used for timm-dependent
+    models (out of our test scope: pip install timm not in our setup).
+
+    sweep_compare excludes any (name, mode) where name is in this list
+    from the 6-category partition, placing them in a separate
+    'skip_listed' bucket so they don't pollute regression / improvement
+    counts. Symmetric with how run_sweep.py handles them.
+    """
+    if not SKIP_MODELS_FILE.exists():
+        return set()
+    with open(SKIP_MODELS_FILE) as f:
+        return set(json.load(f))
+
 
 def is_success(status: str) -> bool:
     return status in SUCCESS_STATUSES
@@ -93,12 +113,19 @@ def _first_error_line(row: dict) -> str:
 
 def categorize(
     b_id: dict, c_id: dict, b_ex: dict, c_ex: dict,
+    skip_models: set[str] | None = None,
 ) -> dict[str, list]:
     """Partition all (name, mode) keys in baseline ∪ current into 6 categories.
 
     Skipped pairs (status='skipped' in either nightly) are excluded from
     cats 1/2/3/6 and reported separately under 'skipped'.
+
+    Pairs whose model NAME is in skip_models (sweep/skip_models.json) are
+    excluded from ALL cats (1-6 and 'skipped') and reported separately
+    under 'skip_listed'. These are out-of-scope models (e.g., timm-deps
+    we don't test) and should not pollute regression/improvement counts.
     """
+    skip_models = skip_models or set()
     common = set(b_id.keys()) & set(c_id.keys())
     only_b = set(b_id.keys()) - common
     only_c = set(c_id.keys()) - common
@@ -108,8 +135,15 @@ def categorize(
     cat3: list = []
     cat6: list = []
     skipped: list = []
+    skip_listed: list = []
 
     for k in common:
+        if k[0] in skip_models:
+            skip_listed.append({"key": k,
+                                "baseline_status": b_id[k].get("status"),
+                                "current_status": c_id[k].get("status")})
+            continue
+
         bs = b_id[k].get("status")
         cs = c_id[k].get("status")
 
@@ -153,16 +187,25 @@ def categorize(
         "key": k, "status": c_id[k].get("status"),
         "gb_count": _gb_count(c_ex, k),
         "break_reasons": _gb_reasons(c_ex, k),
-    } for k in only_c]
+    } for k in only_c if k[0] not in skip_models]
+    cat4_skip_listed = [{
+        "key": k, "status": c_id[k].get("status"),
+    } for k in only_c if k[0] in skip_models]
+    skip_listed.extend(cat4_skip_listed)
 
     cat5 = [{
         "key": k, "status": b_id[k].get("status"),
-    } for k in only_b]
+    } for k in only_b if k[0] not in skip_models]
+    cat5_skip_listed = [{
+        "key": k, "status": b_id[k].get("status"),
+    } for k in only_b if k[0] in skip_models]
+    skip_listed.extend(cat5_skip_listed)
 
     return {
         "cat1": cat1, "cat2": cat2, "cat3": cat3,
         "cat4": cat4, "cat5": cat5, "cat6": cat6,
         "skipped": skipped,
+        "skip_listed": skip_listed,
     }
 
 
@@ -181,45 +224,55 @@ class InvariantFailure(AssertionError):
 
 def enforce_invariants(
     cats: dict, b_id: dict, c_id: dict, b_ex: dict, c_ex: dict,
+    skip_models: set[str] | None = None,
 ) -> None:
     """Raise InvariantFailure on any violation. Output is gated on this passing."""
+    skip_models = skip_models or set()
     common = set(b_id.keys()) & set(c_id.keys())
     only_b = set(b_id.keys()) - common
     only_c = set(c_id.keys()) - common
 
-    # Partition: cat1+cat2+cat3+cat6+skipped = |common|
+    common_in_scope = {k for k in common if k[0] not in skip_models}
+    only_b_in_scope = {k for k in only_b if k[0] not in skip_models}
+    only_c_in_scope = {k for k in only_c if k[0] not in skip_models}
+
+    # Partition: cat1+cat2+cat3+cat6+skipped = |common in-scope|
     n_partitioned = (
         len(cats["cat1"]) + len(cats["cat2"])
         + len(cats["cat3"]) + len(cats["cat6"])
         + len(cats["skipped"])
     )
-    if n_partitioned != len(common):
+    if n_partitioned != len(common_in_scope):
         raise InvariantFailure(
             "partition",
             f"cat1+cat2+cat3+cat6+skipped={n_partitioned}, "
-            f"expected {len(common)} (|common|). "
+            f"expected {len(common_in_scope)} (|common in-scope|, "
+            f"common={len(common)} minus {len(common) - len(common_in_scope)} skip-listed). "
             f"Some (name, mode) pair has a status combo the partition doesn't handle."
         )
 
-    # cat5 / cat4 sizes
-    if len(cats["cat5"]) != len(only_b):
+    # cat5 / cat4 sizes (in-scope only)
+    if len(cats["cat5"]) != len(only_b_in_scope):
         raise InvariantFailure(
             "partition",
-            f"cat5 (removed) has {len(cats['cat5'])} items, expected {len(only_b)}",
+            f"cat5 (removed in-scope) has {len(cats['cat5'])} items, expected {len(only_b_in_scope)}",
         )
-    if len(cats["cat4"]) != len(only_c):
+    if len(cats["cat4"]) != len(only_c_in_scope):
         raise InvariantFailure(
             "partition",
-            f"cat4 (new) has {len(cats['cat4'])} items, expected {len(only_c)}",
+            f"cat4 (new in-scope) has {len(cats['cat4'])} items, expected {len(only_c_in_scope)}",
         )
 
     # Explain coverage: every graph_break row must have a matching explain entry
+    # (skip-listed models are excluded — we don't sweep them, no explain expected)
     for label, id_data, ex_data in [
         ("baseline", b_id, b_ex), ("current", c_id, c_ex),
     ]:
         missing = sorted(
             k for k, v in id_data.items()
-            if v.get("status") == "graph_break" and k not in ex_data
+            if v.get("status") == "graph_break"
+            and k not in ex_data
+            and k[0] not in skip_models
         )
         if missing:
             raise InvariantFailure(
@@ -302,6 +355,12 @@ def render_markdown(
     emit(f"**Removed:**  {len(cats['cat5'])} work items (in baseline only)")
     if cats["skipped"]:
         emit(f"**Skipped (known_errors.json gated, in either nightly):** {len(cats['skipped'])} work items")
+    if cats.get("skip_listed"):
+        skip_models = sorted({r["key"][0] for r in cats["skip_listed"]})
+        emit(f"**Skip-listed (sweep/skip_models.json — out of test scope):** "
+             f"{len(cats['skip_listed'])} work items across {len(skip_models)} models "
+             f"(timm/einops dependents: {', '.join(skip_models[:5])}"
+             f"{', ...' if len(skip_models) > 5 else ''})")
     emit()
     emit("**Invariants:** ✓ all passed  (partition complete, explain coverage complete)")
     emit()
@@ -526,16 +585,22 @@ def main() -> int:
         print(f"Loaded baseline: {len(b_id)} identify, {len(b_ex)} explain", file=sys.stderr)
         print(f"Loaded current:  {len(c_id)} identify, {len(c_ex)} explain", file=sys.stderr)
 
+    # Load skip list
+    skip_models = _load_skip_models()
+    if args.verbose:
+        print(f"Skip list: {len(skip_models)} models out of test scope (sweep/skip_models.json)",
+              file=sys.stderr)
+
     # Categorize
     try:
-        cats = categorize(b_id, c_id, b_ex, c_ex)
+        cats = categorize(b_id, c_id, b_ex, c_ex, skip_models=skip_models)
     except ValueError as e:
         print(f"Categorization failure (likely tool bug): {e}", file=sys.stderr)
         return 1
 
     # Enforce invariants
     try:
-        enforce_invariants(cats, b_id, c_id, b_ex, c_ex)
+        enforce_invariants(cats, b_id, c_id, b_ex, c_ex, skip_models=skip_models)
     except InvariantFailure as e:
         print(f"INVARIANT FAILURE [{e.kind}]: {e}", file=sys.stderr)
         return 2 if e.kind == "explain_coverage" else 1
@@ -546,7 +611,8 @@ def main() -> int:
             f"cat1={len(cats['cat1'])}, cat2={len(cats['cat2'])}, "
             f"cat3={len(cats['cat3'])}, cat4={len(cats['cat4'])}, "
             f"cat5={len(cats['cat5'])}, cat6={len(cats['cat6'])}, "
-            f"skipped={len(cats['skipped'])}",
+            f"skipped={len(cats['skipped'])}, "
+            f"skip_listed={len(cats.get('skip_listed', []))}",
             file=sys.stderr,
         )
 

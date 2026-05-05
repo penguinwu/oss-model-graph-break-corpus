@@ -1,0 +1,17 @@
+[
+  "ConditionalDetrModel",
+  "DabDetrModel",
+  "DeformableDetrModel",
+  "DetrModel",
+  "FLUX.1-DiT",
+  "FastVlmForConditionalGeneration",
+  "FastVlmModel",
+  "Gemma3nForConditionalGeneration",
+  "Gemma3nModel",
+  "PeAudioVideoModel",
+  "PeVideoModel",
+  "PerceptionLMForConditionalGeneration",
+  "PerceptionLMModel",
+  "TableTransformerModel",
+  "TimmWrapperModel"
+]
