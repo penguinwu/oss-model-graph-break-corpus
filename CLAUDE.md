@@ -292,6 +292,17 @@ A "+41 corpus-wide regression" finding on 2026-05-04 was wrong precisely because
 
 **Naming discipline:** never write "X regressed by Y" or "X improved by Y" without naming the population (cat 3). Cat 1 / cat 4 contributions are "exposure" or "newly observed."
 
+### Search existing issues BEFORE filing new ones
+
+Before filing a new dynamo / transformers issue: grep open + closed issues for the break-reason substring, the operator name, OR the source location. If a tracked issue already covers the same root cause, **update that issue with current data** instead of filing a new one. Filed-then-closed-as-duplicate creates noise and erodes trust.
+
+```bash
+# Quick search via gh API (replace SUBSTR with a distinctive fragment of the break reason)
+gh issue list --repo penguinwu/oss-model-graph-break-corpus --state all --search "SUBSTR" --limit 20
+```
+
+This rule was learned the hard way on 2026-05-04: I split issue #8 into 5 sub-issues (#112-#116) without searching, and 3 of them (#113 lock+ContextVar, #114 setattr, #115 Tensor.item) were duplicates of existing #11/#23/#24/#56. Closed and redirected, but left fingerprints on the tracker.
+
 ### Umbrella-split policy
 
 **One issue = one specific GB type.** Umbrella issues that bundle multiple distinct root causes never close — they hide actual progress. Split them.
