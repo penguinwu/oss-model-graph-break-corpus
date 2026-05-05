@@ -48,6 +48,12 @@ For weekly briefs / daily standups / any broadcast announcement to `spaces/AAQAB
 
 Direct `gchat send spaces/AAQABmB_3Is "..."` is fine for thread replies (someone asked a question, you're answering — match the conversational tone). The discipline check before any send is "is this internal sweep ops state?" If yes, wrong space. (Reason: 2026-05-03 watchdog status leak. Discipline-only — Peng confirmed normal interaction is approved.)
 
+### R7.5 — Wrapper-only buckets are usually classifier gaps, not explain-pass bugs
+
+When the umbrella-split bucketing puts entries into a `failed_graceful_only` / `cannot_resume_only` / similar catch-all bucket, the FIRST check is "does my classifier have a rule for the underlying reason?" — sample the actual `break_reasons` text from `explain_checkpoint.jsonl` and look for inner explanations the classifier missed.
+
+Filing an issue against the explain pass (claiming serialization drops the inner reason) requires verifying that the inner reason is GENUINELY missing in the serialized text — not just unclassified by your script. (Reason: 2026-05-04 issue #123 was filed against the explain pass, then closed when verification showed the inner reasons WERE captured — my classifier just didn't have rules for `torch.nn.Parameter() constructor`, `torch.* op returned non-Tensor`, `missing tp_iter`, etc.)
+
 ### R8 — Verify the destination group's actual name before referring to it by name
 
 `meta workplace.group details --group-id=<ID>` returns the canonical name. Always run it and use the output, NOT a name from memory or a USER.md group list (which can have similar-sounding groups with different IDs).
