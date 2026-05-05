@@ -29,29 +29,9 @@ When positioning a use case to consumers, name the niche it serves best. Don't o
 
 Methodology and design rationale live in `design/design-doc.md` (also at Google Doc `1paCL1R8xoN6OajND8c4M5WgA68Uw1iEij-katYFqneM`). This file (CLAUDE.md) is for *how to operate*; the design doc is for *why we built it this way*.
 
-## Checking pytorch/pytorch PR Status — MANDATORY rule
+## Checking pytorch/pytorch PR Status
 
-**Never use GitHub's `merged: true/false` field alone as proof of whether a pytorch/pytorch PR has landed.** PyTorch uses ghstack for many PRs. Ghstack lands changes via PyTorch MergeBot (an internal merge flow), NOT via GitHub's Merge button. **GitHub's `merged` field shows `false` even when the commit has actually landed on main and shipped in release branches.**
-
-This has misled us before. On 2026-05-03, we incorrectly reported PR #179611 ("[dynamo] Support copy.deepcopy via polyfill") as "closed without merging" — when in fact it landed via ghstack as commit `61fdec7ddb5d` on 2026-04-11 and IS in `release/2.12`. Communicating this wrong status to compiler developers erodes trust.
-
-**Always use `tools/pr_landing_check.py` to check pytorch PR status.** It handles all four real verdicts:
-- `LANDED_GH` — merged via the GitHub button (rare for pytorch nowadays)
-- `LANDED_GHSTACK` — merged via ghstack/MergeBot (commit on main; GitHub shows `merged: false`)
-- `NOT_LANDED` — closed without any commit reaching main
-- `OPEN` — still being reviewed
-
-The script also checks whether the landed commit is in a specific release branch (`--branch release/2.12`).
-
-```bash
-# Single PR
-python3 tools/pr_landing_check.py 179611
-
-# Check if it's in the upcoming 2.12 stable
-python3 tools/pr_landing_check.py 179611 180585 --branch release/2.12
-```
-
-**Rule scope:** any time you need to answer "did this pytorch PR land?" or "is this pytorch PR in release X?" — use this script. Do NOT paste GitHub UI quotes / `gh api` PR JSON as authority. Quote `pr_landing_check.py`'s output.
+For any 'did PR #N land/merge?' or 'is PR #N in release/X?' question, invoke the `pr-landing-check` skill. Never quote GitHub's `merged` field alone — it shows `false` for ghstack PRs even after they land.
 
 ## Closure Discipline
 
@@ -277,3 +257,17 @@ Issues track graph break patterns at https://github.com/penguinwu/oss-model-grap
 The classifier rules live in `tools/file_issues.py` (`GRAPH_BREAK_RULES`). Each rule maps a break reason pattern to an issue number.
 
 Issue bodies include: affected model tables, break reason samples, leverage analysis (models to fullgraph if fixed), and cross-references to related issues. All machine-filed issues contain `<!-- filed-by: otter/file_issues.py -->`.
+
+### Umbrella-split policy
+
+**One issue = one specific GB type.** Umbrella issues that bundle multiple distinct root causes never close — they hide actual progress. Split them.
+
+- An umbrella issue is one where the breaks under it have ≥2 distinct underlying root causes (different operators, different Dynamo limitations, different source files needing different fixes).
+- A "specific GB type" issue tracks ONE root cause: one operator (e.g., `aten.nonzero.default`), one Dynamo limitation (e.g., `setattr` builtin), or one source-file refactor target.
+- Each specific issue must have a closure criterion that's a single sweep_compare query (e.g., "ZERO occurrences of pattern X in current sweep").
+- Same operator at many sites is NOT an umbrella — it's one specific issue (the fix is the same: support the op or avoid it). Don't split per-site unless the fixes genuinely differ.
+- The "trace CALL" / "Encountered graph break when attempting to trace CALL" pattern is bytecode-instruction wrapper, NOT a root cause. Always classify by the underlying explanation/operator beneath the trace-CALL framing.
+
+When you find an umbrella in an existing issue: file per-root-cause sub-issues with the data-derived model lists, comment on the umbrella with the taxonomy + cross-refs, then close the umbrella as `not_planned` (state_reason). Cross-link sub-issues back to the original.
+
+Decided 2026-05-04 after sweep #57 found that issue #8 ("DETR proxy CALL", 234 breaks, 54 models) actually contained 8+ distinct root causes — split into #112-#116 (and re-attributed sub-buckets to existing #18, #55).
