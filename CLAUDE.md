@@ -235,9 +235,37 @@ python tools/query.py --error deepcopy         # Search by error text
 
 ### Compare sweep results
 
+For two-sweep comparison with invariant-checked partition + per-pattern segmentation:
+
 ```bash
-python tools/compare.py sweep_results/pt2.11/ sweep_results/nightly/2026-04-19/
+python tools/sweep_compare.py \
+    --baseline sweep_results/nightly/<prior-week> \
+    --current  sweep_results/nightly/<this-week> \
+    --out experiments/<this-week>-nightly-report.md
 ```
+
+For per-pattern delta segmented by partition category (the only honest way to ask "did pattern X get worse"):
+
+```bash
+python tools/sweep_compare.py --baseline X --current Y \
+    --pattern "aten._local_scalar_dense.default"
+```
+
+Older `tools/compare.py` is for static-vs-dynamic-mark within ONE sweep (different use case):
+
+```bash
+python tools/compare.py --corpus-dynamic
+```
+
+### Compose the weekly nightly-sweep brief (for PT2 dynamo team)
+
+When generating a weekly nightly-sweep summary intended for external broadcast (Workplace post + signal boost), use the `weekly-sweep-brief` skill:
+
+- Skill: `skills/weekly-sweep-brief/SKILL.md` (workflow)
+- Template: `skills/weekly-sweep-brief/template.md` (8 fixed sections)
+- Methodology: `skills/weekly-sweep-brief/methodology.md` (hard rules R1-R7 + soft rules + self-check checklist)
+
+DO NOT iterate the brief structure from scratch each week — the template + methodology are the encoded learning from the 2026-05-04 brief composition session. Skipping the methodology rules has produced wrong numbers / leaked attribution / duplicated issues in the past.
 
 ## Conventions
 

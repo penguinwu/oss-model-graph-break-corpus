@@ -1,0 +1,96 @@
+# Weekly Sweep Brief — methodology rules
+
+These are the rules that distinguish a defensible brief from a misleading one. Every rule was learned from a specific mistake in 2026-04 / 2026-05 weekly briefs. **Skip a rule = ship a wrong number.**
+
+## Hard rules (mechanical guards exist; bypass requires Peng's written approval)
+
+### R1 — Single source of truth: `tools/sweep_compare.py`
+
+Every count in the brief must derive from `sweep_compare.py` output (markdown report, JSON output, or `--pattern` query). NO ad-hoc one-liner Python scripts that compute corpus-wide aggregates. (Reason: the 2026-05-04 hand-aggregated `_local_scalar_dense` "+41 regression" finding mixed cat 3 with cat 1/cat 4 and was wrong by sign.)
+
+### R2 — Apple-to-apple only for "regression" / "improvement" claims
+
+The only category where a delta means "Dynamo regressed" or "Dynamo improved" is **cat 3** (compile-success in BOTH baseline and current). Cat 1 / cat 4 deltas are EXPOSURE — patterns becoming newly observable, not Dynamo getting worse.
+
+Use `python3 tools/sweep_compare.py --pattern "<substring>"` for any per-pattern question. The tool's output is segmented; copy the structure as-is into the brief, do not collapse to one number.
+
+Forbidden phrasing: "X regressed by Y" or "X improved by Y" without naming the population. Required phrasing: "X regressed by Y on common compile-success pairs" or "X exposure +Y from newly compile-testable models."
+
+### R3 — Attribution must be verified on at least 2 flipped models before claiming "Dynamo win"
+
+For any model that flipped `graph_break → full_graph`, run the model with current harness + OLDER torch + baseline transformers. If it reproduces the original break, attribution is torch (Dynamo). If it compiles cleanly, attribution is harness or transformers — investigate further.
+
+Verify the involved transformers source files are byte-identical between baseline and current. Same caller + same callee + same call path + only torch differs = torch attribution.
+
+If attribution can't be verified before brief deadline, mark "### Attribution status: UNVERIFIED" and propose the test. Don't claim "Dynamo win" without verification.
+
+### R4 — Umbrella-split policy applied before any issue claims
+
+Before referring to a tracked issue as "improving" or "closeable", verify it's not an umbrella (multiple distinct root causes bundled). Apply the corpus CLAUDE.md "Umbrella-split policy" if so.
+
+The "trace CALL" / "Encountered graph break when attempting to trace CALL" / "Failed to handle graph break gracefully" / "Cannot resume from graph break" patterns are bytecode-instruction wrappers, NOT root causes. Always classify by the underlying explanation/operator beneath.
+
+### R5 — Search existing issues BEFORE filing new ones
+
+Before filing any new dynamo / transformers issue, grep open + closed issues for the break-reason substring, the operator name, OR the source location. (Reason: 2026-05-04 split of #8 created 3 duplicates of #11, #23, #24 because I didn't search first.)
+
+```bash
+gh issue list --repo penguinwu/oss-model-graph-break-corpus --state all --search "<substring>" --limit 20
+```
+
+### R6 — Newly compile-testable = cat 1 + cat 4 successes combined
+
+Per Peng (2026-05-04): any flip from error to eager-success/compile-success counts as a "new model" for brief purposes. Don't report cat 4 alone as "new models added" — it under-reports the actual newly-testable surface.
+
+### R7 — Feedback space is only reachable via `tools/post_to_feedback.py`
+
+Direct `gchat send spaces/AAQABmB_3Is "..."` is forbidden (mechanical block in `~/.myclaw/spaces/AAQANraxXE4/.claude/settings.json`). Signal-boost step in the workflow uses the gated wrapper. (Reason: 2026-05-03 watchdog status leak.)
+
+## Soft rules (judgment, no mechanical guard)
+
+### S1 — Numbers in the headline must reconcile with body sections
+
+The headline says "Net −124 GBs" — the cat 3 sub-totals in section 3 must add up to that. Run a self-check: `(sum of GB-improved deltas) + (sum of GB-regressed deltas) + (sum of full-flip eliminations) = headline net`. If they don't reconcile, fix one or the other.
+
+### S2 — Forbidden vague language
+
+- "Likely closeable" → either VERIFIED-closeable (with checked closure criterion) or NOT-closeable. No "likely."
+- "Substantially advanced" → if the cat 3 delta is positive, just say "improved by N." If you can't quantify, you don't know.
+- "Some models" / "a few models" → name N. If too many to name, give the number.
+
+### S3 — Audience-adapted detail
+
+The audience is PT2 dynamo team — technical, but not in our internal discussion threads. Forbidden references: bare issue numbers without 1-line description; internal tool names (`sweep_compare.py`, `post_to_feedback.py`) without enough context for an outsider to find them; internal jargon ("cat 3", "cat 4") used as load-bearing without first defining them in the headline framing.
+
+### S4 — Actionable items must name the leverage
+
+Each actionable bullet states "if you fix X, Y breaks across Z models clear." If you can't quantify leverage, the item shouldn't be in the actionable list — move it to a footnote or drop it.
+
+## Self-check checklist (run before posting)
+
+Walk through every item. Each must pass.
+
+- [ ] Step 1: `tools/sweep_compare.py --check-only` returned exit code 0
+- [ ] R1: every number in the brief comes from sweep_compare output (markdown, JSON, or `--pattern` query) — no ad-hoc scripts
+- [ ] R2: every "regression" or "improvement" claim names cat 3 explicitly (or is qualified as "exposure" / "newly observable" for cat 1/cat 4)
+- [ ] R3: attribution verified on ≥2 flipped models, OR explicitly marked UNVERIFIED
+- [ ] R4: every umbrella issue mentioned has been split (or marked for split this cycle)
+- [ ] R5: every new issue filed today was preceded by a `gh issue list --search` against existing
+- [ ] R6: "newly compile-testable" includes cat 1 + cat 4, not just cat 4
+- [ ] R7: signal-boost message goes through `post_to_feedback.py`, not raw `gchat send`
+- [ ] S1: headline numbers reconcile with body sub-totals
+- [ ] S2: no "likely" / "substantially" / "some" / "a few" in load-bearing claims
+- [ ] S3: audience can read this without our internal context (no bare #N, no "cat 3" load-bearing without intro)
+- [ ] S4: each actionable bullet names the leverage in numbers
+
+If any item fails: fix it, then re-run the checklist (don't selectively re-check). The whole list must pass before Step 7 (post).
+
+## Lessons baked in (changelog of why these rules exist)
+
+- **R2** added 2026-05-04 — `_local_scalar_dense` "+41 regression" finding was wrong because hand-aggregated across cats. `tools/sweep_compare.py --pattern` added as the mechanical guard.
+- **R3** added 2026-05-04 — initial brief claimed "Dynamo improvement" without testing; SmolVLM + LwDetrModel attribution test confirmed torch source.
+- **R4** added 2026-05-04 — Issue #8 (DETR proxy CALL) had 8+ underlying root causes, not one. Same applied to #18, #102, #103.
+- **R5** added 2026-05-04 — split of #8 created 3 duplicates of #11/#23/#24. Settings deny rule + grep workflow added.
+- **R6** added 2026-05-04 — initial brief reported only cat 4 as "new"; missed Qwen3VL/Qwen3.5 vision encoders that flipped from eager_error.
+- **R7** added 2026-05-04 — watchdog status leaked to user group via raw `gchat send --as-user`. Settings deny + this rule added.
+- **S1, S2, S3, S4** consolidated 2026-05-04 from iterations during the 2026-05-03 brief composition.
