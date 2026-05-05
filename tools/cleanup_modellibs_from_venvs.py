@@ -70,15 +70,24 @@ def discover_torch_venvs() -> List[Path]:
 
 
 def installed_version(venv: Path, pkg: str) -> str | None:
-    """Run `<venv>/bin/python -c 'import <pkg>; print(__version__)'`. None if not installed."""
+    """Return version of <pkg> installed in <venv>, or None if not installed.
+
+    Uses `pip show` (metadata-based) NOT `import` — because some venvs have
+    pkgs installed but with import-time failures (e.g. torch ABI mismatch in
+    torch212-rc, or torch-not-in-venv as in torch-181552). pip show tells the
+    truth about what's on disk regardless of whether import works.
+    """
     py = venv / "bin" / "python3"
     result = subprocess.run(
-        [str(py), "-c", f"import {pkg}; print({pkg}.__version__)"],
+        [str(py), "-m", "pip", "show", pkg],
         capture_output=True, text=True, timeout=15,
     )
     if result.returncode != 0:
         return None
-    return result.stdout.strip()
+    for line in result.stdout.splitlines():
+        if line.startswith("Version:"):
+            return line.split(":", 1)[1].strip()
+    return None
 
 
 def load_modellib_versions() -> dict[str, set[str]]:
@@ -111,14 +120,32 @@ def pip_uninstall(venv: Path, pkg: str, dry_run: bool) -> int:
 
 
 def verify_uninstalled(venv: Path, pkg: str) -> bool:
-    """Return True iff `import pkg` now fails from this venv."""
+    """Return True iff <pkg> is no longer installed.
+
+    Two checks:
+      1. `pip show` reports it gone (metadata-level uninstall worked).
+      2. No top-level pkg dir remains in site-packages (orphan-file check).
+    Both must be true. (Skip `import` check — some venvs have ABI issues that
+    make `import` fail even when the pkg IS still installed.)
+    """
+    if installed_version(venv, pkg) is not None:
+        return False
     py = venv / "bin" / "python3"
-    result = subprocess.run(
-        [str(py), "-c", f"import {pkg}"],
-        capture_output=True, text=True, timeout=15,
+    sp_result = subprocess.run(
+        [str(py), "-c", "import site; print('\\n'.join(site.getsitepackages()))"],
+        capture_output=True, text=True, timeout=10,
     )
-    # We WANT this to fail (ModuleNotFoundError) — return True if it failed.
-    return result.returncode != 0
+    if sp_result.returncode != 0:
+        return True  # can't check; trust pip show
+    for sp_line in sp_result.stdout.strip().splitlines():
+        sp = Path(sp_line)
+        if not sp.exists():
+            continue
+        for entry in sp.iterdir():
+            name = entry.name.lower()
+            if name == pkg or name.startswith(f"{pkg}-") or name.startswith(f"{pkg}."):
+                return False
+    return True
 
 
 def cleanup_orphan_dirs(venv: Path, pkg: str) -> List[Path]:
