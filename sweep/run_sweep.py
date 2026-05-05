@@ -297,6 +297,101 @@ def _log_versions(python_bin, output_dir):
     return log_versions(python_bin)
 
 
+def _resolve_modellib_paths(args):
+    """Resolve --transformers/--diffusers/--timm flags to absolute paths.
+
+    Returns list of absolute paths (in --transformers, --diffusers, --timm order)
+    that should be prepended to PYTHONPATH. Returns empty list if no modellib
+    flag was passed. Exits with non-zero if a flag points at a non-existent tree.
+
+    Per design/venv-decouple-modellibs.md.
+    """
+    paths = []
+    for pkg, ver in (("transformers", getattr(args, "transformers", None)),
+                     ("diffusers", getattr(args, "diffusers", None)),
+                     ("timm", getattr(args, "timm", None))):
+        if not ver:
+            continue
+        tree = Path.home() / "envs" / "modellibs" / f"{pkg}-{ver}"
+        if not tree.exists():
+            print(f"[run_sweep] ERROR: --{pkg} {ver} requested but tree not found: {tree}",
+                  file=sys.stderr)
+            print(f"[run_sweep] Bootstrap with: python3 tools/bootstrap_modellibs.py "
+                  f"--pkg {pkg} --ver {ver}", file=sys.stderr)
+            sys.exit(1)
+        paths.append(str(tree))
+        print(f"[run_sweep] modellibs: {pkg}=={ver} → {tree}")
+    return paths
+
+
+def _warn_or_error_missing_modellibs(args):
+    """Phase 4 enforcement: when a source is enabled without an explicit
+    --<pkg> VER flag, emit a warning. With --strict-modellibs, hard-fail.
+
+    Source → required flag mapping:
+        'hf'        → --transformers
+        'diffusers' → --diffusers
+        'timm'      → --timm
+        'custom'    → none required
+
+    Per design/venv-decouple-modellibs.md §"Phase 4: Default behavior — DECIDED".
+    Currently SOFT (warn-only) for backwards compat with existing nightly cron;
+    flip to hard-fail by default once Phase 5 cleanup ships.
+    """
+    sources = getattr(args, "source", None) or []
+    src_to_flag = {
+        "hf": ("transformers", getattr(args, "transformers", None)),
+        "diffusers": ("diffusers", getattr(args, "diffusers", None)),
+        "timm": ("timm", getattr(args, "timm", None)),
+    }
+    missing = []
+    for src in sources:
+        if src == "all":
+            for s in ("hf", "diffusers", "timm"):
+                pkg, ver = src_to_flag[s]
+                if not ver:
+                    missing.append((s, pkg))
+            continue
+        if src in src_to_flag:
+            pkg, ver = src_to_flag[src]
+            if not ver:
+                missing.append((src, pkg))
+    if not missing:
+        return
+    msg_lines = [
+        "[run_sweep] WARNING: source(s) enabled without explicit modellib version:",
+    ]
+    for src, pkg in missing:
+        msg_lines.append(f"    --source {src} → falling back to torch venv's installed {pkg}. "
+                         f"Pass --{pkg} VER for declarative selection.")
+    msg_lines.append("    See sweep/modellibs.json for available versions.")
+    msg_lines.append("    This will become a hard error after Phase 5 (cleanup) ships.")
+    print("\n".join(msg_lines), file=sys.stderr)
+    if getattr(args, "strict_modellibs", False):
+        print("[run_sweep] --strict-modellibs is set; refusing to launch.", file=sys.stderr)
+        sys.exit(2)
+
+
+def _ensure_modellib_pythonpath(modellib_paths, python_bin):
+    """Idempotently inject modellib paths into PYTHONPATH and re-exec if needed.
+
+    Sentinel env var `_MODELLIBS_INJECTED` prevents re-exec loops. After this
+    returns, the current process's `sys.path` AND child processes' inherited
+    PYTHONPATH both have the modellib trees in front of the venv's site-packages.
+    """
+    if not modellib_paths:
+        return
+    if os.environ.get("_MODELLIBS_INJECTED") == "1":
+        return  # Already done in a previous re-exec
+    existing = os.environ.get("PYTHONPATH", "")
+    new_pp = ":".join(modellib_paths + ([existing] if existing else []))
+    os.environ["PYTHONPATH"] = new_pp
+    os.environ["_MODELLIBS_INJECTED"] = "1"
+    print(f"[run_sweep] PYTHONPATH set: {new_pp}")
+    print(f"[run_sweep] re-exec to apply PYTHONPATH (sys.path needs reload)")
+    os.execv(python_bin, [python_bin] + sys.argv)
+
+
 def run_sweep(args):
     """Main sweep logic."""
     python_bin = _resolve_python(args)
@@ -329,6 +424,20 @@ def run_sweep(args):
             os.environ["SWEEP_PYTHON"] = python_bin
             print(f"[run_sweep] re-exec'ing under {python_bin} for in-process imports")
             os.execv(python_bin, [python_bin] + sys.argv)
+
+    # ── Modellibs PYTHONPATH plumbing ──
+    # Independent of --torch/--cuda-variant: any --transformers/--diffusers/--timm
+    # flag triggers PYTHONPATH injection + re-exec under whatever python_bin we
+    # have (the torch-venv-resolved one, or SWEEP_PYTHON if invoked directly).
+    modellib_paths = _resolve_modellib_paths(args)
+    _ensure_modellib_pythonpath(modellib_paths, python_bin)
+
+    # ── Phase 4: warn (eventually error) when a source is enabled without an
+    # explicit modellib version. Currently SOFT — emits warning. Flip to hard
+    # error via --strict-modellibs (off by default) once Phase 5 cleanup ships
+    # (pip uninstall transformers/diffusers/timm from torch venvs); then no
+    # silent fallback to torch venv's installed copy is possible.
+    _warn_or_error_missing_modellibs(args)
 
     output_dir = _resolve_run_output_dir(args).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1792,6 +1901,26 @@ def main():
                             help="Skip the transformers/torch min-version compat gate. "
                                  "Use only when knowingly testing an unsupported pair "
                                  "(e.g. transformers nightly against an older torch).")
+    # Modellibs (per design/venv-decouple-modellibs.md): pure-Python model
+    # libraries can be supplied from standalone trees at ~/envs/modellibs/<pkg>-<ver>/
+    # instead of being baked into the torch venv. PYTHONPATH-injected before re-exec.
+    # See sweep/modellibs.json for available versions; bootstrap via tools/bootstrap_modellibs.py.
+    run_parent.add_argument("--transformers", default=None, metavar="VER",
+                            help="Use transformers from ~/envs/modellibs/transformers-VER/ "
+                                 "instead of the torch venv's installed copy. Currently OPT-IN; "
+                                 "will become required once Phase 5 of the modellibs migration "
+                                 "ships (then sweep refuses to launch without an explicit version).")
+    run_parent.add_argument("--diffusers", default=None, metavar="VER",
+                            help="Use diffusers from ~/envs/modellibs/diffusers-VER/ instead of "
+                                 "the torch venv's installed copy. Same opt-in semantics as --transformers.")
+    run_parent.add_argument("--timm", default=None, metavar="VER",
+                            help="Use timm from ~/envs/modellibs/timm-VER/ instead of the torch "
+                                 "venv's installed copy. Same opt-in semantics as --transformers.")
+    run_parent.add_argument("--strict-modellibs", action="store_true",
+                            help="Hard-fail (exit 2) if a source is enabled without an explicit "
+                                 "--<pkg> VER flag. Without this, missing flags emit a warning "
+                                 "and fall back to the torch venv's installed copy. Becomes "
+                                 "default behavior after Phase 5 cleanup ships.")
 
     # ── sweep subcommand ──
     sweep_parser = subparsers.add_parser(

@@ -1831,6 +1831,22 @@ def main():
     sub_sweep.add_argument("--cuda-variant", default=None,
                            choices=["cu128", "cu126"],
                            help="CUDA variant for --torch venv pre-flight.")
+    # Modellibs (per design/venv-decouple-modellibs.md): pure-Python model
+    # libraries supplied from standalone trees at ~/envs/modellibs/<pkg>-<ver>/.
+    # Currently OPT-IN; will become required in Phase 4/5 of the migration.
+    sub_sweep.add_argument("--transformers", default=None, metavar="VER",
+                           help="Use transformers from ~/envs/modellibs/transformers-VER/ "
+                                "instead of the torch venv's installed copy.")
+    sub_sweep.add_argument("--diffusers", default=None, metavar="VER",
+                           help="Use diffusers from ~/envs/modellibs/diffusers-VER/ "
+                                "instead of the torch venv's installed copy.")
+    sub_sweep.add_argument("--timm", default=None, metavar="VER",
+                           help="Use timm from ~/envs/modellibs/timm-VER/ "
+                                "instead of the torch venv's installed copy.")
+    sub_sweep.add_argument("--strict-modellibs", action="store_true",
+                           help="Hard-fail (exit 2) if a source is enabled without an explicit "
+                                "--<pkg> VER flag. Without this, missing flags emit a warning "
+                                "and fall back to the torch venv's installed copy.")
     sub_sweep.add_argument("--dynamic-dim", choices=["batch", "all"],
                            help="Dynamic shapes mode")
     sub_sweep.add_argument("--no-auto-retry", action="store_true",
