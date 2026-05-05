@@ -1,10 +1,26 @@
 ---
 plan: Decouple model libraries (transformers, diffusers, timm) from torch venvs
-status: draft
+status: phase-1-4-shipped
 owner: Otter (drafting); Peng (reviewing)
 created: 2026-05-03
-revision: 1
+revision: 2
+last_check: 2026-05-04
 ---
+
+## Status (2026-05-04)
+
+Phase 1-4 shipped tonight in commit `7d3f6f4` (Otter, agent-time). Phase 5
+(pip uninstall from torch venvs) deferred for Peng's morning sign-off.
+HANDOFF.md has the full picture.
+
+Verification:
+- 5-gate test-sweep-changes walked + passed
+- End-to-end CLI test: cu128 venv with `--transformers 5.5.3` records 5.5.3
+  in sweep_state.json (overrides the venv's baked-in 5.6.2)
+- Bit-identical apple-to-apple smoke on DistilBertModel (cu128 venv 5.6.2
+  vs cu128 + modellib 5.6.2 PYTHONPATH)
+
+
 
 # Decouple Model Libraries from Torch Venvs
 
