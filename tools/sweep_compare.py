@@ -263,8 +263,20 @@ def enforce_invariants(
             f"cat4 (new in-scope) has {len(cats['cat4'])} items, expected {len(only_c_in_scope)}",
         )
 
-    # Explain coverage: every graph_break row must have a matching explain entry
-    # (skip-listed models are excluded — we don't sweep them, no explain expected)
+    # Explain coverage: every graph_break row must have a USABLE explain entry.
+    # Two failure modes are checked:
+    #   (a) MISSING — no entry at all (key not in ex_data)
+    #   (b) BROKEN — entry exists but its status indicates the explain pass failed
+    #                (status='explain_error' or 'worker_error' etc.) — the
+    #                break_reasons list is empty/stale, so any cat-3 GB-count
+    #                delta involving this pair is invalid.
+    #
+    # Both must be flagged: 2026-05-04 brief reported InstructBlipModel/
+    # InstructBlipVideoModel as "0 → 9 GBs regression" because the 04-26 baseline
+    # had explain_status='explain_error' (count=0, missed), and the current entry
+    # had explain_status='ok' (count=9). The delta was bogus. The check below
+    # would have flagged this baseline at run time.
+    BROKEN_EXPLAIN_STATUSES = {"explain_error", "worker_error", "timeout"}
     for label, id_data, ex_data in [
         ("baseline", b_id, b_ex), ("current", c_id, c_ex),
     ]:
@@ -274,14 +286,36 @@ def enforce_invariants(
             and k not in ex_data
             and k[0] not in skip_models
         )
-        if missing:
+        broken = sorted(
+            k for k, v in id_data.items()
+            if v.get("status") == "graph_break"
+            and k in ex_data
+            and ex_data[k].get("status") in BROKEN_EXPLAIN_STATUSES
+            and k[0] not in skip_models
+        )
+        if missing or broken:
+            details = []
+            if missing:
+                details.append(
+                    f"{len(missing)} MISSING explain entries: "
+                    f"{missing[:3]}{'...' if len(missing) > 3 else ''}"
+                )
+            if broken:
+                # Surface the broken-status breakdown (e.g. 4 explain_error + 1 worker_error)
+                from collections import Counter as _C
+                bs = _C(ex_data[k].get("status") for k in broken)
+                details.append(
+                    f"{len(broken)} BROKEN explain entries (status in "
+                    f"{sorted(BROKEN_EXPLAIN_STATUSES)}): "
+                    f"{dict(bs)}; e.g. {broken[:3]}{'...' if len(broken) > 3 else ''}"
+                )
             raise InvariantFailure(
                 "explain_coverage",
-                f"{label}: {len(missing)} graph_break rows have NO explain entry. "
+                f"{label}: " + " | ".join(details) + ". "
                 f"Reasons / GB counts will be wrong for these pairs. "
-                f"Fix: run `python3 tools/amend_sweep.py ...` on the affected models "
-                f"so the amendment workflow re-runs explain. "
-                f"Missing keys: {missing[:5]}{'...' if len(missing) > 5 else ''}"
+                f"Fix: re-run explain via `tools/amend_sweep.py` (with matching "
+                f"torch venv) on the affected models, OR exclude them from "
+                f"cat-3 analysis if baseline venv unrecoverable."
             )
 
 
