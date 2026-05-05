@@ -278,6 +278,20 @@ The classifier rules live in `tools/file_issues.py` (`GRAPH_BREAK_RULES`). Each 
 
 Issue bodies include: affected model tables, break reason samples, leverage analysis (models to fullgraph if fixed), and cross-references to related issues. All machine-filed issues contain `<!-- filed-by: otter/file_issues.py -->`.
 
+### Pattern-delta discipline — never aggregate across partition categories
+
+**When computing how a break-reason pattern's count changed between two sweeps, segment by partition category from the start.** Never compute a single corpus-wide `current_total - baseline_total` scalar — that subtraction is mathematically valid but semantically meaningless because it conflates three operationally-distinct populations:
+
+- **cat 3 (compile-success in BOTH sweeps)** — only here can a delta mean "Dynamo regression" or "Dynamo improvement." Apple-to-apple.
+- **cat 1 (was error in baseline → success in current)** — patterns that became newly observable because eager / harness fixes unblocked compile testing. This is **EXPOSURE**, not regression.
+- **cat 4 (truly new model in current)** — patterns from models that didn't exist in baseline. Also EXPOSURE.
+
+A "+41 corpus-wide regression" finding on 2026-05-04 was wrong precisely because it summed cat 3 (improvement) with cat 1 + cat 4 (exposure) into one scalar.
+
+**Mechanical guard:** use `tools/sweep_compare.py --pattern "<substring>"` (or `pattern_delta()` API) for any per-pattern delta question. The tool returns the segmented breakdown; it intentionally does NOT expose a single corpus-wide scalar.
+
+**Naming discipline:** never write "X regressed by Y" or "X improved by Y" without naming the population (cat 3). Cat 1 / cat 4 contributions are "exposure" or "newly observed."
+
 ### Umbrella-split policy
 
 **One issue = one specific GB type.** Umbrella issues that bundle multiple distinct root causes never close — they hide actual progress. Split them.

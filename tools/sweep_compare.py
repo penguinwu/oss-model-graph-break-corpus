@@ -286,6 +286,114 @@ def enforce_invariants(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Per-pattern break-count delta, segmented by partition category.
+#
+# CRITICAL DESIGN: this function NEVER returns a single corpus-wide scalar
+# delta. It returns a dict segmented by category. The reason: a single
+# scalar (current_total - baseline_total) for any break-reason pattern is
+# semantically meaningless — it conflates apple-to-apple regression on
+# common models (cat 3) with EXPOSURE from newly-compile-testable models
+# (cat 1, cat 4). Mixing them produced a wrong "_local_scalar_dense
+# regression" finding on 2026-05-04 that almost shipped to Animesh.
+#
+# Use the cat3 delta for "regression / improvement" claims. Use cat1/cat4
+# numbers for "exposure / coverage growth" claims. Never sum them.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+PatternMatcher = Any  # callable(text:str) -> bool, OR a substring str
+
+
+def _make_matcher(pattern):
+    """Accept either a callable matcher or a literal substring."""
+    if callable(pattern):
+        return pattern
+    if isinstance(pattern, str):
+        sub = pattern
+        return lambda text: sub in text
+    raise TypeError(f"pattern must be callable or str, got {type(pattern)}")
+
+
+def pattern_delta(
+    pattern, b_id: dict, c_id: dict, b_ex: dict, c_ex: dict,
+    cats: dict, skip_models: set[str] | None = None,
+) -> dict:
+    """Per-pattern break-count breakdown segmented by partition category.
+
+    Returns a dict with structure:
+      {
+        'cat3_baseline':  N,   'cat3_current':  M,   'cat3_delta':  D,
+                                                # ↑ ONLY this is regression/improvement
+        'cat1_current':   K,   # exposure (was eager_error / timeout / worker_error)
+        'cat4_current':   L,   # exposure (truly new model in current)
+        'cat6_current':   X,   # always 0 in practice (no break_reasons on errors)
+        'totals': {'baseline': ..., 'current': ...},
+                                # NEVER subtract these. The subtraction would
+                                # mix apple-to-apple regression with exposure.
+      }
+
+    To talk about "regression" or "improvement", use cat3_delta and ONLY
+    cat3_delta. cat1_current + cat4_current are EXPOSURE numbers — patterns
+    that became newly observable because models that previously failed
+    eager / didn't exist now compile.
+    """
+    skip_models = skip_models or set()
+    match = _make_matcher(pattern)
+
+    def count_in(ex_data, key):
+        if key not in ex_data:
+            return 0
+        return sum(1 for br in ex_data[key].get("break_reasons", [])
+                   if match(br.get("reason", "")))
+
+    cat3_keys = {tuple(r["key"]) if isinstance(r["key"], list) else r["key"]
+                 for r in cats["cat3"]}
+    cat1_keys = {tuple(r["key"]) if isinstance(r["key"], list) else r["key"]
+                 for r in cats["cat1"]}
+    cat4_keys = {tuple(r["key"]) if isinstance(r["key"], list) else r["key"]
+                 for r in cats["cat4"]}
+    cat6_keys = {tuple(r["key"]) if isinstance(r["key"], list) else r["key"]
+                 for r in cats["cat6"]}
+
+    cat3_b = sum(count_in(b_ex, k) for k in cat3_keys)
+    cat3_c = sum(count_in(c_ex, k) for k in cat3_keys)
+    cat1_c = sum(count_in(c_ex, k) for k in cat1_keys)
+    cat4_c = sum(count_in(c_ex, k) for k in cat4_keys)
+    cat6_c = sum(count_in(c_ex, k) for k in cat6_keys)
+
+    # Corpus-wide totals — exposed in 'totals' for transparency, but tagged
+    # with a warning sentinel so consumers don't treat the difference as a delta.
+    return {
+        "cat3_baseline": cat3_b,
+        "cat3_current": cat3_c,
+        "cat3_delta": cat3_c - cat3_b,
+        "cat1_current": cat1_c,
+        "cat4_current": cat4_c,
+        "cat6_current": cat6_c,
+        "totals": {
+            "baseline": cat3_b,  # only cat3 has baseline data (cat1/4/5 by definition)
+            "current": cat3_c + cat1_c + cat4_c + cat6_c,
+            "_warning": "DO NOT subtract — mixes apple-to-apple regression with exposure. Use cat3_delta for regression claims; cat1/cat4 for exposure.",
+        },
+    }
+
+
+def format_pattern_delta(pattern_label: str, result: dict) -> str:
+    """Render a pattern_delta dict as a human-readable block. Always includes
+    the segmentation explicitly so a reader can't accidentally collapse to one number."""
+    out = []
+    out.append(f"Pattern: {pattern_label}")
+    out.append(f"  cat3 (apple-to-apple, common compile-success):")
+    out.append(f"      baseline {result['cat3_baseline']} → current {result['cat3_current']}    Δ {result['cat3_delta']:+d}    ← only this means regression/improvement")
+    out.append(f"  cat1 (newly compile-testable, was error in baseline):  +{result['cat1_current']}    (exposure)")
+    out.append(f"  cat4 (truly new model in current):                     +{result['cat4_current']}    (exposure)")
+    if result['cat6_current']:
+        out.append(f"  cat6 (stable failures, normally 0):                    {result['cat6_current']}    (likely a tool bug — investigate)")
+    out.append(f"  current total: {result['totals']['current']}    (do NOT subtract from baseline {result['totals']['baseline']})")
+    return "\n".join(out)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Break-reason analysis (Cat 3 categorization-shift, Cat 4 NEW reasons)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -569,6 +677,12 @@ def main() -> int:
                     help="Print invariant pass/fail traces")
     ap.add_argument("--top-reasons", type=int, default=10,
                     help="Top-N break reasons in Cat 4 (default: 10)")
+    ap.add_argument("--pattern", action="append", default=None, metavar="SUBSTR",
+                    help="Compute per-pattern delta segmented by partition category. "
+                         "Pass a substring of the break-reason text (matched literally). "
+                         "Repeat the flag for multiple patterns. Output is the structured "
+                         "breakdown (cat3 delta = real regression/improvement, cat1/cat4 = exposure). "
+                         "Mutually exclusive with --out (writes to stdout instead).")
     args = ap.parse_args()
 
     # Load
@@ -617,6 +731,15 @@ def main() -> int:
         )
 
     if args.check_only:
+        return 0
+
+    # Per-pattern delta query mode (skips the full report)
+    if args.pattern:
+        for pat in args.pattern:
+            result = pattern_delta(pat, b_id, c_id, b_ex, c_ex, cats,
+                                   skip_models=skip_models)
+            print(format_pattern_delta(pat, result))
+            print()
         return 0
 
     md = render_markdown(
