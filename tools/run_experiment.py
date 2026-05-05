@@ -60,6 +60,7 @@ SWEEP_DIR = REPO_ROOT / "sweep"
 sys.path.insert(0, str(SWEEP_DIR))
 
 from orchestrator import run_pass, load_checkpoint, log_versions
+from results_loader import load_raw
 
 
 # ── Known torch.compile() kwargs (for validation) ────────────────────────────
@@ -1079,8 +1080,7 @@ def pipeline_canary(python, output_dir, device="cuda", timeout=180):
         print("  CANARY FAILED — no results file produced")
         return False
 
-    with open(results_file) as f:
-        data = json.load(f)
+    data = load_raw(results_file)
     results = data.get("results", [])
     if not results:
         print("  CANARY FAILED — results file empty")
@@ -1129,8 +1129,7 @@ def pipeline_detect_and_explain(python, results_dir, device="cuda",
         print(f"  No identify results — skipping explain")
         return
 
-    with open(identify_file) as f:
-        identify_data = json.load(f)
+    identify_data = load_raw(identify_file)
     new_results = {(r["name"], r["mode"]): r["status"]
                    for r in identify_data.get("results", [])}
 
@@ -1211,8 +1210,7 @@ def pipeline_generate_summary(results_dir, nightly_version, summary_file):
     if not identify_file.exists():
         return
 
-    with open(identify_file) as f:
-        data = json.load(f)
+    data = load_raw(identify_file)
     results = data.get("results", [])
 
     from collections import Counter

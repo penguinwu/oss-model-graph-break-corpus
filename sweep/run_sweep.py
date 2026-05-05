@@ -64,6 +64,7 @@ from orchestrator import (
     kill_gpu_zombies,
     log_versions,
 )
+from results_loader import load_raw
 
 
 SWEEP_DIR = Path(__file__).resolve().parent
@@ -72,6 +73,22 @@ DEFAULT_OUTPUT_DIR = SWEEP_DIR.parent / "sweep_results"
 EXPERIMENTS_OUTPUT_DIR = SWEEP_DIR.parent / "sweep_results" / "experiments"
 LARGE_MODELS_FILE = SWEEP_DIR / "large_models.json"
 
+
+def _write_identify_jsonl(path: Path, metadata: dict, results: list) -> None:
+    """Write identify results in JSONL format.
+
+    One line per record:
+      {"_record_type": "metadata", ...metadata fields...}
+      {"_record_type": "row", ...row fields...}  (one per result)
+
+    This replaces the legacy json.dump(identify_output, f, indent=2) call.
+    Amendments are NOT written here — amend_sweep.py appends them as
+    separate "amendment" lines after the sweep completes.
+    """
+    with open(path, "w") as f:
+        f.write(json.dumps({"_record_type": "metadata", **metadata}) + "\n")
+        for row in results:
+            f.write(json.dumps({"_record_type": "row", **row}) + "\n")
 
 def _update_phase(state_file, phase, **extras):
     """Update sweep_state.json with current phase + optional metadata.
@@ -772,8 +789,7 @@ def run_sweep(args):
         "results": identify_results,
     }
     identify_file = output_dir / "identify_results.json"
-    with open(identify_file, "w") as f:
-        json.dump(identify_output, f, indent=2)
+    _write_identify_jsonl(identify_file, identify_metadata, identify_results)
 
     # Summarize identify pass
     by_status = {}
@@ -891,8 +907,7 @@ def run_sweep(args):
         identify_output["results"] = identify_results
         identify_output["metadata"]["retry_count"] = len(retry_specs)
         identify_output["metadata"]["timeout_large_s"] = timeout_large
-        with open(identify_file, "w") as f:
-            json.dump(identify_output, f, indent=2)
+        _write_identify_jsonl(identify_file, identify_output["metadata"], identify_results)
 
         # Recompute status summary
         by_status = {}
@@ -978,8 +993,7 @@ def run_sweep(args):
         identify_output["metadata"]["error_retry_count"] = len(retry_error_specs)
         identify_output["metadata"]["error_retry_flaky"] = len(flaky)
         identify_output["metadata"]["error_retry_confirmed"] = len(confirmed)
-        with open(identify_file, "w") as f:
-            json.dump(identify_output, f, indent=2)
+        _write_identify_jsonl(identify_file, identify_output["metadata"], identify_results)
 
         # Recompute status summary
         by_status = {}
@@ -1056,10 +1070,9 @@ def run_explain(args):
 
     # Load identify results
     try:
-        with open(args.file) as f:
-            identify_data = json.load(f)
+        identify_data = load_raw(args.file)
     except json.JSONDecodeError as e:
-        print(f"ERROR: Invalid JSON in {args.file}: {e}")
+        print(f"ERROR: Invalid JSON/JSONL in {args.file}: {e}")
         sys.exit(1)
     except FileNotFoundError:
         print(f"ERROR: File not found: {args.file}")

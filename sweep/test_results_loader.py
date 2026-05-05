@@ -13,6 +13,7 @@ import unittest
 from pathlib import Path
 
 from sweep.results_loader import (
+    is_jsonl_format,
     load_amendments_metadata,
     load_effective_results,
     load_raw,
@@ -114,6 +115,124 @@ class LoaderBasicsTest(unittest.TestCase):
         self.assertEqual(meta[0]["row_count"], 1)
         # Rows themselves should NOT be in metadata
         self.assertNotIn("rows", meta[0])
+
+
+class LoaderJSONLTest(unittest.TestCase):
+    """JSONL format: forward-compat + backward-compat tests."""
+
+    def _write_jsonl(self, path: Path, metadata: dict, results: list,
+                     amendments: list | None = None) -> None:
+        """Write a synthetic JSONL identify_results file."""
+        with open(path, "w") as f:
+            f.write(json.dumps({"_record_type": "metadata", **metadata}) + "\n")
+            for row in results:
+                f.write(json.dumps({"_record_type": "row", **row}) + "\n")
+            for amend in (amendments or []):
+                f.write(json.dumps({"_record_type": "amendment", **amend}) + "\n")
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.sweep = Path(self.tmp)
+        self._write_jsonl(
+            self.sweep / "identify_results.json",
+            metadata={"pass": "identify", "python": "torch=2.13.0+cu126"},
+            results=[
+                {"name": "Foo", "mode": "eval", "status": "full_graph"},
+                {"name": "Foo", "mode": "train", "status": "graph_break"},
+                {"name": "Bar", "mode": "eval", "status": "eager_error"},
+            ],
+        )
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_is_jsonl_format_detects_jsonl(self):
+        self.assertTrue(is_jsonl_format(self.sweep))
+
+    def test_load_raw_jsonl_shape(self):
+        data = load_raw(self.sweep)
+        self.assertIn("metadata", data)
+        self.assertIn("results", data)
+        self.assertEqual(len(data["results"]), 3)
+        self.assertEqual(data["metadata"]["pass"], "identify")
+        # _record_type must NOT leak into returned dicts
+        self.assertNotIn("_record_type", data["metadata"])
+        self.assertNotIn("_record_type", data["results"][0])
+
+    def test_jsonl_load_effective_no_amendments(self):
+        eff = load_effective_results(self.sweep)
+        self.assertEqual(len(eff), 3)
+        self.assertEqual(eff[("Foo", "eval")]["status"], "full_graph")
+        self.assertEqual(eff[("Foo", "eval")]["result_source"], "original")
+
+    def test_jsonl_amendment_supersedes_original(self):
+        # Append an amendment line (true JSONL append — no rewrite)
+        with open(self.sweep / "identify_results.json", "a") as f:
+            f.write(json.dumps({
+                "_record_type": "amendment",
+                "amendment_id": "2026-05-05T10-00Z-fix",
+                "applied_at": "2026-05-05T10:00:00Z",
+                "fix_commit": "abc123",
+                "fix_description": "test fix",
+                "trigger": "unit test",
+                "env_constraints": {"torch": "2.13.0"},
+                "supersedes": None,
+                "row_count": 1,
+                "rows": [{"name": "Bar", "mode": "eval", "status": "graph_break"}],
+                "explain_row_count": 0,
+            }) + "\n")
+        eff = load_effective_results(self.sweep)
+        self.assertEqual(eff[("Bar", "eval")]["status"], "graph_break")
+        self.assertEqual(eff[("Bar", "eval")]["result_source"],
+                         "amended:2026-05-05T10-00Z-fix")
+        self.assertEqual(eff[("Foo", "eval")]["result_source"], "original")
+
+    def test_jsonl_crash_safe_incomplete_last_line(self):
+        """A truncated last line is silently skipped (crash-tolerant)."""
+        p = self.sweep / "identify_results.json"
+        with open(p, "a") as f:
+            f.write('{"_record_type": "row", "name": "Baz", "mode": "eval", "sta')  # truncated
+        data = load_raw(self.sweep)
+        names = {r["name"] for r in data["results"]}
+        self.assertNotIn("Baz", names)
+        self.assertEqual(len(data["results"]), 3)  # original 3 rows only
+
+    def test_is_jsonl_false_for_json_format(self):
+        tmp2 = Path(tempfile.mkdtemp())
+        (tmp2 / "identify_results.json").write_text(json.dumps({
+            "metadata": {"pass": "identify"},
+            "results": [{"name": "Foo", "mode": "eval", "status": "full_graph"}],
+        }))
+        self.assertFalse(is_jsonl_format(tmp2))
+        import shutil
+        shutil.rmtree(tmp2, ignore_errors=True)
+
+    def test_backward_compat_json_format_still_readable(self):
+        """JSON-object format (legacy) is still readable via load_raw/load_effective."""
+        tmp2 = Path(tempfile.mkdtemp())
+        original = {
+            "metadata": {"pass": "identify", "python": "torch=2.11.0+cu126"},
+            "results": [
+                {"name": "Foo", "mode": "eval", "status": "full_graph"},
+            ],
+            "amendments": [{
+                "amendment_id": "legacy-amend",
+                "applied_at": "2026-05-05T10:00:00Z",
+                "fix_commit": "abc",
+                "fix_description": "x",
+                "trigger": "y",
+                "rows": [{"name": "Foo", "mode": "eval", "status": "graph_break"}],
+            }],
+        }
+        (tmp2 / "identify_results.json").write_text(json.dumps(original))
+        data = load_raw(tmp2)
+        self.assertEqual(len(data["results"]), 1)
+        eff = load_effective_results(tmp2)
+        self.assertEqual(eff[("Foo", "eval")]["status"], "graph_break")
+        self.assertEqual(eff[("Foo", "eval")]["result_source"], "amended:legacy-amend")
+        import shutil
+        shutil.rmtree(tmp2, ignore_errors=True)
 
 
 class EnforcementTest(unittest.TestCase):

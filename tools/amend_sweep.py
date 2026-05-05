@@ -57,7 +57,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-
+# Import results_loader from sweep/ (canonical reader, handles both JSON + JSONL formats)
+sys.path.insert(0, str(REPO_ROOT / "sweep"))
+from results_loader import load_raw, is_jsonl_format  # noqa: E402
 def _run_harness_for_models(
     python_bin: str, models_json: Path, modes: list[str], workers: int,
     timeout_s: int, output_dir: Path,
@@ -80,7 +82,7 @@ def _run_harness_for_models(
     results_file = output_dir / "identify_results.json"
     if not results_file.exists():
         raise RuntimeError(f"harness did not write {results_file}")
-    data = json.loads(results_file.read_text())
+    data = load_raw(results_file)
     return data["results"]
 
 
@@ -190,8 +192,8 @@ def main() -> int:
         print(f"ERROR: models JSON not found: {args.models}", file=sys.stderr)
         return 1
 
-    # Read sweep data
-    sweep_data = json.loads(results_path.read_text())
+    # Read sweep data (handles both JSON and JSONL formats transparently)
+    sweep_data = load_raw(results_path)
     sweep_metadata = sweep_data.get("metadata", {})
 
     # Verify env match (refuses if torch differs)
@@ -297,11 +299,24 @@ def main() -> int:
         "explain_row_count": len(explain_rows),
     }
 
-    # Append to amendments + atomic write
-    sweep_data.setdefault("amendments", []).append(amendment)
-    tmp = results_path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(sweep_data, indent=2))
-    os.replace(tmp, results_path)
+    # Persist the amendment.
+    #
+    # JSONL format (new sweeps): true append — write a single "amendment" line.
+    #   No rewrite needed: just append one JSON object to the file.
+    #
+    # JSON format (legacy sweeps pre-migration): use the old atomic read-modify-
+    #   write so we don't leave the file half-valid.
+    if is_jsonl_format(results_path):
+        with open(results_path, "a") as f:
+            f.write(json.dumps({"_record_type": "amendment", **amendment}) + "\n")
+        total_amendments = len(sweep_data.get("amendments", [])) + 1
+    else:
+        # Legacy JSON path: atomic rewrite (keep for backward compat window)
+        sweep_data.setdefault("amendments", []).append(amendment)
+        tmp = results_path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(sweep_data, indent=2))
+        os.replace(tmp, results_path)
+        total_amendments = len(sweep_data["amendments"])
 
     # Append explain rows to the sweep's explain_checkpoint.jsonl, tagged with
     # amendment_id so load_effective_explain can identify them as amended.
@@ -318,7 +333,7 @@ def main() -> int:
     if explain_rows:
         print(f"    {len(explain_rows)} explain rows appended to explain_checkpoint.jsonl.",
               file=sys.stderr)
-    print(f"    Total amendments in this sweep: {len(sweep_data['amendments'])}", file=sys.stderr)
+    print(f"    Total amendments in this sweep: {total_amendments}", file=sys.stderr)
     return 0
 
 

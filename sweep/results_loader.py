@@ -5,7 +5,9 @@ Every consumer of identify_results.json MUST go through load_effective_results
 or load_amendments_metadata. Direct json.load() of identify_results.json is
 prohibited (enforced by sweep/test_results_loader.py).
 
-Schema (identify_results.json):
+Two on-disk formats are supported (auto-detected on read):
+
+Format A — JSON object (legacy, pre-migration):
     {
       "metadata": {...},
       "results": [<row>, ...],         # ORIGINAL — immutable after sweep
@@ -22,6 +24,20 @@ Schema (identify_results.json):
       ]
     }
 
+Format B — JSONL (current, written by run_sweep.py after migration):
+    {"_record_type": "metadata", ...metadata fields...}
+    {"_record_type": "row", ...row fields...}
+    {"_record_type": "row", ...row fields...}
+    {"_record_type": "amendment", ...amendment fields...}
+
+    Properties:
+    - True append-only: amendments are a single appended line (no rewrite)
+    - Crash-tolerant: last incomplete line is dropped on read
+    - Each line is valid JSON; whole file is valid JSONL
+
+load_raw() returns the same canonical dict shape for both formats:
+    {"metadata": {...}, "results": [...], "amendments": [...]}
+
 Each row in `amendments[*].rows` has the same shape as a `results[*]` row
 (name, mode, status, numeric_status, ...).
 """
@@ -29,6 +45,59 @@ import json
 from pathlib import Path
 from typing import Any
 
+
+# ---------------------------------------------------------------------------
+# Format detection and JSONL parser
+# ---------------------------------------------------------------------------
+
+def _is_jsonl_file(path: Path) -> bool:
+    """Return True if the file is in JSONL format (first line has _record_type)."""
+    try:
+        with open(path) as f:
+            first_line = f.readline().strip()
+        if not first_line:
+            return False
+        obj = json.loads(first_line)
+        return isinstance(obj, dict) and "_record_type" in obj
+    except (json.JSONDecodeError, OSError):
+        return False
+
+
+def _load_jsonl(path: Path) -> dict:
+    """Parse JSONL identify_results file into canonical dict shape.
+
+    Tolerates a last incomplete line (crash-safe: last incomplete line is dropped).
+    The _record_type field is stripped from all returned records.
+    """
+    metadata: dict = {}
+    results: list[dict] = []
+    amendments: list[dict] = []
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue  # tolerate last incomplete line on mid-write crash
+            rt = record.get("_record_type")
+            row = {k: v for k, v in record.items() if k != "_record_type"}
+            if rt == "metadata":
+                metadata = row
+            elif rt == "row":
+                results.append(row)
+            elif rt == "amendment":
+                amendments.append(row)
+    out: dict = {"metadata": metadata, "results": results}
+    if amendments:
+        out["amendments"] = amendments
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Path resolution helpers
+# ---------------------------------------------------------------------------
 
 def _resolve(path_or_dir: Path | str) -> Path:
     """Accept either a sweep dir or a direct path to identify_results.json."""
@@ -44,8 +113,26 @@ def _resolve(path_or_dir: Path | str) -> Path:
 
 
 def load_raw(path_or_dir: Path | str) -> dict:
-    """Read identify_results.json verbatim. Prefer load_effective_results."""
-    return json.loads(_resolve(path_or_dir).read_text())
+    """Read identify_results file. Supports both JSON object and JSONL formats.
+
+    Returns canonical dict shape: {metadata, results, amendments?}
+    regardless of the file's on-disk format.
+    Prefer load_effective_results() for analysis; use load_raw() when you need
+    the metadata or amendment structs directly.
+    """
+    p = _resolve(path_or_dir)
+    if _is_jsonl_file(p):
+        return _load_jsonl(p)
+    return json.loads(p.read_text())
+
+
+def is_jsonl_format(path_or_dir: Path | str) -> bool:
+    """Return True if the identify_results file is in JSONL format.
+
+    Used by amend_sweep.py to choose between append (JSONL) and
+    atomic-rewrite (JSON legacy) write strategies.
+    """
+    return _is_jsonl_file(_resolve(path_or_dir))
 
 
 def load_effective_results(path_or_dir: Path | str) -> dict[tuple[str, str], dict]:
