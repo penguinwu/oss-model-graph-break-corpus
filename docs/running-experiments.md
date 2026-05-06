@@ -126,6 +126,9 @@ Common configurations:
 | Graph break detection (default) | `{}` or `{"fullgraph": true, "backend": "eager"}` |
 | Backend error detection | `{"backend": "aot_eager", "fullgraph": false}` |
 | Inductor crash detection | `{"backend": "inductor", "fullgraph": false}` |
+| Inductor numeric quality | `{"backend": "inductor", "fullgraph": false}` (read `numeric_status` field) |
+
+**Numeric correctness check runs for every config.** Each result includes `numeric_status` (`match` / `divergence` / `nan_inf_introduced` / `shape_mismatch` / `dtype_mismatch` / `skipped`), `numeric_max_diff`, `numeric_severity_ratio`, etc. — see [Understanding Results §Numeric correctness fields](understanding-results.md#numeric-correctness-fields-identify-pass). For non-default backends like inductor, expect some `divergence` reports as legitimate compiler-quality data (TF32, fused ops). The less_flaky retry separates noise-floor divergence from real bugs.
 
 **`dynamo_flags`** are applied via `torch._dynamo.config` before compilation. Empty `{}` means default settings.
 
@@ -156,9 +159,11 @@ experiments/results/my-test-20260416-193000/
 ### `results.jsonl`
 
 ```json
-{"model": "GPT2Model", "config": "baseline", "mode": "eval", "status": "full_graph", "wall_time_s": 12.3, "compile_kwargs": {"fullgraph": true, "backend": "eager"}}
-{"model": "GPT2Model", "config": "aot-eager", "mode": "eval", "status": "success", "wall_time_s": 11.8, "compile_kwargs": {"fullgraph": false, "backend": "aot_eager"}}
+{"model": "GPT2Model", "config": "baseline", "mode": "eval", "status": "full_graph", "wall_time_s": 12.3, "compile_kwargs": {"fullgraph": true, "backend": "eager"}, "numeric_status": "match", "numeric_max_diff": 0.0, "numeric_bitwise_equal": true}
+{"model": "GPT2Model", "config": "aot-eager", "mode": "eval", "status": "success", "wall_time_s": 11.8, "compile_kwargs": {"fullgraph": false, "backend": "aot_eager"}, "numeric_status": "match", "numeric_max_diff": 1.19e-06, "numeric_bitwise_equal": false}
 ```
+
+The `numeric_*` fields appear on every identify-pass result (not just baseline). See [Understanding Results §Numeric correctness fields](understanding-results.md#numeric-correctness-fields-identify-pass) for the full schema.
 
 Status values depend on the compile configuration:
 

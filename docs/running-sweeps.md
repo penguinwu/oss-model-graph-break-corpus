@@ -45,10 +45,24 @@ Same `seed` → same 20 models, every time. Bump `size` (e.g. `50`, `100`) for t
 
 Sweeps run in two passes:
 
-1. **Identify** — compile each model with `fullgraph=True`, record pass/fail/error, **and run a numeric correctness check** (eager vs compiled outputs at the same shape and seed) on every full-graph model
+1. **Identify** — compile each model (default `fullgraph=True, backend="eager"`; configurable via `--compile-kwargs` / `--dynamo-flags`), record pass/fail/error, **and run a numeric correctness check** (eager vs compiled outputs at the same shape and seed) on every model where comparison is possible
 2. **Explain** — for graph-breaking models, re-run with Dynamo logging to extract break reasons, locations, and counts
 
-The identify pass uses the same strict-determinism setup as the standalone correctness pass (`set_seed(42, deterministic=True)` + `CUBLAS_WORKSPACE_CONFIG` + HF less-flaky helpers), so eager noise doesn't leak into the comparison. Numeric fields on each identify result: `numeric_status` (`match` / `divergence` / `nan_inf_introduced` / `shape_mismatch` / `dtype_mismatch` / `skipped` / `error`), `numeric_max_diff`, `numeric_severity_ratio`, `numeric_first_divergence`, `numeric_skip_reason`. Skipped means the model graph-broke or compile_kwargs were customised — there's no clean compiled output to compare. See `tools/analyze_sweep.py` for the bucketed report (top-N divergent rows by severity_ratio).
+The identify pass uses the same strict-determinism setup as the standalone correctness pass (`set_seed(42, deterministic=True)` + `CUBLAS_WORKSPACE_CONFIG` + HF less-flaky helpers), so eager noise doesn't leak into the comparison. Numeric fields on each identify result: `numeric_status` (`match` / `divergence` / `nan_inf_introduced` / `shape_mismatch` / `dtype_mismatch` / `skipped` / `error`), `numeric_max_diff`, `numeric_severity_ratio`, `numeric_first_divergence`, `numeric_skip_reason`.
+
+The numeric check runs unconditionally — for ANY `--compile-kwargs` (fullgraph True/False, any backend including inductor) and any `--dynamo-flags` combination. Correctness signal is a basic harness property; gating it on compile-config shape would suppress signal you want. Skipped only when comparison is genuinely impossible:
+
+| `numeric_skip_reason` | Why |
+|-----------------------|-----|
+| `non_deterministic_model` | Model is in the opt-out set; eager runs themselves are non-reproducible, so eager-vs-compiled divergence can't be attributed to the compiler |
+| `no_eager_output` | Eager forward raised — nothing to compare against |
+| `<status>` (e.g., `graph_break`, `compile_error`, `error`) | Compile failed or partially failed — no clean compiled output to compare; the value mirrors the result `status` |
+
+When the check finds divergence, a less_flaky retry runs automatically (norm eps→1.0, dropout off, fixed init) to disambiguate noise-floor divergence from real compiler bugs. If divergence persists under less_flaky, it's structural; if it disappears, it's tolerance-band noise from low-variance norm operations (captured as `numeric_noise_floor_dominant=true`).
+
+**Inductor implication:** Running with `--compile-kwargs '{"backend":"inductor"}'` will surface real inductor numeric divergence (TF32, fused ops, etc.). Some `numeric_status=divergence` reports are expected and represent legitimate compiler-quality data; the less_flaky retry helps separate noise from bugs but does not eliminate inductor-specific tolerance differences. Treat each divergence as data to triage, not a test failure.
+
+See `tools/analyze_sweep.py` for the bucketed report (top-N divergent rows by severity_ratio).
 
 By default, `sweep` runs both passes. To run identify-only (faster):
 
@@ -98,11 +112,11 @@ python3 tools/run_experiment.py sweep --dynamic true --source hf diffusers custo
 
 ## Correctness testing (Phase 3)
 
-The identify pass already runs a numeric correctness check on every full-graph model (see "Two-pass architecture" above) — that's the routine source of divergence data, produced as a side effect of every sweep with no extra commands.
+The identify pass already runs a numeric correctness check on every model where comparison is possible (see "Two-pass architecture" above) — that's the routine source of divergence data, produced as a side effect of every sweep with no extra commands. This includes runs with custom `--compile-kwargs` and `--dynamo-flags`, including non-default backends (e.g. inductor).
 
-The standalone `correctness` pass below is for **deep audits** (e.g., investigating a divergence found in routine sweep, or running with custom backends like inductor). For routine monitoring, just read the `numeric_*` fields off `identify_results.json`.
+The standalone `correctness` subcommand below is a separate pass that exists for historical reasons (it predates the in-identify check) and remains useful for deep audits where you want a clean re-run with maximal determinism setup applied from scratch. For routine monitoring of any sweep — including configs with custom backends or fullgraph=false — just read the `numeric_*` fields off `identify_results.json`.
 
-The standalone pass compares eager-mode outputs against compiled outputs on the same inputs (same seed, same shape). Runs only on models marked `fullgraph_ok` in the corpus — there's no point comparing outputs if compilation already failed.
+The standalone pass compares eager-mode outputs against compiled outputs on the same inputs (same seed, same shape). It hardcodes `fullgraph=True, backend="eager"` and filters input to models marked `fullgraph_ok` in the corpus (it is not configurable via `--compile-kwargs`). To run correctness checks under different compile configs, use the identify pass with `--compile-kwargs` instead.
 
 ```bash
 python3 tools/run_experiment.py correctness \

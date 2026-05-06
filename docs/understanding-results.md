@@ -31,9 +31,35 @@ Status values depend on the compile configuration used.
 
 Compiler quality signals are `full_graph`/`graph_break`/`success`/`error`. Infrastructure statuses (`timeout`, `create_error`, `eager_error`) indicate the model itself has issues, not the compiler.
 
-### Correctness pass (Phase 3)
+### Numeric correctness fields (identify pass)
 
-The `correctness` subcommand compares eager vs compiled forward outputs on the same inputs and emits a separate result schema:
+Every identify-pass result includes numeric correctness fields produced by the in-process eager-vs-compiled output comparison. This runs unconditionally for any `--compile-kwargs` / `--dynamo-flags` combination, not just the default fullgraph=True+eager mode.
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `numeric_status` | string | `match` / `divergence` / `nan_inf_introduced` / `shape_mismatch` / `dtype_mismatch` / `skipped` / `error` |
+| `numeric_max_diff` | float | Largest abs(eager − compiled) across all compared float fields |
+| `numeric_severity_ratio` | float | `max_diff / atol` — sortable triage key |
+| `numeric_bitwise_equal` | bool | Whether outputs are bitwise identical (stricter than tolerance) |
+| `numeric_first_divergence` | string | Path to the first field that diverged (e.g. `last_hidden_state[0,5,128]`) |
+| `numeric_skip_reason` | string | Set when `numeric_status="skipped"` — see table below |
+| `numeric_noise_floor_dominant` | bool | Set true when divergence disappears under HF less_flaky helpers (norm eps→1.0, dropout off, fixed init), indicating tolerance-band noise rather than a real compiler bug |
+
+Tolerance: HF-style fp32 atol=1e-6, rtol=1e-4. Recursive walker over `ModelOutput` float fields; integer/boolean/0-dim/None/Cache fields are skipped.
+
+**Skip reasons (when `numeric_status="skipped"`):**
+
+| `numeric_skip_reason` | Why |
+|-----------------------|-----|
+| `non_deterministic_model` | Model is in the opt-out set; eager runs themselves are non-reproducible |
+| `no_eager_output` | Eager forward raised — nothing to compare against |
+| `<status>` (e.g., `graph_break`, `compile_error`, `error`) | Compile failed — no clean compiled output; mirrors result `status` |
+
+**Inductor / non-default backends:** `--compile-kwargs '{"backend":"inductor"}'` will produce real divergence reports (TF32, fused ops). Each divergence is a data point for triage; treat the harness as a measurement instrument, not a pass/fail gate.
+
+### Standalone correctness pass (Phase 3 subcommand)
+
+The `correctness` subcommand exists for historical reasons (it predates the in-identify numeric check). It hardcodes `fullgraph=True, backend="eager"` and filters input to `fullgraph_ok` models, producing a separate result schema:
 
 | Status | Meaning |
 |--------|---------|
@@ -42,7 +68,9 @@ The `correctness` subcommand compares eager vs compiled forward outputs on the s
 | `nan_inf` | Compiled output contains NaN or Inf where eager did not |
 | `shape_mismatch` | Compiled output shape differs from eager (structural compiler bug) |
 
-Each divergence entry records `max_diff`, `severity_ratio` (`max_diff / atol`), `compared_fields`, `skipped_fields`, and `first_divergence`. Triage by `severity_ratio` descending. Every divergence is signal worth filing — there is no acceptance threshold. See `design/design-doc.md` Section 8 for the full methodology.
+Each divergence entry records `max_diff`, `severity_ratio` (`max_diff / atol`), `compared_fields`, `skipped_fields`, and `first_divergence`. Triage by `severity_ratio` descending. Every divergence is signal worth filing — there is no acceptance threshold.
+
+For most use cases (any non-default compile config, any backend, any dynamo flag), use the identify pass with `--compile-kwargs` / `--dynamo-flags` and read the `numeric_*` fields off `identify_results.json`. The standalone subcommand is mainly for deep audits with maximal determinism setup applied from scratch. See `design/design-doc.md` Section 8 for full methodology.
 
 ## Model variants
 
