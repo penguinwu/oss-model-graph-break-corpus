@@ -62,6 +62,7 @@ For parameter changes (workers, timeouts):
 - [ ] Confirm settings match baseline (4 workers, 180s/600s)
 - [ ] Check large_models.json is clean (no spurious entries)
 - [ ] Verify torch/transformers versions
+- [ ] **Install the watchdog cron** (see "Watchdog — mandatory for any non-trivial sweep" below)
 
 ### Execution order
 1. **Run eval mode first** — 50% of work items, gives early signal
@@ -70,11 +71,31 @@ For parameter changes (workers, timeouts):
 4. **Run train mode** — remaining 50%
 5. **Merge and analyze**
 
+### Watchdog — mandatory for any non-trivial sweep
+
+Any sweep that will outlive your interactive session (> ~30 min wall-clock, anything launched via `nohup`, any overnight / cohort / experimental run) MUST have `sweep/sweep_watchdog.py` running as a recurring system cron BEFORE you close out of the launching session. The watchdog reports `{completed}/{total}` progress, phase changes, stalls, and DEAD events to GChat — without it, a silent crash mid-run gets discovered hours late.
+
+**Canonical install (do this in the SAME session as `nohup ... &`):**
+
+```bash
+# Append to crontab; replace OUT_DIR with your sweep's --run-name dir.
+( crontab -l ; echo "*/10 * * * * /home/USER/envs/torch211/bin/python /home/USER/projects/oss-model-graph-break-corpus/sweep/sweep_watchdog.py /home/USER/projects/oss-model-graph-break-corpus/sweep_results/experiments/OUT_DIR/ --interval-min 10 --post-to spaces/AAQANraxXE4 >> /tmp/sweep-watchdog.log 2>&1" ) | crontab -
+```
+
+Then sanity-run it ONCE manually to verify it can read sweep_state.json + posts to GChat — don't wait for the first cron tick to discover a typo.
+
+**What the watchdog is NOT:** auto-restart. When it reports DEAD, a human (or wake-fired agent) investigates and decides whether to `--resume`. Silent auto-restart hides root causes (spring 2026 source-build venv parity issues would have looped invisibly).
+
+**Don't roll your own.** If you find yourself drafting a `myclaw-cron` one-shot wake or a custom progress-checker for a sweep launch, stop — `sweep/sweep_watchdog.py` already does that work, talks the right state-file schema, and tracks per-phase progress. **Common failure mode:** reading the file-header comment "NOT auto-restart" and dismissing the script without reading the body. Don't. (Cautionary tale: 2026-05-06 nested-gb correctness launch — Otter spent 20 min building a custom myclaw-cron wake before Peng pointed out the existing watchdog. See HANDOFF.md.)
+
+User-facing version: [docs/running-sweeps.md § Monitoring long sweeps](../docs/running-sweeps.md#monitoring-long-sweeps).
+
 ### Post-sweep
 - [ ] Error/timeout rate should be < 2% (in-scope models)
 - [ ] Compare status distribution against previous sweep
 - [ ] If errors exist, re-run those specific models with baseline settings before analyzing
 - [ ] Clean up errors FIRST, then do analysis — never analyze dirty data
+- [ ] Remove the watchdog crontab line (it self-silences but clutters `crontab -l`)
 
 ## 5. Large Model Registry Management
 

@@ -164,13 +164,25 @@ sweep_results/baseline/pt2.11/
 
 ## Monitoring long sweeps
 
-For full sweeps (~790 models × eval+train ≈ 1500 work items, ~4–6 hours on A100):
+Any sweep launched with `tools/run_experiment.py sweep` writes a `sweep_state.json` into its output dir (with PID, total work items, current phase). For sweeps that will outlive your interactive session — i.e. anything > ~30 min — install `sweep/sweep_watchdog.py` as a recurring cron so progress + DEAD detection happen without you watching the terminal.
+
+**Canonical pattern (system cron, every 10 min):**
 
 ```bash
-python3 sweep/sweep_watchdog.py
+# Add to your crontab (`crontab -e`); replace OUT_DIR + GCHAT_SPACE for your run.
+*/10 * * * * /home/USER/envs/torch211/bin/python /path/to/oss-model-graph-break-corpus/sweep/sweep_watchdog.py /path/to/OUT_DIR/ --interval-min 10 --post-to spaces/GCHAT_SPACE >> /tmp/sweep-watchdog.log 2>&1
 ```
 
-The watchdog monitors progress and auto-restarts on failures.
+What it does:
+
+- Reads `sweep_state.json` + `<phase>_streaming.jsonl` to compute `{completed}/{total}` per phase
+- Posts a GChat update on **phase change**, **+N progress since last tick**, **stalled** (no progress for `3 × interval-min` minutes), and **DEAD** (process gone)
+- Auto-silences after the sweep completes (phase=done OR identify-complete-with-no-other-streaming-files-growing)
+- Tracks its own state in `sweep_watchdog.json` next to `sweep_state.json` (PID-aware reset across kills+relaunches)
+
+**This is observation-only — NOT auto-restart.** When the watchdog reports DEAD, a human (or follow-up agent) investigates and decides whether to relaunch with `--resume`. This is deliberate: silent auto-restart hides root causes (the source-build venv parity issues from spring 2026 would have looped invisibly).
+
+Remove the crontab line once the run completes and you've posted the analysis. Leaving it indefinitely is harmless (the watchdog self-silences) but clutters `crontab -l`.
 
 ## Update the corpus after a sweep
 
