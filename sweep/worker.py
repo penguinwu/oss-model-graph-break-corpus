@@ -3536,11 +3536,13 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
     """Compile a model and check for errors. Returns JSON-serializable result.
 
     With default compile_kwargs (fullgraph=True, backend="eager"), this is the
-    original graph break identification pass plus a numeric correctness check
-    (eager vs compiled, strict-determinism setup mirroring run_correctness).
-    With custom compile_kwargs, it tests arbitrary torch.compile configurations
-    and skips the numeric check (custom backends like inductor go through
-    run_correctness).
+    original graph break identification pass. The numeric correctness check
+    (eager vs compiled, strict-determinism setup mirroring run_correctness)
+    runs unconditionally for ANY compile config — fullgraph True/False, eager
+    or any custom backend (inductor, etc.) — because correctness signal is a
+    basic harness property that should not depend on compile-config shape.
+    Skipped only when comparison is impossible (no eager/compiled output, or
+    the model is in the non-deterministic opt-out set).
     """
     t_start = time.perf_counter()
     result = {
@@ -3570,9 +3572,13 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
     )
     os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
-    # Numeric check only meaningful with default fullgraph=True+eager backend.
-    # Custom compile_kwargs (inductor, fullgraph=False) are run_correctness territory.
-    do_numeric = not compile_kwargs
+    # Numeric correctness check runs unconditionally — eager-vs-compiled
+    # comparison is meaningful for ANY compile config (fullgraph True/False,
+    # eager/inductor/custom backends). Correctness signal is a basic harness
+    # property; gating it on compile-config shape suppresses signal we want.
+    # The less_flaky retry block below disambiguates noise-floor divergence
+    # from real compiler bugs. Skip only when comparison is impossible
+    # (no eager/compiled output, or non-deterministic model).
     out_eager = None
     out_compiled = None
 
@@ -3752,13 +3758,11 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
     result["phase"] = "done"
 
     # Numeric correctness check: eager vs compiled outputs at same shape/seed.
-    # Catches dynamo-introduced numerical bugs that the existing GB pass would miss.
-    # Skipped when: custom compile_kwargs (run_correctness covers that), graph_break
-    # / errors (no clean compiled output), or no captured outputs.
-    if not do_numeric:
-        result["numeric_status"] = "skipped"
-        result["numeric_skip_reason"] = "custom_compile_kwargs"
-    elif spec.get("name") in NON_DETERMINISTIC_MODELS:
+    # Catches dynamo-introduced numerical bugs that the GB pass alone would miss.
+    # Skipped only when comparison is impossible: non-deterministic model
+    # (signal can't be trusted), eager forward failed, or compile failed
+    # (no compiled output to compare).
+    if spec.get("name") in NON_DETERMINISTIC_MODELS:
         # Mirror HF benchmarks's full pattern (common.py:2183): for models
         # in the non-det opt-out set, accuracy comparison is unreliable
         # (the model uses ops without deterministic CUDA impl, so two
