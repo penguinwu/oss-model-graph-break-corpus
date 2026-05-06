@@ -105,9 +105,11 @@ Local CLAUDE.md (`~/.myclaw/spaces/AAQANraxXE4/CLAUDE.md`) has a per-project tri
 
 | Task | Type | Notes |
 |------|------|-------|
-| Use the tool to assemble the next upstream issue body end-to-end | needs-trigger | Will fire on the next regression we file. Today's response to Alban (#182116 comment 4390206673) was hand-crafted but matched the template; counts as a baseline. |
-| Add `--captured-output NAME:PATH` flag (inject pre-captured output for a venv) | backlog | Useful when scripts are slow and outputs were captured manually. Today's smoke-test had to use `--no-run` which left a placeholder. |
-| Auto-derive `pip install` commands from each venv (read `torch.__version__` + cuda variant + transformers ver, format the install line) | backlog | Currently the Setup section just lists the python_bin + torch version; the user still hand-writes the pip lines. |
+| Auto-derive `pip install` commands from each venv | DONE 2026-05-06 | Tool now probes torch + cuda variant + transformers/diffusers/timm versions per venv and templates `python3 -m venv ~/<NAME>_venv` + `pip install --pre torch==<VER> --index-url .../nightly/<CUDA>` + per-modellib `pip install <pkg>==<VER>` lines. |
+| Portable Run section (`~/<NAME>_venv/bin/python repro.py`, never absolute python_bin) | DONE 2026-05-06 | Same commit. |
+| Scrub `/home/<user>/...` + `/usr/local/fbcode/...` from captured output before publishing | DONE 2026-05-06 | New `_scrub_paths()` helper applied to both script-run output and `collect_env` output. Internal absolute paths get rewritten to `.../`. Idempotent. |
+| Use the tool to assemble the next upstream issue body end-to-end | needs-trigger | The 2026-05-06 Alban-thread follow-up (#182116 comment 4391902719) was assembled by the tool BUT had absolute paths that Peng had to point out — exactly the bug the fixes above address. Next filing should use the post-fix tool from the start. |
+| Add `--captured-output NAME:PATH` flag (inject pre-captured output for a venv) | backlog | Useful when scripts are slow and outputs were captured manually. The `--no-run` flag currently leaves a placeholder; the inject flag would let users paste a captured stdout file. |
 
 ## Done means
 

@@ -1238,6 +1238,36 @@ UPSTREAM_REPO_SLUG = "pytorch/pytorch"
 UPSTREAM_BODY_MARKER = "<!-- assembled-by: file_issues.py pytorch-upstream -->"
 
 
+def _scrub_paths(text):
+    """Strip private/internal absolute paths from captured output before publishing.
+
+    Replaces:
+      - /home/<user>/.../site-packages/    →  .../site-packages/
+      - /home/<user>/envs/<venv>/lib/...   →  .../
+      - /home/<user>/envs/modellibs/<pkg>-<ver>/  →  .../
+      - /usr/local/fbcode/.../             →  .../    (Meta-internal Python prefix)
+      - any other /home/<user>/<path>      →  .../
+
+    Idempotent and safe to call on already-scrubbed text. Designed to be applied
+    to user-readable output (cProfile / collect_env / script stdout), not to the
+    rendered Setup/Run sections (those are templated portably from the start).
+    """
+    if not text:
+        return text
+    # Meta-internal Python prefix (fbcode platform builds)
+    text = re.sub(r'/usr/local/fbcode/[^/\s]+/lib/python3\.\d+/', '.../python3/', text)
+    # Modellibs trees: /home/<user>/envs/modellibs/<pkg>-<ver>/  →  .../
+    text = re.sub(r'/home/[^/\s]+/envs/modellibs/[\w\-\.]+/', '.../', text)
+    # Standard venv site-packages: /home/<user>/envs/<venv>/lib/python3.X/site-packages/  →  .../site-packages/
+    text = re.sub(
+        r'/home/[^/\s]+/envs/[^/\s]+/lib/python3\.\d+/site-packages/',
+        '.../site-packages/', text,
+    )
+    # Catch-all for any remaining /home/<user>/... prefix (must come last)
+    text = re.sub(r'/home/[^/\s]+/', '.../', text)
+    return text
+
+
 def _parse_venv_spec(spec):
     """Parse a --venv argument: NAME:PATH_TO_PYTHON. Returns (name, python_bin)."""
     if ":" not in spec:
@@ -1301,17 +1331,39 @@ def cmd_pytorch_upstream(args):
             str(Path(p).expanduser()) for p in args.pythonpath.split(":")
         )
 
-    # Parse venvs and capture output + collect_env for each.
+    # Parse venvs and capture metadata + outputs for each.
     venvs = [_parse_venv_spec(s) for s in args.venv]
-    captured = []  # list of (name, python_bin, torch_ver, collect_env_text, run_text)
+    captured = []  # list of dicts: {name, python_bin, torch_ver, cuda_variant,
+                   #                 transformers_ver, diffusers_ver, collect_env_text, run_text}
+
+    # Probe script — captures torch + cuda variant + transformers/diffusers versions in
+    # one shot so the rendered Setup section can template the exact `pip install` lines
+    # an upstream maintainer would run on a fresh machine.
+    PROBE_SRC = (
+        "import torch\n"
+        "print(f'TORCH_VERSION={torch.__version__}')\n"
+        "print(f'TORCH_GIT={torch.version.git_version}')\n"
+        "for pkg in ('transformers','diffusers','timm'):\n"
+        "    try:\n"
+        "        m=__import__(pkg); print(f'{pkg.upper()}_VERSION={m.__version__}')\n"
+        "    except Exception: print(f'{pkg.upper()}_VERSION=')\n"
+    )
+
     for name, python_bin in venvs:
-        print(f"[upstream] capturing torch version + collect_env + script run for {name} ({python_bin})", file=sys.stderr)
-        # 1. torch version
-        _, ver_out = _run_capture(python_bin, [
-            "-c",
-            "import torch; print(torch.__version__); print(torch.version.git_version)"
-        ], env_extra=env_extra, timeout_s=60)
-        torch_ver = ver_out.strip().splitlines()[0] if ver_out else "?"
+        print(f"[upstream] capturing metadata + collect_env + script run for {name} ({python_bin})", file=sys.stderr)
+        # 1. version probe (torch + cuda variant + transformers/diffusers/timm)
+        _, probe_out = _run_capture(python_bin, ["-c", PROBE_SRC],
+                                    env_extra=env_extra, timeout_s=60)
+        meta = {}
+        for line in (probe_out or "").splitlines():
+            if "=" in line:
+                k, v = line.split("=", 1)
+                meta[k.strip()] = v.strip()
+        torch_ver = meta.get("TORCH_VERSION", "?")
+        # Derive cuda variant from torch version: '2.11.0+cu128' → cu128; '+cpu' → cpu;
+        # bare '2.11.0' → 'cu128' (educated default for the current era's release wheels)
+        m = re.search(r'\+(cu\d+|cpu|rocm[\d.]+)$', torch_ver)
+        cuda_variant = m.group(1) if m else "cu128"
 
         # 2. collect_env (skipped if --no-collect-env)
         if args.no_collect_env:
@@ -1320,55 +1372,86 @@ def cmd_pytorch_upstream(args):
             _, ce_out = _run_capture(python_bin, [
                 "-m", "torch.utils.collect_env"
             ], env_extra=env_extra, timeout_s=120)
-            collect_env_text = ce_out.strip()
+            collect_env_text = _scrub_paths(ce_out.strip())
 
-        # 3. the script itself (skipped if --no-run; expects --captured-output instead)
+        # 3. the script itself (skipped if --no-run)
         if args.no_run:
-            run_text = "(--no-run: script not executed by tool; see --captured-output if provided)"
+            run_text = "(--no-run: script not executed by tool)"
         else:
             _, run_out = _run_capture(python_bin, [str(script_path)],
                                       env_extra=env_extra, timeout_s=args.timeout)
-            run_text = run_out.strip()
+            run_text = _scrub_paths(run_out.strip())
 
-        captured.append((name, python_bin, torch_ver, collect_env_text, run_text))
+        captured.append({
+            "name": name,
+            "python_bin": python_bin,
+            "torch_ver": torch_ver,
+            "cuda_variant": cuda_variant,
+            "transformers_ver": meta.get("TRANSFORMERS_VERSION", ""),
+            "diffusers_ver": meta.get("DIFFUSERS_VERSION", ""),
+            "timm_ver": meta.get("TIMM_VERSION", ""),
+            "collect_env_text": collect_env_text,
+            "run_text": run_text,
+        })
 
-    # Render the body.
+    # ── Render the body ──
     body_parts = [UPSTREAM_BODY_MARKER, ""]
     if summary_text:
         body_parts += [summary_text, ""]
 
-    body_parts += ["## Reproducer", "", "Save as `repro.py`:", "", "```python", script_src.rstrip(), "```", ""]
+    body_parts += ["## Reproducer", "", "Save as `repro.py`:", "",
+                   "```python", script_src.rstrip(), "```", ""]
 
-    body_parts += ["## Setup", "",
-                   "Each venv below should have torch + transformers (or whatever `repro.py` imports) installed:", ""]
-    for name, python_bin, torch_ver, _, _ in captured:
-        body_parts.append(f"- **{name}** — `{torch_ver}` (`{python_bin}`)")
-    body_parts.append("")
-    if args.pythonpath:
-        body_parts += [
-            "PYTHONPATH used by the runner (for environments where transformers / "
-            "diffusers / timm are checked out as standalone trees rather than "
-            "pip-installed):", "",
-            f"```", f"PYTHONPATH={env_extra.get('PYTHONPATH','')}", f"```", "",
-        ]
-
-    body_parts += ["## Run", ""]
-    for name, python_bin, _, _, _ in captured:
+    # Setup: portable pip install lines per venv (NEVER /home/<user> paths).
+    body_parts += ["## Setup", ""]
+    for c in captured:
+        venv_name = f"{c['name']}_venv"
+        is_dev = ".dev" in c["torch_ver"]
+        if c["cuda_variant"] == "cpu":
+            index_url = "https://download.pytorch.org/whl/nightly/cpu" if is_dev else "https://download.pytorch.org/whl/cpu"
+        else:
+            index_url = (f"https://download.pytorch.org/whl/nightly/{c['cuda_variant']}"
+                         if is_dev else f"https://download.pytorch.org/whl/{c['cuda_variant']}")
         body_parts.append(f"```bash")
-        body_parts.append(f"{python_bin} repro.py    # {name}")
+        body_parts.append(f"# {c['name']}: torch=={c['torch_ver']}")
+        body_parts.append(f"python3 -m venv ~/{venv_name}")
+        pre_flag = "--pre " if is_dev else ""
+        body_parts.append(
+            f"~/{venv_name}/bin/pip install {pre_flag}torch=={c['torch_ver']} \\"
+        )
+        body_parts.append(f"  --index-url {index_url}")
+        if c["transformers_ver"]:
+            body_parts.append(f"~/{venv_name}/bin/pip install transformers=={c['transformers_ver']}")
+        if c["diffusers_ver"]:
+            body_parts.append(f"~/{venv_name}/bin/pip install diffusers=={c['diffusers_ver']}")
+        if c["timm_ver"]:
+            body_parts.append(f"~/{venv_name}/bin/pip install timm=={c['timm_ver']}")
+        body_parts.append(f"```")
+        body_parts.append("")
+
+    # Run: generic ~/<NAME>_venv path, NEVER absolute python_bin.
+    body_parts += ["## Run", ""]
+    for c in captured:
+        venv_name = f"{c['name']}_venv"
+        body_parts.append(f"```bash")
+        body_parts.append(f"~/{venv_name}/bin/python repro.py    # {c['name']}")
         body_parts.append(f"```")
     body_parts.append("")
 
     body_parts += ["## Captured output", ""]
-    for name, _, torch_ver, _, run_text in captured:
-        body_parts += [f"<details><summary>{name} (`{torch_ver}`)</summary>", "", "```",
-                       run_text or "(no output)", "```", "", "</details>", ""]
+    for c in captured:
+        body_parts += [
+            f"<details><summary>{c['name']} (`{c['torch_ver']}`)</summary>", "",
+            "```", c["run_text"] or "(no output)", "```", "", "</details>", "",
+        ]
 
     if not args.no_collect_env:
         body_parts += ["## Environment (`python -m torch.utils.collect_env`)", ""]
-        for name, _, _, ce_text, _ in captured:
-            body_parts += [f"<details><summary>{name}</summary>", "", "```",
-                           ce_text or "(no output)", "```", "", "</details>", ""]
+        for c in captured:
+            body_parts += [
+                f"<details><summary>{c['name']}</summary>", "",
+                "```", c["collect_env_text"] or "(no output)", "```", "", "</details>", "",
+            ]
 
     body = "\n".join(body_parts).rstrip() + "\n"
 
