@@ -1,23 +1,50 @@
 #!/usr/bin/env python3
 """Post-sweep issue management for the OSS model graph-break corpus.
 
-Two commands:
-  sweep-report  Analyze sweep results, generate a reviewable update plan (read-only)
-  sweep-update  Apply a reviewed plan to update GitHub issues (writes)
+Subcommands:
+  sweep-report        Analyze sweep results, generate update plan (read-only)
+  sweep-update        Apply a reviewed plan to corpus-repo issues (writes)
+  correctness-report  Analyze a correctness sweep, generate issue plan (read-only)
+  correctness-apply   Apply a correctness plan (writes to corpus repo)
+  pytorch-upstream    Build a self-contained pytorch/pytorch issue body or
+                      comment by running a repro script in 1+ venvs and
+                      capturing output + env (read-only by default; --post
+                      creates the issue / posts the comment).
 
-Usage:
-  # After a sweep, generate the report
-  python tools/file_issues.py sweep-report \
-    --explain sweep_results/nightly/2026-04-19/explain_results.json \
+The first four target our internal corpus repo (penguinwu/oss-model-graph-
+break-corpus). The pytorch-upstream subcommand targets pytorch/pytorch and
+exists to make first-time upstream filings reproducible end-to-end (see
+tools/issue_filing_plan.md §2 for the workflow + checklist).
+
+Usage examples:
+  # Sweep workflow (corpus repo)
+  python tools/file_issues.py sweep-report \\
+    --explain sweep_results/nightly/2026-04-19/explain_results.json \\
     --identify sweep_results/nightly/2026-04-19/identify_results.json
 
-  # Review the plan, then apply it
-  python tools/file_issues.py sweep-update \
+  python tools/file_issues.py sweep-update \\
     --plan sweep_results/nightly/2026-04-19/sweep-report.json
+
+  # Upstream pytorch issue (dry-run by default)
+  python tools/file_issues.py pytorch-upstream \\
+    --script /tmp/blt_init_repro.py \\
+    --venv pt211:~/envs/torch211/bin/python \\
+    --venv pt212:~/envs/torch-nightly-cu128/bin/python \\
+    --pythonpath /home/pengwu/envs/modellibs/transformers-5.5.3 \\
+    --title "Perf regression: ..." \\
+    --summary /tmp/issue_summary.md \\
+    --output /tmp/issue_body.md
+
+  # Same, posting as a comment to existing issue #182116
+  python tools/file_issues.py pytorch-upstream \\
+    --script /tmp/blt_init_repro.py --venv pt211:... --venv pt212:... \\
+    --comment 182116 --summary /tmp/comment_intro.md --output /tmp/body.md --post
 """
 import argparse
 import json
+import os
 import re
+import subprocess
 import sys
 import time
 import urllib.request
@@ -1196,6 +1223,187 @@ def cmd_sweep_update(args):
     apply_sweep_update(plan)
 
 
+# ── pytorch-upstream subcommand ─────────────────────────────────────────
+# Build a self-contained pytorch/pytorch issue body or comment by running a
+# repro script in 1+ venvs and capturing output + collect_env. Designed so
+# the receiver (an upstream maintainer) has everything needed to reproduce
+# without bouncing back to ask. See tools/issue_filing_plan.md §2.
+#
+# Anti-fragmentation: this lives in file_issues.py to share _get_github_token
+# / _proxy_api with the corpus-repo subcommands, even though it targets a
+# different repo (pytorch/pytorch). Adding a separate tool would split the
+# GitHub API plumbing across two files.
+
+UPSTREAM_REPO_SLUG = "pytorch/pytorch"
+UPSTREAM_BODY_MARKER = "<!-- assembled-by: file_issues.py pytorch-upstream -->"
+
+
+def _parse_venv_spec(spec):
+    """Parse a --venv argument: NAME:PATH_TO_PYTHON. Returns (name, python_bin)."""
+    if ":" not in spec:
+        print(f"ERROR: --venv must be NAME:PATH (got {spec!r})")
+        sys.exit(2)
+    name, python_bin = spec.split(":", 1)
+    python_bin = str(Path(python_bin).expanduser())
+    if not Path(python_bin).is_file() or not os.access(python_bin, os.X_OK):
+        print(f"ERROR: --venv {name!r} python_bin not executable: {python_bin}")
+        sys.exit(2)
+    return name, python_bin
+
+
+def _run_capture(python_bin, args, env_extra=None, timeout_s=1800):
+    """Run [python_bin] + args with optional env additions, capture combined output."""
+    env = os.environ.copy()
+    if env_extra:
+        env.update(env_extra)
+    try:
+        cp = subprocess.run(
+            [python_bin] + list(args),
+            env=env, capture_output=True, text=True, timeout=timeout_s,
+        )
+    except subprocess.TimeoutExpired:
+        return None, f"(timed out after {timeout_s}s)"
+    out = cp.stdout or ""
+    err = cp.stderr or ""
+    if cp.returncode != 0:
+        out += f"\n[exit code {cp.returncode}]\n{err}"
+    return cp.returncode, out
+
+
+def cmd_pytorch_upstream(args):
+    if not args.venv or len(args.venv) < 1:
+        print("ERROR: --venv required (at least one)")
+        sys.exit(2)
+    if args.comment and args.title:
+        print("ERROR: --comment and --title are mutually exclusive (comment posts to existing issue, has no title)")
+        sys.exit(2)
+    if args.post and not args.comment and not args.title:
+        print("ERROR: --post needs either --comment ISSUE# (post to existing) or --title (create new)")
+        sys.exit(2)
+
+    script_path = Path(args.script).expanduser().resolve()
+    if not script_path.is_file():
+        print(f"ERROR: script not found: {script_path}")
+        sys.exit(2)
+    script_src = script_path.read_text()
+
+    summary_text = ""
+    if args.summary:
+        summary_path = Path(args.summary).expanduser().resolve()
+        if not summary_path.is_file():
+            print(f"ERROR: --summary file not found: {summary_path}")
+            sys.exit(2)
+        summary_text = summary_path.read_text().rstrip()
+
+    env_extra = {}
+    if args.pythonpath:
+        env_extra["PYTHONPATH"] = ":".join(
+            str(Path(p).expanduser()) for p in args.pythonpath.split(":")
+        )
+
+    # Parse venvs and capture output + collect_env for each.
+    venvs = [_parse_venv_spec(s) for s in args.venv]
+    captured = []  # list of (name, python_bin, torch_ver, collect_env_text, run_text)
+    for name, python_bin in venvs:
+        print(f"[upstream] capturing torch version + collect_env + script run for {name} ({python_bin})", file=sys.stderr)
+        # 1. torch version
+        _, ver_out = _run_capture(python_bin, [
+            "-c",
+            "import torch; print(torch.__version__); print(torch.version.git_version)"
+        ], env_extra=env_extra, timeout_s=60)
+        torch_ver = ver_out.strip().splitlines()[0] if ver_out else "?"
+
+        # 2. collect_env (skipped if --no-collect-env)
+        if args.no_collect_env:
+            collect_env_text = "(skipped via --no-collect-env)"
+        else:
+            _, ce_out = _run_capture(python_bin, [
+                "-m", "torch.utils.collect_env"
+            ], env_extra=env_extra, timeout_s=120)
+            collect_env_text = ce_out.strip()
+
+        # 3. the script itself (skipped if --no-run; expects --captured-output instead)
+        if args.no_run:
+            run_text = "(--no-run: script not executed by tool; see --captured-output if provided)"
+        else:
+            _, run_out = _run_capture(python_bin, [str(script_path)],
+                                      env_extra=env_extra, timeout_s=args.timeout)
+            run_text = run_out.strip()
+
+        captured.append((name, python_bin, torch_ver, collect_env_text, run_text))
+
+    # Render the body.
+    body_parts = [UPSTREAM_BODY_MARKER, ""]
+    if summary_text:
+        body_parts += [summary_text, ""]
+
+    body_parts += ["## Reproducer", "", "Save as `repro.py`:", "", "```python", script_src.rstrip(), "```", ""]
+
+    body_parts += ["## Setup", "",
+                   "Each venv below should have torch + transformers (or whatever `repro.py` imports) installed:", ""]
+    for name, python_bin, torch_ver, _, _ in captured:
+        body_parts.append(f"- **{name}** — `{torch_ver}` (`{python_bin}`)")
+    body_parts.append("")
+    if args.pythonpath:
+        body_parts += [
+            "PYTHONPATH used by the runner (for environments where transformers / "
+            "diffusers / timm are checked out as standalone trees rather than "
+            "pip-installed):", "",
+            f"```", f"PYTHONPATH={env_extra.get('PYTHONPATH','')}", f"```", "",
+        ]
+
+    body_parts += ["## Run", ""]
+    for name, python_bin, _, _, _ in captured:
+        body_parts.append(f"```bash")
+        body_parts.append(f"{python_bin} repro.py    # {name}")
+        body_parts.append(f"```")
+    body_parts.append("")
+
+    body_parts += ["## Captured output", ""]
+    for name, _, torch_ver, _, run_text in captured:
+        body_parts += [f"<details><summary>{name} (`{torch_ver}`)</summary>", "", "```",
+                       run_text or "(no output)", "```", "", "</details>", ""]
+
+    if not args.no_collect_env:
+        body_parts += ["## Environment (`python -m torch.utils.collect_env`)", ""]
+        for name, _, _, ce_text, _ in captured:
+            body_parts += [f"<details><summary>{name}</summary>", "", "```",
+                           ce_text or "(no output)", "```", "", "</details>", ""]
+
+    body = "\n".join(body_parts).rstrip() + "\n"
+
+    # Write body to --output (default stdout).
+    if args.output:
+        out_path = Path(args.output).expanduser().resolve()
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(body)
+        print(f"[upstream] body written: {out_path} ({len(body)} chars)", file=sys.stderr)
+    else:
+        sys.stdout.write(body)
+
+    # Optional: actually post.
+    if args.post:
+        if args.comment:
+            endpoint = f"/repos/{UPSTREAM_REPO_SLUG}/issues/{args.comment}/comments"
+            payload = {"body": body}
+            print(f"[upstream] POSTing comment to {UPSTREAM_REPO_SLUG}#{args.comment}", file=sys.stderr)
+        else:
+            endpoint = f"/repos/{UPSTREAM_REPO_SLUG}/issues"
+            payload = {"title": args.title, "body": body}
+            if args.label:
+                payload["labels"] = list(args.label)
+            print(f"[upstream] POSTing new issue to {UPSTREAM_REPO_SLUG}: title={args.title!r}", file=sys.stderr)
+        result = _proxy_api(endpoint, method="POST", body=payload)
+        if result and isinstance(result, dict):
+            url = result.get("html_url")
+            print(f"[upstream] POSTed: {url}", file=sys.stderr)
+        else:
+            print(f"[upstream] POST failed (see error above)", file=sys.stderr)
+            sys.exit(1)
+    else:
+        print(f"[upstream] DRY RUN — pass --post to actually create issue / post comment.", file=sys.stderr)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Post-sweep issue management for the OSS model graph-break corpus",
@@ -1247,6 +1455,55 @@ def main():
         "--plan", required=True, metavar="PLAN_JSON",
         help="Path to correctness-report.json plan file")
 
+    sub_upstream = subparsers.add_parser(
+        "pytorch-upstream",
+        help="Build a self-contained pytorch/pytorch issue body or comment "
+             "(read-only by default; --post creates issue / posts comment)")
+    sub_upstream.add_argument(
+        "--script", required=True, metavar="PATH",
+        help="Path to the repro script (will be embedded verbatim in the body)")
+    sub_upstream.add_argument(
+        "--venv", required=True, action="append", metavar="NAME:PYTHON_BIN",
+        help="Repeatable. Each spec is NAME:PATH_TO_PYTHON. "
+             "Examples: pt211:~/envs/torch211/bin/python, "
+             "pt212:~/envs/torch-nightly-cu128/bin/python")
+    sub_upstream.add_argument(
+        "--pythonpath", default=None, metavar="PATH[:PATH...]",
+        help="Optional PYTHONPATH applied to every venv (for environments where "
+             "transformers/diffusers/timm live as standalone modellibs trees rather "
+             "than pip-installed). Colon-separated.")
+    sub_upstream.add_argument(
+        "--summary", default=None, metavar="MD_FILE",
+        help="Markdown file with the bug description / context paragraph(s). "
+             "Goes at the top of the issue body, above the Reproducer section.")
+    sub_upstream.add_argument(
+        "--title", default=None, metavar="STR",
+        help="Issue title — required when posting a NEW issue (not used with --comment).")
+    sub_upstream.add_argument(
+        "--comment", type=int, default=None, metavar="ISSUE_NUMBER",
+        help="If set, the assembled body is posted as a comment to this existing "
+             "pytorch/pytorch issue instead of creating a new one. Mutually exclusive with --title.")
+    sub_upstream.add_argument(
+        "--label", action="append", default=None, metavar="LABEL",
+        help="Repeatable. Labels applied when creating a new issue. Ignored with --comment.")
+    sub_upstream.add_argument(
+        "--output", default=None, metavar="PATH",
+        help="Where to write the assembled body. Default: stdout.")
+    sub_upstream.add_argument(
+        "--no-collect-env", action="store_true",
+        help="Skip running `python -m torch.utils.collect_env` in each venv. "
+             "Only do this if the env disclosure is captured elsewhere.")
+    sub_upstream.add_argument(
+        "--no-run", action="store_true",
+        help="Skip running the script in each venv (still runs torch version probe + collect_env). "
+             "Use when scripts are slow and outputs are already known/captured.")
+    sub_upstream.add_argument(
+        "--timeout", type=int, default=1800, metavar="SECONDS",
+        help="Per-venv script timeout (default: 1800s = 30 min).")
+    sub_upstream.add_argument(
+        "--post", action="store_true",
+        help="Actually post to pytorch/pytorch. Default is dry-run (just write body to --output).")
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -1261,6 +1518,8 @@ def main():
         cmd_correctness_report(args)
     elif args.command == "correctness-apply":
         cmd_correctness_apply(args)
+    elif args.command == "pytorch-upstream":
+        cmd_pytorch_upstream(args)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,858 @@
+[
+  {
+    "name": "AutoformerModel",
+    "source": "hf"
+  },
+  {
+    "name": "AudioFlamingo3ForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "AyaVisionForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "BambaForCausalLM",
+    "source": "hf"
+  },
+  {
+    "name": "BambaModel",
+    "source": "hf"
+  },
+  {
+    "name": "BartForCausalLM",
+    "source": "hf"
+  },
+  {
+    "name": "BartForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "BartModel",
+    "source": "hf"
+  },
+  {
+    "name": "BigBirdPegasusForCausalLM",
+    "source": "hf"
+  },
+  {
+    "name": "BigBirdPegasusForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "BigBirdPegasusModel",
+    "source": "hf"
+  },
+  {
+    "name": "BioGptForCausalLM",
+    "source": "hf"
+  },
+  {
+    "name": "BioGptModel",
+    "source": "hf"
+  },
+  {
+    "name": "BlenderbotForCausalLM",
+    "source": "hf"
+  },
+  {
+    "name": "BlenderbotForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "BlenderbotModel",
+    "source": "hf"
+  },
+  {
+    "name": "BlenderbotSmallForCausalLM",
+    "source": "hf"
+  },
+  {
+    "name": "BlenderbotSmallForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "BlenderbotSmallModel",
+    "source": "hf"
+  },
+  {
+    "name": "Blip2ForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "Blip2Model",
+    "source": "hf"
+  },
+  {
+    "name": "Cohere2VisionForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "CohereAsrForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "CohereAsrModel",
+    "source": "hf"
+  },
+  {
+    "name": "DFineModel",
+    "source": "hf"
+  },
+  {
+    "name": "Data2VecAudioModel",
+    "source": "hf"
+  },
+  {
+    "name": "DbrxForCausalLM",
+    "source": "hf"
+  },
+  {
+    "name": "DbrxModel",
+    "source": "hf"
+  },
+  {
+    "name": "DeepseekVLForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "EncodecModel",
+    "source": "hf"
+  },
+  {
+    "name": "Ernie4_5_VLMoeForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "Ernie4_5_VL_MoeForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "FSMTForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "FSMTModel",
+    "source": "hf"
+  },
+  {
+    "name": "FalconH1ForCausalLM",
+    "source": "hf"
+  },
+  {
+    "name": "FalconH1Model",
+    "source": "hf"
+  },
+  {
+    "name": "FastSpeech2ConformerModel",
+    "source": "hf"
+  },
+  {
+    "name": "FlaubertModel",
+    "source": "hf"
+  },
+  {
+    "name": "FlaubertWithLMHeadModel",
+    "source": "hf"
+  },
+  {
+    "name": "Florence2ForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "Florence2Model",
+    "source": "hf"
+  },
+  {
+    "name": "FunnelBaseModel",
+    "source": "hf"
+  },
+  {
+    "name": "FunnelModel",
+    "source": "hf"
+  },
+  {
+    "name": "Gemma3ForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "Gemma4ForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "Glm46VForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "Glm4vForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "Glm4vMoeForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "Glm4vMoeVisionModel",
+    "source": "hf"
+  },
+  {
+    "name": "Glm4vVisionModel",
+    "source": "hf"
+  },
+  {
+    "name": "GlmImageVisionModel",
+    "source": "hf"
+  },
+  {
+    "name": "GlmOcrForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "GlmOcrVisionModel",
+    "source": "hf"
+  },
+  {
+    "name": "GotOcr2ForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "GotOcr2Model",
+    "source": "hf"
+  },
+  {
+    "name": "GraniteMoeHybridForCausalLM",
+    "source": "hf"
+  },
+  {
+    "name": "GraniteMoeHybridModel",
+    "source": "hf"
+  },
+  {
+    "name": "GroundingDinoModel",
+    "source": "hf"
+  },
+  {
+    "name": "HubertModel",
+    "source": "hf"
+  },
+  {
+    "name": "IBertModel",
+    "source": "hf"
+  },
+  {
+    "name": "InformerModel",
+    "source": "hf"
+  },
+  {
+    "name": "InstructBlipForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "InstructBlipModel",
+    "source": "hf"
+  },
+  {
+    "name": "InstructBlipVideoForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "InstructBlipVideoModel",
+    "source": "hf"
+  },
+  {
+    "name": "InternVLForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "InternVLModel",
+    "source": "hf"
+  },
+  {
+    "name": "JambaForCausalLM",
+    "source": "hf"
+  },
+  {
+    "name": "JambaModel",
+    "source": "hf"
+  },
+  {
+    "name": "JanusForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "Kosmos2ForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "Kosmos2Model",
+    "source": "hf"
+  },
+  {
+    "name": "LEDForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "LEDModel",
+    "source": "hf"
+  },
+  {
+    "name": "Lfm2VlForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "LightOnOcrForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "Llama4ForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "LlavaForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "LlavaNextForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "LlavaNextVideoForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "LlavaOnevisionForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "LongT5EncoderModel",
+    "source": "hf"
+  },
+  {
+    "name": "LongT5ForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "LongT5Model",
+    "source": "hf"
+  },
+  {
+    "name": "LongcatFlashForCausalLM",
+    "source": "hf"
+  },
+  {
+    "name": "LongcatFlashModel",
+    "source": "hf"
+  },
+  {
+    "name": "LongformerModel",
+    "source": "hf"
+  },
+  {
+    "name": "M2M100ForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "M2M100Model",
+    "source": "hf"
+  },
+  {
+    "name": "MBartForCausalLM",
+    "source": "hf"
+  },
+  {
+    "name": "MBartForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "MBartModel",
+    "source": "hf"
+  },
+  {
+    "name": "MMGroundingDinoModel",
+    "source": "hf"
+  },
+  {
+    "name": "MarianForCausalLM",
+    "source": "hf"
+  },
+  {
+    "name": "MarianMTModel",
+    "source": "hf"
+  },
+  {
+    "name": "MarianModel",
+    "source": "hf"
+  },
+  {
+    "name": "MiniCPMV4_6ForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "MiniCPMV4_6Model",
+    "source": "hf"
+  },
+  {
+    "name": "Mistral3ForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "MraModel",
+    "source": "hf"
+  },
+  {
+    "name": "MusicgenForCausalLM",
+    "source": "hf"
+  },
+  {
+    "name": "MusicgenForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "MusicgenMelodyForCausalLM",
+    "source": "hf"
+  },
+  {
+    "name": "MusicgenMelodyForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "MusicgenMelodyModel",
+    "source": "hf"
+  },
+  {
+    "name": "MusicgenModel",
+    "source": "hf"
+  },
+  {
+    "name": "MvpForCausalLM",
+    "source": "hf"
+  },
+  {
+    "name": "MvpForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "MvpModel",
+    "source": "hf"
+  },
+  {
+    "name": "NemotronHForCausalLM",
+    "source": "hf"
+  },
+  {
+    "name": "NemotronHModel",
+    "source": "hf"
+  },
+  {
+    "name": "NllbMoeForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "NllbMoeModel",
+    "source": "hf"
+  },
+  {
+    "name": "OPTForCausalLM",
+    "source": "hf"
+  },
+  {
+    "name": "OPTModel",
+    "source": "hf"
+  },
+  {
+    "name": "OpenAIPrivacyFilterModel",
+    "source": "hf"
+  },
+  {
+    "name": "Ovis2ForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "PLBartForCausalLM",
+    "source": "hf"
+  },
+  {
+    "name": "PLBartForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "PLBartModel",
+    "source": "hf"
+  },
+  {
+    "name": "PPDocLayoutV2Model",
+    "source": "hf"
+  },
+  {
+    "name": "PPDocLayoutV3Model",
+    "source": "hf"
+  },
+  {
+    "name": "PPFormulaNetForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "PaddleOCRVLForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "PaddleOCRVisionModel",
+    "source": "hf"
+  },
+  {
+    "name": "PaliGemmaForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "PaliGemmaModel",
+    "source": "hf"
+  },
+  {
+    "name": "PeAudioFrameLevelModel",
+    "source": "hf"
+  },
+  {
+    "name": "PeAudioModel",
+    "source": "hf"
+  },
+  {
+    "name": "PegasusForCausalLM",
+    "source": "hf"
+  },
+  {
+    "name": "PegasusForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "PegasusModel",
+    "source": "hf"
+  },
+  {
+    "name": "PegasusXForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "PegasusXModel",
+    "source": "hf"
+  },
+  {
+    "name": "Phi4MultimodalAudioModel",
+    "source": "hf"
+  },
+  {
+    "name": "Pop2PianoForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "QianfanOCRForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "QianfanOCRModel",
+    "source": "hf"
+  },
+  {
+    "name": "Qwen2AudioForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "Qwen2VLForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "Qwen2_5OmniThinkerForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "Qwen2_5_VLForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "Qwen3OmniMoeThinkerForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "Qwen3VLForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "Qwen3VLMoeForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "Qwen3VLMoeVisionModel",
+    "source": "hf"
+  },
+  {
+    "name": "Qwen3VLVisionModel",
+    "source": "hf"
+  },
+  {
+    "name": "Qwen3_5MoeVisionModel",
+    "source": "hf"
+  },
+  {
+    "name": "Qwen3_5VisionModel",
+    "source": "hf"
+  },
+  {
+    "name": "RTDetrModel",
+    "source": "hf"
+  },
+  {
+    "name": "RTDetrV2Model",
+    "source": "hf"
+  },
+  {
+    "name": "RagModel",
+    "source": "hf"
+  },
+  {
+    "name": "RecurrentGemmaForCausalLM",
+    "source": "hf"
+  },
+  {
+    "name": "RecurrentGemmaModel",
+    "source": "hf"
+  },
+  {
+    "name": "ReformerModel",
+    "source": "hf"
+  },
+  {
+    "name": "SEWModel",
+    "source": "hf"
+  },
+  {
+    "name": "SeamlessM4TModel",
+    "source": "hf"
+  },
+  {
+    "name": "SeamlessM4TTextToUnitForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "SeamlessM4TTextToUnitModel",
+    "source": "hf"
+  },
+  {
+    "name": "SeamlessM4Tv2Model",
+    "source": "hf"
+  },
+  {
+    "name": "Speech2TextForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "Speech2TextModel",
+    "source": "hf"
+  },
+  {
+    "name": "SpeechEncoderDecoderModel",
+    "source": "hf"
+  },
+  {
+    "name": "SpeechT5Model",
+    "source": "hf"
+  },
+  {
+    "name": "SwitchTransformersEncoderModel",
+    "source": "hf"
+  },
+  {
+    "name": "SwitchTransformersForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "SwitchTransformersModel",
+    "source": "hf"
+  },
+  {
+    "name": "TimeSeriesTransformerModel",
+    "source": "hf"
+  },
+  {
+    "name": "TrOCRForCausalLM",
+    "source": "hf"
+  },
+  {
+    "name": "UdopEncoderModel",
+    "source": "hf"
+  },
+  {
+    "name": "UdopForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "UdopModel",
+    "source": "hf"
+  },
+  {
+    "name": "UniSpeechModel",
+    "source": "hf"
+  },
+  {
+    "name": "UniSpeechSatModel",
+    "source": "hf"
+  },
+  {
+    "name": "VideoLlama3ForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "VideoLlama3VisionModel",
+    "source": "hf"
+  },
+  {
+    "name": "ViltModel",
+    "source": "hf"
+  },
+  {
+    "name": "VipLlavaForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "VitsModel",
+    "source": "hf"
+  },
+  {
+    "name": "VoxtralRealtimeForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "Wav2Vec2BertModel",
+    "source": "hf"
+  },
+  {
+    "name": "Wav2Vec2ConformerModel",
+    "source": "hf"
+  },
+  {
+    "name": "Wav2Vec2Model",
+    "source": "hf"
+  },
+  {
+    "name": "WavLMModel",
+    "source": "hf"
+  },
+  {
+    "name": "WhisperForCausalLM",
+    "source": "hf"
+  },
+  {
+    "name": "WhisperForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "WhisperModel",
+    "source": "hf"
+  },
+  {
+    "name": "XGLMForCausalLM",
+    "source": "hf"
+  },
+  {
+    "name": "XGLMModel",
+    "source": "hf"
+  },
+  {
+    "name": "XcodecModel",
+    "source": "hf"
+  },
+  {
+    "name": "AutoencoderDC",
+    "source": "diffusers"
+  },
+  {
+    "name": "AutoencoderKLHunyuanImageRefiner",
+    "source": "diffusers"
+  },
+  {
+    "name": "ConsistencyDecoderVAE",
+    "source": "diffusers"
+  },
+  {
+    "name": "HiDreamImageTransformer2DModel",
+    "source": "diffusers"
+  },
+  {
+    "name": "Lumina2Transformer2DModel",
+    "source": "diffusers"
+  },
+  {
+    "name": "OpenVoice-SynthesizerTrn",
+    "source": "custom"
+  },
+  {
+    "name": "OpenVoice-SynthesizerTrn-infer",
+    "source": "custom"
+  },
+  {
+    "name": "GPT-SoVITS-SynthesizerTrn",
+    "source": "custom"
+  },
+  {
+    "name": "GPT-SoVITS-SynthesizerTrn-forward",
+    "source": "custom"
+  },
+  {
+    "name": "MiniCPM-V-Resampler",
+    "source": "custom"
+  },
+  {
+    "name": "MiniCPM-V-ViT",
+    "source": "custom"
+  },
+  {
+    "name": "Gemma4-vision",
+    "source": "custom"
+  },
+  {
+    "name": "OlmoHybridForCausalLM",
+    "source": "hf"
+  },
+  {
+    "name": "OlmoHybridModel",
+    "source": "hf"
+  },
+  {
+    "name": "Qwen3NextForCausalLM",
+    "source": "hf"
+  },
+  {
+    "name": "Qwen3NextModel",
+    "source": "hf"
+  },
+  {
+    "name": "Qwen3_5ForCausalLM",
+    "source": "hf"
+  },
+  {
+    "name": "Qwen3_5ForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "Qwen3_5Model",
+    "source": "hf"
+  },
+  {
+    "name": "Qwen3_5MoeForCausalLM",
+    "source": "hf"
+  },
+  {
+    "name": "Qwen3_5MoeForConditionalGeneration",
+    "source": "hf"
+  },
+  {
+    "name": "Qwen3_5MoeModel",
+    "source": "hf"
+  },
+  {
+    "name": "Qwen3_5MoeTextModel",
+    "source": "hf"
+  },
+  {
+    "name": "Qwen3_5TextModel",
+    "source": "hf"
+  }
+]
