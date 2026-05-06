@@ -132,7 +132,12 @@ def fmt_elapsed(started_iso):
         except ValueError:
             s = datetime.strptime(started_iso, "%Y-%m-%dT%H:%M:%S")
         if s.tzinfo is None:
-            s = s.replace(tzinfo=timezone.utc)
+            # Legacy writer emits naive ISO in LOCAL time (no Z marker).
+            # Treat naive timestamps as local — assigning UTC here would
+            # over-state elapsed by the local-vs-UTC offset on non-UTC boxes
+            # (e.g. +7h on a PDT host). Current writer (post-2026-05-06) emits
+            # UTC with Z, which the fromisoformat path above handles correctly.
+            s = s.astimezone()
         delta = datetime.now(timezone.utc) - s
         total = int(delta.total_seconds())
         h, rem = divmod(total, 3600)

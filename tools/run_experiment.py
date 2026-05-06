@@ -486,7 +486,7 @@ def run_experiment(config, args):
         },
         "environment": version_info or {},
         "execution": {
-            "started": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "started": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "python_bin": python_bin,
         },
     }

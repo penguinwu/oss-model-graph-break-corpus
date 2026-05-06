@@ -528,7 +528,7 @@ def run_sweep(args):
         "status": "initializing",
         "pid": os.getpid(),
         "output_dir": str(output_dir),
-        "started": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "started": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "args": sys.argv[1:],
         "restart_count": 0,
     }
