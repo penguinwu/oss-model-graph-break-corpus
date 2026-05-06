@@ -177,19 +177,40 @@ def fetch_tracked_issues(token: str) -> list[dict]:
     return unique
 
 
-def _fetch_new_comments(repo: str, number: int, n_new: int, token: str) -> list[dict]:
-    """Fetch the most recent N comments on an issue. Returns [] on error."""
+def _fetch_new_comments(repo: str, number: int, n_new: int,
+                        prev_updated_at: str, token: str) -> list[dict]:
+    """Fetch comments strictly newer than `prev_updated_at`. Returns [] on error.
+
+    Bug history (2026-05-06): two interacting bugs caused self-comment leak.
+    (a) The previous implementation used `?per_page=N&sort=created&direction=desc`,
+        but GitHub's `/issues/N/comments` endpoint silently ignores `sort` and
+        `direction` (only `since` and `per_page` are supported per the docs).
+        That returned the OLDEST N comments instead of the newest.
+    (b) After fixing (a), the API's `since` parameter is INCLUSIVE — it returns
+        comments where updated_at >= since, including the boundary comment that
+        was the last one we saw. Without a local strict-greater filter, the
+        boundary (often an external comment) re-leaks as "new activity" each run.
+
+    Result of the chain: self-replies on upstream issues we filed leaked through
+    the filter (Alban's original re-counted as new activity even though we hadn't
+    received any new external comments — see #182116 follow-up to commit 4ced364).
+
+    Fix: use `since=prev_updated_at` to narrow the API response (efficient), then
+    locally filter to `created_at > prev_updated_at` (strict, defensive).
+    """
     if n_new <= 0:
         return []
-    # Cap to avoid pulling huge histories on first-run-of-a-noisy-issue
-    n_fetch = min(n_new, 30)
-    url = (f"https://api.github.com/repos/{repo}/issues/{number}/comments"
-           f"?per_page={n_fetch}&sort=created&direction=desc")
+    url = f"https://api.github.com/repos/{repo}/issues/{number}/comments?per_page=100"
+    if prev_updated_at:
+        url += f"&since={prev_updated_at}"
     try:
         items = _gh_get(url, token) or []
     except Exception as e:
         print(f"warning: fetching comments for {repo}#{number}: {e}", file=sys.stderr)
         return []
+    if prev_updated_at:
+        # Strict-greater local filter — `since` API param is inclusive.
+        items = [c for c in items if (c.get("created_at") or "") > prev_updated_at]
     return items
 
 
@@ -259,6 +280,7 @@ def diff_against_state(issues: list[dict], state: dict, token: str) -> list[dict
             new_comments = _fetch_new_comments(
                 iss["repo"], iss["number"],
                 iss["comments_count"] - prev_count,
+                prev_updated,
                 token,
             )
             cls = _classify_comments(new_comments)
