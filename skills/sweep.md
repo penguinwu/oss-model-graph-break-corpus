@@ -3,6 +3,26 @@
 Accumulated knowledge for running, analyzing, and maintaining the model graph break sweep.
 Living document — update after every sweep cycle.
 
+## When to use this skill
+
+Read this skill BEFORE doing any of the following — no exceptions:
+
+- About to launch ANY sweep — full sweep, cohort sweep, experimental sweep, ad-hoc batch model run. Anything that invokes `tools/run_experiment.py sweep` or otherwise runs models in batch via `sweep/worker.py`. Size doesn't matter — overnight cohorts and 30-min experiments both qualify, because the failure modes (forgetting the watchdog, picking wrong worker count, skipping baseline-compat check) are identical.
+- Auditing or reproducing a prior sweep's results.
+- Adding new models to the corpus.
+- Investigating why a sweep produced unexpected status counts.
+
+Do NOT skim. Read at minimum:
+
+- §1 Default Sweep Scope (so you state scope explicitly)
+- §2 Proven Baseline Settings (so you don't drift)
+- §4 Sweep Execution Strategy — **including the Watchdog subsection** (mandatory pre-flight install)
+- §7 Known Pitfalls (so you don't repeat them)
+
+If your work touches the sweep harness code itself (`sweep/worker.py` etc.), `skills/test-sweep-changes/SKILL.md` is a separate, complementary trigger — both apply.
+
+**Failure mode this trigger exists to prevent:** 2026-05-06 nested-gb correctness launch. Otter went straight from "Peng approved the cohort run" to drafting the launch command, never read this skill, never installed the canonical `sweep/sweep_watchdog.py`, and rolled a custom myclaw-cron one-shot wake instead. Peng caught it. Cost: ~20 min and a sharp prompt.
+
 ---
 
 ## 1. Default Sweep Scope
