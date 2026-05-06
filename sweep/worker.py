@@ -171,6 +171,10 @@ warnings.filterwarnings("ignore")
 
 import torch
 import torch._dynamo
+import torch._inductor  # hoisted to module scope so worker.main()'s
+                        # `if args.inductor_flags:` block doesn't make `torch`
+                        # a function-local name (which would UnboundLocalError
+                        # the earlier `torch._dynamo.config` access in main()).
 
 from explain import run_graph_break_analysis
 
@@ -4429,7 +4433,6 @@ def main():
 
     # Apply inductor config flags if provided
     if args.inductor_flags:
-        import torch._inductor
         inductor_flags = json.loads(args.inductor_flags)
         for flag_name, flag_value in inductor_flags.items():
             if hasattr(torch._inductor.config, flag_name):

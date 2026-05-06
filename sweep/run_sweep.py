@@ -1062,6 +1062,16 @@ def run_explain(args):
     results. This avoids lossy spec reconstruction from identify JSON.
     """
     python_bin = _resolve_python(args)
+
+    # Modellibs PYTHONPATH plumbing — same as run_sweep(). Without this,
+    # `enumerate_hf()` below imports transformers from the venv (which has
+    # none — modellibs live under ~/envs/modellibs/<pkg>-<ver>/) and fails
+    # with ModuleNotFoundError. _ensure_modellib_pythonpath() re-execs under
+    # the right PYTHONPATH if needed.
+    modellib_paths = _resolve_modellib_paths(args, python_bin=python_bin)
+    _ensure_modellib_pythonpath(modellib_paths, python_bin)
+    _warn_or_error_missing_modellibs(args)
+
     output_dir = _resolve_run_output_dir(args).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
