@@ -87,3 +87,19 @@ A canonical full NGB verify on the regenerated cohort + right stack has not yet 
 - The 4 Qwen3_5*TextModel worker_error regressions (real bug, not yet diagnosed)
 
 Both should be filed as upstream issues per `tools/file_issues.py pytorch-upstream`.
+
+## Diagnosis update — 2026-05-07
+
+(Added after the postmortem was nominally closed, per S1 investigation in `experiments/ngb-verify-launch-plan.md`.)
+
+The "4 Qwen3_5*TextModel worker_error regressions (real bug, not yet diagnosed)" framing above is **incorrect** — re-read the data:
+
+- `identify_streaming.jsonl` shows 4 worker_errors on Qwen3_5MoeTextModel (eval+train) and Qwen3_5TextModel (eval+train), all with the same root cause: `Unable to load any of {libcudnn_graph.so.9.10.2, libcudnn_graph.so.9.10, libcudnn_graph.so.9, libcudnn_graph.so} / Invalid handle. Cannot load symbol cudnnGetVersion`.
+- This is **env-induced cuDNN library loading flakiness** — not a Qwen-specific bug, not a regression.
+- `auto_retry_errors_checkpoint.jsonl` shows all 4 cases retried to **success**. The final `identify_results.json` shows them as `success`.
+- Per `skills/sweep_sanity_check.md` C2, env-induced cuDNN errors are accepted ("env = CUDA OOM, cudnn, contention only").
+- Per B3 (worker_error rate < 0.5%), the FINAL results have 0% worker_error (all retried to success), which passes B3.
+
+**Implication:** the Qwen3_5* portion of M1 is moot. No `known_errors.json` entry needed; no upstream filing needed. The original sanity-check verdict was applied to the streaming jsonl (pre-retry); the corrected verdict on `identify_results.json` (post-retry) is clean for B3/C2.
+
+**Remaining real-signal items from this run:** the 14 D1 catastrophic train-mode divergences. Those are still real and need upstream issues (S2 in `experiments/ngb-verify-launch-plan.md`).
