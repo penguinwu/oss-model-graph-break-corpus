@@ -150,20 +150,43 @@ def check_pre_launch(cohort_path: Path) -> list:
 
 
 def check_post_sweep(results_path: Path) -> list:
-    """Apply A1 + C1-C2 + G1 to a results file. Returns list of InvariantFailure."""
+    """Apply A1 + C1-C2 + G1 to a results file. Returns list of InvariantFailure.
+
+    Accepts BOTH formats produced by the sweep harness:
+      - JSON: {metadata: ..., results: [...]} or top-level list
+      - JSONL: line-delimited records (first line typically a metadata record
+        with `_record_type: "metadata"`, subsequent lines are result rows).
+    The harness's `identify_results.json` is JSONL despite the .json suffix.
+    """
     failures = []
 
     if not results_path.is_file():
         return [InvariantFailure("FILE_MISSING", "STRICT_FAIL",
                                  f"results file not found: {results_path}")]
 
-    try:
-        raw = json.loads(results_path.read_text())
-    except json.JSONDecodeError as e:
-        return [InvariantFailure("INVALID_JSON", "STRICT_FAIL",
-                                 f"results file not parseable: {e}")]
+    text = results_path.read_text()
+    rows = None
 
-    rows = raw.get("results", []) if isinstance(raw, dict) else raw
+    # Try JSON first (single object or list)
+    try:
+        raw = json.loads(text)
+        rows = raw.get("results", []) if isinstance(raw, dict) else raw
+    except json.JSONDecodeError:
+        # Fall back to JSONL
+        try:
+            parsed = []
+            for line in text.splitlines():
+                if not line.strip():
+                    continue
+                rec = json.loads(line)
+                if isinstance(rec, dict) and rec.get("_record_type") == "metadata":
+                    continue  # skip metadata header
+                parsed.append(rec)
+            rows = parsed
+        except json.JSONDecodeError as e:
+            return [InvariantFailure("INVALID_JSON", "STRICT_FAIL",
+                                     f"results file not parseable as JSON or JSONL: {e}")]
+
     if not isinstance(rows, list):
         return [InvariantFailure("INVALID_RESULTS", "STRICT_FAIL",
                                  "results does not contain a list of rows")]

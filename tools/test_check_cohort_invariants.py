@@ -182,6 +182,43 @@ def test_post_sweep_passes_clean_results():
         assert not strict, f"expected no strict failures on clean results; got {[str(f) for f in strict]}"
 
 
+def test_post_sweep_handles_jsonl_format():
+    """The harness writes identify_results.json as JSONL (line-delimited records,
+    first line a metadata header). Caught by M2-customized gate 2026-05-07 17:05 ET
+    when the tool failed with INVALID_JSON on real harness output despite the
+    file being valid JSONL."""
+    with tempfile.TemporaryDirectory() as d:
+        results = Path(d) / "results.json"
+        # Mimic the actual harness output: metadata line, then result rows
+        lines = [
+            json.dumps({"_record_type": "metadata", "pass": "identify",
+                        "device": "cuda", "modes": ["eval", "train"]}),
+            json.dumps({"name": "ModelA", "mode": "eval", "status": "graph_break"}),
+            json.dumps({"name": "ModelA", "mode": "train", "status": "graph_break"}),
+            json.dumps({"name": "ModelB", "mode": "eval", "status": "full_graph"}),
+        ]
+        results.write_text("\n".join(lines) + "\n")
+        failures = check_post_sweep(results)
+        strict = [f for f in failures if f.severity == "STRICT_FAIL"]
+        assert not strict, f"JSONL parse should succeed; got {[str(f) for f in strict]}"
+
+
+def test_post_sweep_jsonl_with_create_error_still_caught():
+    """Regression: ensure the JSONL fallback still applies the invariants
+    (specifically C1 — create_error rows should STRICT_FAIL even via JSONL path)."""
+    with tempfile.TemporaryDirectory() as d:
+        results = Path(d) / "results.json"
+        lines = [
+            json.dumps({"_record_type": "metadata"}),
+            json.dumps({"name": "A", "status": "ok"}),
+            json.dumps({"name": "B", "status": "create_error", "error": "boom"}),
+        ]
+        results.write_text("\n".join(lines) + "\n")
+        failures = check_post_sweep(results)
+        codes = [f.code for f in failures]
+        assert "C1" in codes, f"C1 should fire via JSONL path; got {codes}"
+
+
 # Runner ───────────────────────────────────────────────────────────────────
 
 def main() -> int:
