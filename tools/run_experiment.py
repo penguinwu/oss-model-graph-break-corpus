@@ -87,6 +87,7 @@ KNOWN_DYNAMO_FLAGS = {
     "guard_nn_modules",
     "inline_inbuilt_nn_modules",
     "optimize_ddp",
+    "nested_graph_breaks",
 }
 
 
@@ -166,6 +167,27 @@ def validate_config(config, strict=True):
                 errors.append("models.names is required when source='list'")
             if source == "corpus_filter" and "status" not in models:
                 errors.append("models.status is required when source='corpus_filter'")
+            # Extension 2026-05-07: corpus_filter optional 'from' field reads from
+            # an arbitrary sweep results file (instead of corpus/corpus.json). If
+            # present, validate the path exists and (if source_sha256 also present)
+            # its current sha256 matches the pinned value.
+            if source == "corpus_filter" and "from" in models:
+                from_path = REPO_ROOT / models["from"]
+                if not from_path.exists():
+                    errors.append(f"models.from path not found: {from_path} "
+                                  f"(corpus_filter 'from' must point at an existing sweep results file)")
+                elif "source_sha256" in models:
+                    import hashlib
+                    actual = hashlib.sha256(from_path.read_bytes()).hexdigest()
+                    pinned = models["source_sha256"]
+                    if actual != pinned:
+                        errors.append(
+                            f"models.source_sha256 drift detected:\n"
+                            f"      pinned: {pinned}\n"
+                            f"      actual: {actual}\n"
+                            f"      source: {from_path}\n"
+                            f"      The source file has been regenerated since this config was written.\n"
+                            f"      Update source_sha256 to '{actual}' if regeneration is intentional.")
             if source == "sample":
                 if "size" not in models:
                     errors.append("models.size is required when source='sample'")
@@ -328,19 +350,58 @@ def resolve_models(models_config, python_bin=None):
 
     elif source == "corpus_filter":
         status_filter = models_config["status"]
-        corpus_path = REPO_ROOT / "corpus" / "corpus.json"
-        if not corpus_path.exists():
-            print(f"ERROR: Corpus not found at {corpus_path}")
-            sys.exit(1)
-        with open(corpus_path) as f:
-            corpus = json.load(f)
+        # Extension 2026-05-07: optional 'from' field reads from an arbitrary
+        # sweep results file (identify_results.json, explain_results.json) instead
+        # of the canonical corpus/corpus.json. Used by NGB verify and similar
+        # experiments that anchor on a specific prior sweep's results.
+        if "from" in models_config:
+            source_path = REPO_ROOT / models_config["from"]
+            if not source_path.exists():
+                print(f"ERROR: corpus_filter 'from' path not found: {source_path}")
+                sys.exit(1)
+            # source_sha256 drift check (same as validate_config; redundant but
+            # belt-and-suspenders for paths that bypass validate)
+            if "source_sha256" in models_config:
+                import hashlib
+                actual = hashlib.sha256(source_path.read_bytes()).hexdigest()
+                if actual != models_config["source_sha256"]:
+                    print(f"ERROR: source_sha256 drift on {source_path}\n"
+                          f"  pinned: {models_config['source_sha256']}\n"
+                          f"  actual: {actual}")
+                    sys.exit(1)
+            # Parse JSONL or JSON. Identify/explain results files are JSONL with
+            # a metadata header line + per-row records. Some older formats are
+            # dict-with-'results' or top-level list.
+            text = source_path.read_text()
+            try:
+                raw = json.loads(text)
+                rows = raw.get("results", []) if isinstance(raw, dict) else raw
+            except json.JSONDecodeError:
+                rows = []
+                for line in text.splitlines():
+                    if not line.strip():
+                        continue
+                    rec = json.loads(line)
+                    if isinstance(rec, dict) and rec.get("_record_type") == "metadata":
+                        continue
+                    rows.append(rec)
+            matching_names = {r["name"] for r in rows
+                              if r.get("status") == status_filter and "name" in r}
+        else:
+            # Original path: read from canonical corpus.json
+            corpus_path = REPO_ROOT / "corpus" / "corpus.json"
+            if not corpus_path.exists():
+                print(f"ERROR: Corpus not found at {corpus_path}")
+                sys.exit(1)
+            with open(corpus_path) as f:
+                corpus = json.load(f)
 
-        matching_names = set()
-        for m in corpus.get("models", []):
-            for mode_key in ("eval", "train"):
-                md = m.get(mode_key, {})
-                if md.get("status") == status_filter:
-                    matching_names.add(m["name"])
+            matching_names = set()
+            for m in corpus.get("models", []):
+                for mode_key in ("eval", "train"):
+                    md = m.get(mode_key, {})
+                    if md.get("status") == status_filter:
+                        matching_names.add(m["name"])
 
         all_specs = _enumerate_all_sources()
         return [s for s in all_specs if s["name"] in matching_names]
