@@ -1,9 +1,9 @@
 # Sweep Experiment Spec — Design Doc
 
-**Revision:** 2
+**Revision:** 3
 **Owner:** otter (with Peng-in-the-loop)
 **Created:** 2026-05-07
-**Status:** draft — pending adversary re-review and Peng approval before implementation
+**Status:** draft — pending Peng approval before implementation. Rev 3 incorporates rev 2 adversary review + Peng's "start simple" directive (defer non-essential v1 features to v1.1).
 
 ---
 
@@ -91,8 +91,7 @@ EXACTLY ONE of the following keys must be present in `cohort`:
 "cohort": {
   "derive_from": "sweep_results/experiments/<prior-run>/<results-file>.json",
   "filter": "status == ok",
-  "source_sha256": "7f3a...",
-  "cache": "experiments/configs/<name>.json"
+  "source_sha256": "7f3a..."
 }
 ```
 
@@ -100,8 +99,9 @@ EXACTLY ONE of the following keys must be present in `cohort`:
 |---|---|---|
 | `derive_from` | yes | Path to a prior run's results file (typically `identify_results.json` or `explain_results.json`) |
 | `filter` | yes | Filter expression (see §3.1.6) |
-| `source_sha256` | yes | SHA256 of the source file at spec-creation time. Validator REFUSES if source's current sha256 doesn't match. Forces awareness when prior run is regenerated. |
-| `cache` | optional | If set, the resolved cohort is written here for inspection / reproducibility. The CLI emission still uses `--models-from + --filter` (regenerates inline), so the cache is documentation-only. |
+| `source_sha256` | yes | SHA256 of the source file at spec-creation time. Validator REFUSES if source's current sha256 doesn't match. Forces awareness when prior run is regenerated. v1 expects the spec author to compute this manually (`sha256sum <source-file>`); v1.1 may add a `--refresh-content-hashes` helper. |
+
+(`cohort.cache` was in rev 2 but is dropped from v1 per Peng's "start simple" — it was documentation-only and created a stale-cache failure mode. v1.1 may add it back if there's demand.)
 
 **Form 2: pre-built cohort snapshot**
 ```json
@@ -151,15 +151,16 @@ v1 grammar; v2 may add `wall_time_s < N` etc.
 | `setup_script` | string\|null | `null` | Path to `--setup-script` |
 | `strict_modellibs` | bool | `true` | **Default ON** for spec-emitted commands. Override only via `allow_flags: ["non-strict-modellibs"]`. |
 | `cuda_variant` | string\|null | `null` | `cu128` / `cu126` / `null` |
-| `allow_flags` | array<string> | `[]` | Subset of `["bare-list", "empty-versions", "partial-versions", "stale-cohort", "version-mismatch", "non-strict-modellibs"]`. **Note:** `bare-list` is auto-added for gate/sample only if sub-sample preservation is disabled (see §3.4). For Form 3 (inline), MUST be set explicitly. |
+| `allow_flags` | array<string> | `[]` | Subset of `["bare-list", "empty-versions", "partial-versions", "stale-cohort", "version-mismatch", "non-strict-modellibs"]`. **Note:** `bare-list` is auto-added for gate/sample only if Phase 6 sub-sample preservation isn't yet landed (see §3.4). For Form 3 (inline), MUST be set explicitly. |
+| `version_mismatch_allow` | array<string> | `[]` | Per-package allow list for version-coherence violations. Subset of `["torch", "transformers", "diffusers", "timm"]`. Used by §4.3 asymmetric check: a cohort declares package X but spec doesn't → REFUSED unless X is in this list. The bare `version-mismatch` allow_flag (above) is BROAD — applies to all packages. This field is NARROW — applies only to listed packages. (Replaces rev 2's parameterized `version-mismatch:<pkg>` syntax — separate field is cleaner per adversary feedback.) |
 | `output_dir_template` | string | `"sweep_results/experiments/{name}-{stage}-{date}-{time}"` | Format vars: `{name}`, `{stage}`, `{date}` (YYYY-MM-DD), `{time}` (HHMMSS). HHMMSS prevents same-day collision. |
 | `run_name_template` | string | `"{name}-{stage}"` | |
 | `gate_size` | int | `5` | Models in gate stage |
 | `sample_size` | int | `20` | Models in sample stage |
-| `sub_sample_seed` | int | `42` | Deterministic seed for sub-sample selection |
+| `sub_sample_seed` | int\|null | `null` | If `null` (default), uses `tools/sample_cohort.py`'s `_seed_from_cohort` (sha256 of cohort path + mtime — anchors sample to cohort content). If integer, passes as `--seed N` for cross-cohort repro experiments. (Default changed from rev 2's `42`, which was a regression vs. `_seed_from_cohort`.) |
 | `watchdog` | object | `{"enabled": true, "interval_min": 10, "post_to": "spaces/AAQANraxXE4"}` | Watchdog cron config |
 | `wake_cron_eta_min` | int\|null | `null` | If set, schedule wake at +eta minutes |
-| `post_sweep_check` | string | `"tools/check_cohort_invariants.py --post-sweep {output_dir}/identify_results.json"` | Canonical post-sweep check command. Wake-cron uses this. Format vars: `{output_dir}`, `{venv}`, `{name}`, `{stage}`. |
+| `post_sweep_check` | string | passes-aware: `"tools/check_cohort_invariants.py --post-sweep {output_dir}/{results_basename}.json"` | Canonical post-sweep check command. Wake-cron uses this. Format vars: `{output_dir}`, `{venv}`, `{name}`, `{stage}`, `{results_basename}`. `{results_basename}` is auto-derived from `passes`: `identify` if `passes == ["identify"]`, else `explain` (the last canonical pass). Per adversary feedback — rev 2 hardcoded `identify_results.json` which would be wrong for explain runs. |
 | `nohup` | bool\|null | `null` | `null` = auto (foreground for gate/sample, nohup for full); explicit override applies to all stages |
 
 ### 3.3 Stage-specific derivations
@@ -234,11 +235,11 @@ Read cohort's effective `_metadata.source_versions`:
 
 Then: **for every package in cohort's source_versions, the spec MUST have a matching entry** (in `torch:` field for torch, in `modellibs:` for others) with the SAME version. Asymmetric:
 - Cohort declares X, spec declares X, match → OK
-- Cohort declares X, spec declares ≠X → REFUSED unless `"version-mismatch"` in allow_flags
-- Cohort declares X, spec doesn't declare → REFUSED unless `"version-mismatch:<pkg>"` in allow_flags
+- Cohort declares X, spec declares ≠X → REFUSED unless `"version-mismatch"` (broad) in allow_flags OR `<pkg>` in `version_mismatch_allow` (narrow)
+- Cohort declares X, spec doesn't declare → REFUSED unless `"version-mismatch"` (broad) in allow_flags OR `<pkg>` in `version_mismatch_allow` (narrow)
 - Cohort doesn't declare, spec declares → OK (cohort may be older format)
 
-This closes adversary gap #3 — the AND-clause hole in rev 1.
+This closes adversary gap #3 — the AND-clause hole in rev 1. The narrow `version_mismatch_allow` field replaces rev 2's parameterized `version-mismatch:<pkg>` allow_flag syntax (per rev 2 adversary feedback — separate field is cleaner).
 
 ### 4.4 Content pinning
 
@@ -475,18 +476,18 @@ Maps every flag from `tools/run_experiment.py sweep` argparse → spec field. **
 | `--stability {stable,unstable}` | `stability` | |
 | `--setup-script <path>` | `setup_script` | |
 | `--allow-version-mismatch` | `allow_flags: ["version-mismatch"]` | |
-| `--allow-bare-cohort` | `allow_flags: ["bare-list"]` | Renamed to align with `cohort_validator.py` `BARE_LIST_REJECTED` error code |
+| `--allow-bare-cohort` | `allow_flags: ["bare-list"]` | **CLI flag stays `--allow-bare-cohort`** — only spec vocabulary uses `bare-list` (matches `cohort_validator.py` `BARE_LIST_REJECTED` error code). No breaking change to argparse; `derive_spec_from_prior` (when added in v1.1) can re-parse old `sweep_state.json` files. |
 | `--allow-empty-versions` | `allow_flags: ["empty-versions"]` | |
 | `--allow-partial-versions` | `allow_flags: ["partial-versions"]` | |
 | `--allow-stale-cohort` | `allow_flags: ["stale-cohort"]` | |
 | `--no-auto-retry` | `auto_retry: false` | |
-| `--source <list>` | (NOT in v1; spec uses `cohort` block instead. v2 may add for source-enumeration workflows.) | |
-| `--save-cohort <path>` | (NOT in v1; output side-effect; spec's `cohort.cache` covers Form 1) | |
+| `--source <list>` | (NOT in v1; nightly canonical sweep uses this — see §9 nightly carve-out. v1.1 may add Form 4 (`cohort.sources`). For now, nightly retains direct-CLI invocation.) | |
+| `--save-cohort <path>` | (NOT in v1; output side-effect; v1.1 may add for repro inspection) | |
 | `--output-dir <path>` | derived from `output_dir_template` | |
 | `--run-name <slug>` | derived from `run_name_template` | |
 | `--resume` | NOT in spec (per-run operational; spec is launch-time) | |
 
-v2 deferrals: `--torch <spec>` (build-the-venv workflows), `--source <list>` (source-enumeration mode), `--save-cohort <path>` (covered by cohort.cache for Form 1).
+v1.1+ deferrals: `--torch <spec>` (build-the-venv workflows), `--source <list>` (source-enumeration mode — nightly retains direct-CLI), `--save-cohort <path>` (output inspection).
 
 ## 9. Spec ↔ skill migration (Phase 4 — load-bearing)
 
@@ -495,7 +496,9 @@ The `skills/sweep.md` and `skills/test-sweep-changes/SKILL.md` skills are partia
 **Required Phase 4 changes:**
 
 1. **Top of `skills/sweep.md`** — add a header above § 1:
-   > **STOP.** If you are about to launch a sweep, you should be invoking `tools/derive_sweep_commands.py` against a spec at `experiments/specs/`. The skill below is the historical workflow plus operational details (watchdog, post-sweep diligence). DO NOT hand-type launch flags. If no spec exists for your experiment, write one (or `derive_spec_from_prior.py` from the closest reference run) FIRST.
+   > **STOP.** If you are about to launch a curated sweep (verify, correctness, explain follow-up, hand-built cohort, or any sweep where the cohort is a specific list of models): you should be invoking `tools/derive_sweep_commands.py` against a spec at `experiments/specs/`. The skill below is the historical workflow plus operational details (watchdog, post-sweep diligence). DO NOT hand-type launch flags for curated sweeps.
+   >
+   > **Carve-out — nightly:** the canonical nightly sweep (`tools/run_experiment.py nightly`) uses `--source hf diffusers custom` for source enumeration, which is NOT yet covered by the v1 spec system. Nightly retains direct-CLI invocation until v1.1 adds Form 4 (`cohort.sources`).
 
 2. **Top of `skills/test-sweep-changes/SKILL.md`** — replace the current "5 gates" framing with:
    > **STOP.** If you are about to launch a sweep: use `tools/derive_sweep_commands.py specs/<name>.json --stage gate` instead of the canary 5-gate. The canary fallback below is for harness regression after code edits with NO specific launch planned.
@@ -506,37 +509,50 @@ The `skills/sweep.md` and `skills/test-sweep-changes/SKILL.md` skills are partia
 
 5. **Both skills' revision logs** — entries dated to the spec-system commit referencing this design doc.
 
-Without these changes, the spec system lands but is silently bypassed.
+6. **Mechanical enforcement** (Phase 0 test): `tools/test_skill_headers.py` greps both skill files for the verbatim STOP header strings and fails CI if absent. Cheap, mechanical, makes §9 load-bearing instead of trust-only.
 
-## 10. What's NOT in v1 (intentional non-goals)
+Without these changes (especially #6), the spec system lands but is silently bypassed.
 
-- **Spec inheritance / templates:** v1 specs are flat. v2 if needed.
-- **Per-stage flag overrides beyond §3.3:** intentionally rigid.
-- **Auto-execution:** the script EMITS commands; humans (or wake-crons) RUN them. No `--execute` flag in v1.
-- **Watchdog auto-install / wake-cron auto-schedule:** v1 emits the bash for these as advisory output; humans run them. v2 may automate.
-- **Spec for explain-only / correctness / non-NGB experiments:** v1 covers the same axes as today's NGB verify. Other sweep types may need additional fields; we'll add as we encounter them.
-- **Result-file analysis flags:** the spec covers the launch and the post-sweep check (via `post_sweep_check`), not deeper analysis (analyze_sweep, file_issues).
-- **`--torch <spec>`, `--source <list>`, `--save-cohort <path>`:** see §8 v2 deferrals.
-- **Form 3 (inline cohort):** rare; deferred to v2.
-- **`derive_wake_cron.py`:** the canonical wake-cron emission — v1 ships an advisory line; v2 emits the full myclaw-cron registration command.
+## 10. What's NOT in v1 (intentional non-goals — "start simple" per Peng)
 
-## 11. Implementation phases
+**Deferred to v1.1:**
+- **`derive_spec_from_prior.py`** — would help reproduction; not critical for new launches. v1 humans write specs from scratch.
+- **`derive_wake_cron.py`** — v1 ships an advisory line in the emitted bash; v1.1 emits the full myclaw-cron registration command.
+- **`--refresh-content-hashes` helper** — v1 spec author runs `sha256sum <file>` manually; v1.1 adds the helper to reduce friction.
+- **`cohort.cache`** (Form 1 optional sub-field) — was in rev 2; dropped from v1 because it's documentation-only and creates a stale-cache failure mode.
+- **Form 4 (`cohort.sources`)** for nightly — nightly retains direct-CLI per §9 carve-out.
+- **`--save-cohort` field** — output side-effect; v1.1 if needed.
 
-**Phase 0 (NEW):** Write the test contract. `tools/test_sweep_spec.py` containing all the implementation tests (the 16 from adversary review of rev 1, plus any new tests from rev 2's additions). Each test has SETUP / ACTION / EXPECTED / DETECTS. Use mock cohort + mock venv via monkeypatch where possible. Tests fail until Phase 1 lands.
+**Deferred to v2:**
+- **Spec inheritance / templates** — v1 specs are flat.
+- **Per-stage flag overrides beyond §3.3** — intentionally rigid.
+- **Auto-execution** — script EMITS commands; humans run them. No `--execute` flag.
+- **Watchdog auto-install** — v1 emits the bash; humans run.
+- **Form 3 (inline cohort)** — rare; v2.
+- **`--torch <spec>`** — build-the-venv workflows.
+
+**Out of scope entirely:**
+- **Result-file deeper analysis** (analyze_sweep, file_issues) — separate concern from launch.
+
+## 11. Implementation phases (simplified for v1 per Peng's "start simple")
+
+**Strict ordering — no concurrent phases.** Each phase ends with adversary review of THAT phase's diffs.
+
+**Phase 0:** Write the test contract. `tools/test_sweep_spec.py` containing all implementation tests (16 from rev 1 review + 20 from rev 2 review = 36 tests). Each test has SETUP / ACTION / EXPECTED / DETECTS. Use mock cohort + mock venv via monkeypatch where possible. Tests fail until Phase 1 lands. PLUS `tools/test_skill_headers.py` for §9 mechanical enforcement.
 
 **Phase 1:** Spec schema + parser + validator (`tools/sweep_spec.py`). All Phase 0 tests pass after this phase.
 
-**Phase 2:** `tools/derive_sweep_commands.py` (uses Phase 1 module, emits bash for each stage). Adds tests.
+**Phase 1.5:** Upgrade `tools/sample_cohort.py` to preserve _metadata + add sub-sample provenance (per §3.4). Add tests. **STRICT prereq of Phase 2** (rev 2 had this as "concurrent" — adversary flagged that "concurrent ≠ before"; the §6 emissions assume preservation has landed).
 
-**Phase 3:** `tools/derive_spec_from_prior.py`. Adds tests.
+**Phase 2:** `tools/derive_sweep_commands.py` — uses Phase 1 module, emits bash for each stage. Includes `--validate`, `--report`, `--stage X --emit` modes. Adds tests.
 
-**Phase 4:** Skill updates (per §9). Update local CLAUDE.md trigger entry.
+**Phase 3:** Skill updates (per §9). Update local CLAUDE.md trigger entry. Run `tools/test_skill_headers.py` to verify mechanical enforcement passes.
 
-**Phase 5:** Migrate existing/recent specs to the new format (a spec for the abandoned 2026-05-06 NGB verify, the M2 plan, the explain pass — for reference and tests).
+**Phase 4:** Write a spec for the next-up canonical NGB verify (the M2 use case from today). Use it to validate the system end-to-end. This becomes the first real spec.
 
-**Phase 6 (concurrent with Phase 1+):** Upgrade `tools/sample_cohort.py` to preserve _metadata + add sub-sample provenance (per §3.4). Add tests. This is a small change but unblocks Phase 2's emission of clean sub-sample bash.
+**Deferred to v1.1 (separate workstream):** `derive_spec_from_prior.py`, `derive_wake_cron.py`, `--refresh-content-hashes`, Form 4 (sources), `cohort.cache`. Each gets its own design + adversary review when scheduled.
 
-Each phase ends with adversary review of THAT phase's diffs.
+**Estimated v1 effort:** ~4 hours total (vs rev 2's 6-8 hour estimate before the simplifications).
 
 ---
 
@@ -546,3 +562,4 @@ Each phase ends with adversary review of THAT phase's diffs.
 |---|---|---|
 | 1 | 2026-05-07 | Initial draft — captures Peng's proposal + my proposed extensions. |
 | 2 | 2026-05-07 | Addresses adversary review of rev 1 (14 gaps + 16 tests). Major changes: (a) `cohort` field replaced by block with three forms (Form 1 derivation preferred, per Peng question); (b) added required `spec_version`, `torch` fields; (c) made `compile_kwargs` and `dynamo_config` REQUIRED (no defaulting); (d) version-coherence check made asymmetric (cohort-declares-but-spec-doesn't = REJECTED); (e) cohort content pinning via sha256 (Form 1: `source_sha256`; Form 2: `expected_sha256`); (f) `strict_modellibs` default ON; (g) added optional fields covering ALL relevant CLI flags (limit, dynamic_dim, stability, setup_script, cuda_variant, etc.) per §8 coverage table; (h) `output_dir_template` default includes HHMMSS suffix; (i) sub-sample preservation via §3.4 (sample_cohort.py upgrade); (j) emitted bash includes `set -euo pipefail` + path safety net per §4.6; (k) `post_sweep_check:` field added (per adversary opinion on open Q3); (l) Phase 4 skill migration spelled out concretely (per gap #9); (m) Phase 0 (test contract) added before Phase 1; (n) `--allow-bare-cohort` renamed to `bare-list` to match validator code; (o) Form 3 (inline) deferred to v2. |
+| 3 | 2026-05-07 | Addresses adversary review of rev 2 (3 HIGH new gaps + 7 MED + 3 LOW + 20 additional tests) + Peng's "start simple" directive. Autonomous changes: (a) replaced parameterized `version-mismatch:<pkg>` with separate `version_mismatch_allow` field — cleaner; (b) `sub_sample_seed` default changed from `42` to `null` (cohort-anchored via `_seed_from_cohort`) — fixes regression; (c) clarified CLI flag stays `--allow-bare-cohort`; only spec vocabulary uses `bare-list`; (d) `post_sweep_check` made passes-aware (defaults to `identify` or `explain` results based on `passes`); (e) Phase 6 (sample_cohort.py upgrade) renamed Phase 1.5 + made strict prereq of Phase 2; (f) added `test_skill_headers.py` to Phase 0 for §9 mechanical enforcement; (g) dropped `cohort.cache` from v1 (defer to v1.1); (h) added nightly carve-out to §9 STOP header; (i) v1 simplified — `derive_spec_from_prior.py`, `derive_wake_cron.py`, `--refresh-content-hashes`, Form 4 all deferred to v1.1 separate workstream. Implementation effort estimate dropped from 6-8 hours to ~4 hours. Pending Peng approval before implementation. |
