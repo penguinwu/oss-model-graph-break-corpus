@@ -11,10 +11,15 @@ posts a fact-backed gchat message and (on HUNG/CRASHED) escalates to Peng.
 Usage:
     python tools/sweep_watchdog_check.py <output_dir> [--state-file PATH]
 
-Reads:
+Reads (with --pass identify, the default):
     <output_dir>/sweep_state.json            — pid, started_at, total_work_items
     <output_dir>/identify_checkpoint.jsonl   — completed work items (count)
     <output_dir>/identify_results.json       — DONE marker (presence check)
+
+Reads (with --pass explain):
+    <output_dir>/sweep_state.json            — pid, started_at, total_work_items
+    <output_dir>/explain_checkpoint.jsonl    — completed work items (count)
+    <output_dir>/explain_results.json        — DONE marker (presence check)
 
 Writes (only if --state-file passed):
     <state_file> — script's own state for tracking last_count / last_progress_at
@@ -215,6 +220,9 @@ def main() -> int:
                    help="Optional script-state file to track last_count + last_progress_at across ticks")
     p.add_argument("--init-grace-s", type=int, default=DEFAULT_INIT_GRACE_S,
                    help=f"Init grace period in seconds (default: {DEFAULT_INIT_GRACE_S})")
+    p.add_argument("--pass", dest="pass_name", choices=["identify", "explain"], default="identify",
+                   help="Which pass's checkpoint+results files to read (default: identify, "
+                        "for backward compat). Use 'explain' for explain-only runs.")
     args = p.parse_args()
 
     # Gather facts
@@ -225,9 +233,9 @@ def main() -> int:
     pid_alive = is_pid_alive(pid)
     proc_etime = proc_etime_seconds(pid) if pid_alive else None
 
-    ckpt_path = args.output_dir / "identify_checkpoint.jsonl"
+    ckpt_path = args.output_dir / f"{args.pass_name}_checkpoint.jsonl"
     completed = count_completed_work_items(ckpt_path)
-    results_path = args.output_dir / "identify_results.json"
+    results_path = args.output_dir / f"{args.pass_name}_results.json"
     results_exists = results_path.exists()
 
     # Load script's state (last_count + last_progress_at_epoch)
