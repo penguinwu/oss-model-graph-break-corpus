@@ -1,0 +1,89 @@
+---
+title: NGB Verify Pass — Postmortem of 2026-05-06 Runs
+status: closed
+owner: otter
+created: 2026-05-07
+last_check: 2026-05-07
+---
+
+# NGB Verify Pass — Postmortem (2026-05-06 → 2026-05-07)
+
+Two NGB verify sweep attempts on 2026-05-06, both producing non-canonical results for distinct reasons. This is the historical record so the failure modes don't recur.
+
+## Run 1 — wrong version stack
+
+**Output:** `sweep_results/experiments/nested-gb-correctness-2026-05-06-2026-05-06/`
+**Launched:** 2026-05-06 07:38 ET
+**Status:** NON-CANONICAL — wrong version stack
+
+Used torch 2.11.0+cu128 + transformers 5.5.3 + diffusers 0.37.1 instead of the explain pass's torch 2.13.0.dev20260502+cu126 + transformers 5.6.2 + diffusers 0.38.0. Mismatched transformers caused systematic per-family failures: 12 generic `error` rows on Bart / BigBirdPegasus / Blenderbot (`AttributeError: 'Tensor' object has no attribute 'config'` in `EncoderDecoderCache(DynamicCache(config=self.config), ...)` — newer transformers code path), 4 `create_error` on Bamba (DNS / Hub fetch).
+
+**Root cause + mitigation:** version-mismatch detection wasn't enforced. Fixed by `--models-from` + version-compat refusal mechanism (commit `4e1f071`) AND the cohort `_metadata.source_versions` check on `--models <flat.json>` runs (same commit). Verified 2026-05-07: launching the regenerated cohort with torch211 venv produces explicit `VERSION MISMATCH` and exits non-zero.
+
+## Run 2 — broken cohort
+
+**Output:** `sweep_results/experiments/ngb-verify-2026-05-06-2026-05-06/`
+**Launched:** 2026-05-06 21:33 ET
+**Status:** NON-CANONICAL — right stack, broken cohort
+
+Fixed Run 1's stack issue but launched against a broken cohort file. The cohort `experiments/configs/nested_gb_cohort_2026-05-06.json` (214 models) was supposed to be the explain ok subset (190 unique names per `nested-gb-2026-05-05-2026-05-05/explain_results.json` with `status == ok` filter) but was actually built from the nightly identify pass `status graph_break` filter (214 names — exact match to that filter, not the explain subset). 17 cohort models were extras the explain pass had FAILED to analyze (got `explain_error` or `skipped`); they predictably failed again on this run.
+
+### Sanity-check verdict (APPLY-C, 2026-05-07)
+
+10 STRICT_FAIL on the v3 sanity-check skill:
+
+| Inv | Failure |
+|---|---|
+| A1 | 6 attribute-not-found create_errors (MiniCPMV4_6, PPFormulaNet — don't exist in transformers 5.6.2) |
+| A2 | Cohort file is bare flat list, no `_metadata` block |
+| A3 | 17 cohort models not in explain ok subset (cohort generator pulled from wrong source) |
+| C1 | 22 create_error |
+| C2 | 4 non-env eager_error (Lumina2, Qianfan — input-shape mismatches) |
+| C3 | 4 input-generation errors (same set) |
+| E1 | 15 status regressions on previously-clean models (14 custom-model loader cases + 4 Qwen3_5*TextModel) |
+| D1 | 14 catastrophic train-mode divergences (audio + seq2seq) — see Load-bearing data below |
+| G1 | 32/32 non-success rows untriaged in known_errors.json or skip_models.json |
+| B3 | 0.93% worker_error rate (Qwen3_5*TextModel cases) |
+
+### Root cause investigation (2026-05-07)
+
+Three reinforcing failures:
+
+1. **In-conversation directive lost between proposal and launch.** Peng explicitly approved regenerating the cohort from explain results before launch. Otter forgot the directive between the proposal-time conversation and the launch-time action and used the existing (broken) cohort file.
+
+2. **Smoke gate validated the wrong thing.** A 6-fixed-model smoke ran before launch, all passed. But the smoke models were a version-stack canary (chosen for known transformers-version sensitivity), not a sample of the actual cohort. Smoke would have passed regardless of cohort contamination.
+
+3. **No standalone cohort generator existed.** The only canonical cohort-generation path was `--save-cohort` coupled with launching a sweep. To regenerate without launching meant writing ad-hoc code or hand-rolling — both of which historically produced bad cohorts.
+
+### Mitigations
+
+| Gap | Mitigation | Commit |
+|---|---|---|
+| Smoke validated wrong thing | 20-random sample-sweep gate from actual cohort + identical flags | `7c4b4fa` (v2.1) → `3aa4500` (v3 simplification) |
+| No standalone cohort generator | `tools/generate_cohort.py` standalone tool + INV-A2 mechanically rejects hand-rolled cohorts at sample time | `cdb0ca4` |
+| Wrong cohort file in tree | Regenerated `experiments/configs/nested_gb_cohort_2026-05-06.json` from explain pass `status == ok` filter (190 models, full _metadata) | `cdb0ca4` |
+| Sanity-check skill missing | New `skills/sweep_sanity_check.md` v3 + wired into `skills/sweep.md` Pre-flight + §8 Step 0 | `7c4b4fa`, `3aa4500` |
+| In-conversation directive persistence | OPEN — discipline encoding only; not closed by an artifact. See `skills/sweep.md` Pre-flight bullet on directive-action persistence (pending) |
+
+### Verification (2026-05-07)
+
+Live 5-model random sample on the regenerated cohort + right stack: 10 PASS, 0 STRICT_FAIL, 0 FLAG. Same skill that surfaced 10 STRICT_FAIL on the broken cohort returns clean.
+
+## Load-bearing data from Run 2
+
+The 14 catastrophic train-mode divergences (D1) ARE legitimate signal — those models are in the explain ok subset, so the divergence is real on the right stack. Not artifacts of the cohort or stack issues.
+
+Affected families (all train mode only):
+- Audio / speech: `Wav2Vec2Model`, `Wav2Vec2ConformerModel`, `WavLMModel`, `UniSpeechModel`, `UniSpeechSatModel`, `HubertModel`, `Data2VecAudioModel`, `SEWModel`
+- Seq2seq: `M2M100Model`, `M2M100ForConditionalGeneration`, `PLBartModel`, `PLBartForConditionalGeneration`, `SpeechEncoderDecoderModel`
+- Other: `ReformerModel`
+
+All show absolute max_diff of 1.9–5.3 units between eager and compiled outputs (severity ratios in the millions); all survive less-flaky retest. To be filed as upstream PyTorch issues.
+
+## What's next
+
+A canonical full NGB verify on the regenerated cohort + right stack has not yet been run. It will not produce the 22+4 cohort-artifact errors (those are gone), but is expected to surface:
+- The 14 D1 divergences again (real signal)
+- The 4 Qwen3_5*TextModel worker_error regressions (real bug, not yet diagnosed)
+
+Both should be filed as upstream issues per `tools/file_issues.py pytorch-upstream`.
