@@ -15,6 +15,7 @@ User-facing entry points (`query.py`, `reproduce.py`) are also listed in the top
 | **`sweep_compare.py`** | Compare two sweep result dirs with invariant-checked partition (improvements / regressions / steady-state / new / removed). Used by post-sweep due diligence Step 2. |
 | **`sweep_watchdog_check.py`** | Decision script (no side effects) that classifies an in-flight sweep as PROGRESSING / IDLE / HUNG / CRASHED / DONE based on PID + checkpoint progress + DONE marker. `--pass identify\|explain` selects which checkpoint files to read. Cron-installed by `skills/sweep.md` watchdog setup. |
 | **`brief_data.py`** | Emit JSON snapshot of repo state (plans / experiments / commits / closed issues / open loops) for the daily-briefing skill. Cron-driven, but you can run on-demand to see what the daily brief sees. |
+| **`generate_cohort.py`** | Generate a sweep cohort from a prior sweep's results, with provenance metadata (`_metadata.derived_from`, `source_versions`, `filter`, etc.). Standalone version of the `--save-cohort` mechanism inside `run_experiment.py sweep` — use when you want to BUILD a cohort without ALSO running the sweep. **Always use this (or `--save-cohort`) instead of hand-rolling cohort files** — bare flat lists fail sanity-check INV-A2. Filter syntax: `status in ok,graph_break` / `status == foo` / `status != foo`. |
 
 ## Analysis
 
