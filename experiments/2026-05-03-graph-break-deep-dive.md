@@ -28,7 +28,7 @@ Audience: PT2 / Dynamo team. Scope: stats + trends. Out of scope: corpus infra i
 |---|---|---|---|
 | 1 | Long-form draft (gdoc, for Peng comments) | in progress | https://docs.google.com/document/d/1ecTEnmc6J83oPOs5R5YY54ruH1qoqxbSwawZQYDo0BU/edit |
 | 2 | `.md` in corpus repo (publication form, derived from finalized gdoc) | pending | `experiments/pt2.12-sweep-analysis.md` |
-| 3 | Workplace post (short form, extracted from .md) | pending | (drafted after .md is final) |
+| ~~3~~ | ~~Workplace post (short form)~~ | DROPPED 2026-05-03 | Per Peng — defer until PT 2.12 wheel publishes + we retest with official release (1-2 weeks). At that point, derive workplace post from refreshed long-form. |
 
 ## Sections (status)
 

@@ -143,6 +143,13 @@
     "timeout_tier": "large",
     "wall_time_s": 453.92
   },
+  "Qwen2_5OmniThinkerForConditionalGeneration": {
+    "discovered": "2026-05-06",
+    "resolved_status": "success",
+    "source": "hf",
+    "timeout_tier": "large",
+    "wall_time_s": 210.08
+  },
   "Qwen2_5_VLForConditionalGeneration": {
     "discovered": "2026-04-30",
     "resolved_status": "graph_break",
