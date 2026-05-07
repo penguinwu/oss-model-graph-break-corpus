@@ -80,19 +80,76 @@ def _run(cmd, check=True):
 
 
 def load_state():
-    """Load monitor state (last check timestamp, processed message IDs)."""
+    """Load monitor state.
+
+    Schema:
+      last_check_epoch:    last classification scan timestamp
+      processed_messages:  IDs already classified (don't re-classify)
+      replied_messages:    IDs already replied to (don't re-surface in --needs-reply)
+
+    processed_messages and replied_messages are deliberately distinct.
+    Classification != reply. The May 4 incident was caused by treating
+    "in audit log as needs_answer" as the source of truth for "needs reply",
+    which made stale needs_answer entries get re-replied on every cron.
+    """
     if STATE_FILE.exists():
         with open(STATE_FILE) as f:
-            return json.load(f)
-    return {"last_check_epoch": 0, "processed_messages": []}
+            state = json.load(f)
+    else:
+        state = {"last_check_epoch": 0, "processed_messages": []}
+    state.setdefault("replied_messages", [])
+    return state
 
 
 def save_state(state):
     """Save monitor state."""
-    # Keep only last 500 processed message IDs to prevent unbounded growth
+    # Cap both lists to prevent unbounded growth.
     state["processed_messages"] = state["processed_messages"][-500:]
+    state["replied_messages"] = state["replied_messages"][-1000:]
     with open(STATE_FILE, "w") as f:
         json.dump(state, f, indent=2)
+
+
+def list_needs_reply():
+    """Return audit-log entries needing a reply (not yet marked replied).
+
+    This is the AUTHORITATIVE source of truth for "what does Otter still owe
+    a reply to". Cron prompts must consult this — never read the raw audit log.
+    """
+    state = load_state()
+    replied = set(state["replied_messages"])
+    if not AUDIT_LOG.exists():
+        return []
+    pending = []
+    seen_ids = set()
+    with open(AUDIT_LOG) as f:
+        for line in f:
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if entry.get("action") not in ("needs_answer", "needs_action"):
+                continue
+            mid = entry.get("message_id")
+            if not mid or mid in replied or mid in seen_ids:
+                continue
+            seen_ids.add(mid)
+            pending.append(entry)
+    return pending
+
+
+def mark_replied(msg_ids):
+    """Mark message IDs as replied so they stop surfacing in --needs-reply."""
+    state = load_state()
+    existing = set(state["replied_messages"])
+    added = 0
+    for mid in msg_ids:
+        if mid not in existing:
+            state["replied_messages"].append(mid)
+            existing.add(mid)
+            added += 1
+    save_state(state)
+    return added
 
 
 def audit_log(entry):
@@ -251,13 +308,49 @@ def main():
     parser.add_argument("--dry-run", action="store_true",
                         help="Classify but don't create Tasks or respond")
     parser.add_argument("--log", action="store_true",
-                        help="Show recent audit log entries")
+                        help="Show recent audit log entries (forensic)")
     parser.add_argument("--log-count", type=int, default=20,
                         help="Number of audit log entries to show")
+    parser.add_argument("--needs-reply", action="store_true",
+                        help="List items needing a reply (audit minus replied_messages). "
+                             "Authoritative source for what Otter still owes.")
+    parser.add_argument("--mark-replied", nargs="+", metavar="MSG_ID",
+                        help="Mark message IDs as replied. MUST be called by the cron "
+                             "prompt after sending each reply, otherwise the same items "
+                             "will resurface on the next cron.")
     args = parser.parse_args()
 
     if args.log:
         show_audit_log(args.log_count)
+        return
+
+    if args.mark_replied:
+        added = mark_replied(args.mark_replied)
+        print(f"Marked {added} message(s) as replied "
+              f"({len(args.mark_replied) - added} were already marked).")
+        return
+
+    if args.needs_reply:
+        pending = list_needs_reply()
+        if not pending:
+            print("No pending replies.")
+            return
+        print(f"Found {len(pending)} pending reply/replies. "
+              f"Reply to each, then call:")
+        ids_arg = " ".join(p["message_id"] for p in pending)
+        print(f"    python3 {Path(__file__).resolve()} --mark-replied {ids_arg}")
+        print()
+        for i, entry in enumerate(pending, 1):
+            text = entry.get("text_full") or entry.get("text_preview") or ""
+            print(f"[{i}] message_id: {entry['message_id']}")
+            print(f"    sender:        {entry.get('sender', '?')}")
+            print(f"    classification: {entry.get('classification', '?')}")
+            print(f"    action:        {entry.get('action', '?')}")
+            print(f"    timestamp:     {entry.get('timestamp', '?')}")
+            print(f"    text:")
+            for line in text.splitlines() or [""]:
+                print(f"        {line}")
+            print()
         return
 
     state = load_state()
@@ -354,6 +447,7 @@ def main():
             "classification": classification,
             "action": action,
             "text_preview": msg["text"][:200],
+            "text_full": msg["text"],
         })
         state["processed_messages"].append(msg["id"])
 
