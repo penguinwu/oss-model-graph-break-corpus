@@ -230,5 +230,82 @@ class TestPidChangeReset(unittest.TestCase):
             "same PID + 31m no progress = real HUNG, must surface")
 
 
+class TestPassFlag(unittest.TestCase):
+    """Tests for the --pass identify|explain flag (commit c4df44b).
+
+    The flag selects which checkpoint+results files the watchdog reads.
+    Default identify keeps backward compat; explain is for explain-only runs
+    (e.g., nested-gb-2026-05-05-2026-05-05).
+    """
+
+    def setUp(self):
+        import tempfile
+        self._tmpdir = tempfile.mkdtemp()
+        self.output_dir = Path(self._tmpdir) / "sweep"
+        self.output_dir.mkdir()
+        # sweep_state.json with our own PID so pid_alive=True
+        (self.output_dir / "sweep_state.json").write_text(
+            f'{{"pid": {os.getpid()}, "total_work_items": 100}}'
+        )
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
+
+    def _write_checkpoint(self, pass_name: str, n_lines: int):
+        # Each line must be a unique (name, mode) work item — count_completed_work_items dedupes
+        import json as _json
+        ckpt = self.output_dir / f"{pass_name}_checkpoint.jsonl"
+        ckpt.write_text("\n".join(
+            _json.dumps({"name": f"Model{i}", "mode": "eval", "status": "success"})
+            for i in range(n_lines)
+        ) + "\n")
+
+    def _write_results(self, pass_name: str):
+        (self.output_dir / f"{pass_name}_results.json").write_text('{"results": []}')
+
+    def _run(self, pass_name: str = None):
+        import json as _json
+        import subprocess
+        cmd = [sys.executable,
+               str(Path(__file__).resolve().parent / "sweep_watchdog_check.py"),
+               str(self.output_dir)]
+        if pass_name:
+            cmd.extend(["--pass", pass_name])
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        return _json.loads(result.stdout)
+
+    def test_default_pass_reads_identify_files(self):
+        # Default --pass identify reads identify_checkpoint.jsonl
+        self._write_checkpoint("identify", n_lines=42)
+        result = self._run()
+        self.assertEqual(result["facts"]["completed"], 42,
+            "default --pass should read identify_checkpoint.jsonl")
+
+    def test_pass_explain_reads_explain_files(self):
+        # --pass explain reads explain_checkpoint.jsonl, NOT identify_checkpoint.jsonl
+        self._write_checkpoint("identify", n_lines=42)  # decoy
+        self._write_checkpoint("explain", n_lines=99)
+        result = self._run(pass_name="explain")
+        self.assertEqual(result["facts"]["completed"], 99,
+            "--pass explain must read explain_checkpoint.jsonl, not identify_checkpoint.jsonl")
+
+    def test_pass_explain_reads_explain_results_for_DONE(self):
+        # explain_results.json existence triggers DONE on --pass explain
+        self._write_checkpoint("explain", n_lines=99)
+        self._write_results("explain")
+        result = self._run(pass_name="explain")
+        self.assertEqual(result["verdict"], "DONE",
+            "--pass explain DONE marker must be explain_results.json")
+
+    def test_pass_identify_does_not_see_explain_results(self):
+        # explain_results.json existing does NOT trigger DONE on --pass identify
+        self._write_checkpoint("identify", n_lines=10)
+        self._write_results("explain")  # explain done, but we asked about identify
+        result = self._run(pass_name="identify")
+        self.assertNotEqual(result["verdict"], "DONE",
+            "--pass identify must not be tricked into DONE by explain_results.json")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

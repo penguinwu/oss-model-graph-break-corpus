@@ -14,8 +14,13 @@ If you don't know which tool or module to use, start here:
 | "Is my sweep result valid? What invariants do I check?" | [`skills/sweep_sanity_check.md`](../skills/sweep_sanity_check.md) — post-completion guardrail; mandatory before any analysis |
 | "I'm modifying sweep harness code — what's the validation workflow?" | [`skills/test-sweep-changes/SKILL.md`](../skills/test-sweep-changes/SKILL.md) — 5-gate workflow |
 | "I'm filing a pytorch upstream issue with a repro" | [`tools/file_issues.py pytorch-upstream`](../tools/file_issues.py) + the five-must-haves checklist in [`tools/issue_filing_plan.md`](../tools/issue_filing_plan.md) §2 |
+| **"How does testing work? When are tests required?"** | **[`docs/testing.md`](testing.md) — TDD discipline, test-file conventions, bug-fix workflow** |
 
-**Convention:** when you add a new tool to `tools/`, add an entry to `tools/README.md` in the same commit. When you change the sweep architecture, update `sweep/README.md`.
+**Conventions:**
+- New tool added to `tools/` → add an entry to `tools/README.md` AND a `tools/test_<name>.py` in the same commit (per [`docs/testing.md`](testing.md))
+- Behavior change to a tool → add or extend its test file in the same commit
+- Bug fix → failing-test-first → fix → passing test (test stays as regression guard)
+- Sweep architecture change → update `sweep/README.md`
 
 ## Fix a model
 

@@ -83,6 +83,8 @@ User-facing entry points (`query.py`, `reproduce.py`) are also listed in the top
 ## Conventions
 
 - New tools must add an entry here in the same commit. CI doesn't enforce yet (open loop), but the discipline is mandatory.
+- **New tools must also add `tools/test_<name>.py` in the same commit** (per [`docs/testing.md`](../docs/testing.md) — TDD is non-negotiable in this repo).
+- **Bug fixes to existing tools must add a failing-then-passing test in the same commit** (regression guard).
 - One-line synopsis = top of module docstring.
 - Use-when describes the trigger, not the mechanism.
 - Group by the categories above; if you need a new category, add it.
