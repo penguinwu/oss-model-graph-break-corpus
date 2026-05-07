@@ -127,9 +127,19 @@ If you commit a substantial script change that does NOT invoke adversary-review 
 adversary-review-skipped: <reason>
 ```
 
-This rule applies to any commit touching files under `sweep/`, `corpus/` (if it exists), `tools/` (no script carve-outs), or any new top-level Python module in the repo. Pure docs and config commits do NOT need the line.
+This rule applies to any commit touching files under:
+- `sweep/`
+- `tools/` (no script carve-outs)
+- `corpora/` (Python model definitions, custom workers)
+- `corpus/` (if it exists)
+- `scripts/` (shell + python build/setup scripts — load-bearing for venv/build correctness)
+- ANY top-level `*.py` file in the repo (not just newly-added ones; edits to existing top-level modules count too — a typo in `corpus_constants.py` cascades silently)
+
+Pure docs and config commits do NOT need the line. (`requirements.txt` and `experiments/configs/*.json` are explicitly OUT — config-not-code, failure modes are loud not silent.)
 
 **Why ALL of `tools/` (no carve-out for `tools/analyze_*.py` or any other category):** the original draft of this rule excluded `tools/analyze_*.py` on the assumption that analysis bugs would be detectable from the output. Peng correctly pushed back 2026-05-07: an analysis bug that produces wrong-but-plausible counts (off-by-one in a category, mis-attribution to wrong skill, silent dropping of rows) is exactly the failure mode adversary-review is supposed to catch. We've shipped briefs with wrong stats before. The "I would know if it were buggy" instinct is a known Otter blind spot. No script category gets a free pass.
+
+**Why `corpora/`, `scripts/`, and existing top-level `*.py` were added 2026-05-07 (round 2 audit):** `corpora/custom-models/worker.py` has the same blast radius as `sweep/worker.py` for the custom-models corpus. `scripts/build-nightly-from-source.sh` builds the PyTorch nightly that every sweep runs against — wrong build = wrong torch = wrong sweep. `corpus_constants.py` holds shared status strings — a typo there silently miscategorizes results across the codebase. Original rule scoped these out without justification; audit caught the gap.
 
 Examples of valid skip reasons:
 - `tooling-only — modifies tools/check_X.py, no validator semantics affected`
