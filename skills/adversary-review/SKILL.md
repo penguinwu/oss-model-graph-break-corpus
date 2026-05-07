@@ -11,11 +11,13 @@ description: Use BEFORE committing changes to validator code (sweep/explain.py) 
 - About to commit changes to `sweep/explain.py` (validator/scoring logic — semantic correctness)
 - About to commit new model entries added to `sweep/models.py` (new sweep cases)
 - About to commit new entries to any corpus model registry / catalog file
+- About to commit substantive logic changes to ANY `tools/*.py` script (judgment: if the change adds/modifies behavior whose outputs you'd act on — counts, classifications, filtering, file mutations, network calls — invoke. Pure rename/refactor/comment-only goes to skip-with-reason.)
 
 **Do NOT use for:**
 - Sweep harness mechanical changes (those go through `test-sweep-changes` — different bug class)
 - Renames, formatting, comment-only changes
-- Tooling/analysis scripts (`tools/analyze_*.py`, etc.)
+
+(No category of script is excluded outright. The "how would I know it's not buggy?" test applies to all scripts including `tools/analyze_*.py` — analysis bugs that produce wrong-but-plausible counts have shipped before.)
 
 ## Why this exists
 
@@ -125,7 +127,9 @@ If you commit a substantial script change that does NOT invoke adversary-review 
 adversary-review-skipped: <reason>
 ```
 
-This rule applies to any commit touching files under `sweep/`, `corpus/` (if it exists), or any new top-level Python module in the repo. Pure docs, config, or `tools/analyze_*.py` commits do NOT need the line.
+This rule applies to any commit touching files under `sweep/`, `corpus/` (if it exists), `tools/` (no script carve-outs), or any new top-level Python module in the repo. Pure docs and config commits do NOT need the line.
+
+**Why ALL of `tools/` (no carve-out for `tools/analyze_*.py` or any other category):** the original draft of this rule excluded `tools/analyze_*.py` on the assumption that analysis bugs would be detectable from the output. Peng correctly pushed back 2026-05-07: an analysis bug that produces wrong-but-plausible counts (off-by-one in a category, mis-attribution to wrong skill, silent dropping of rows) is exactly the failure mode adversary-review is supposed to catch. We've shipped briefs with wrong stats before. The "I would know if it were buggy" instinct is a known Otter blind spot. No script category gets a free pass.
 
 Examples of valid skip reasons:
 - `tooling-only — modifies tools/check_X.py, no validator semantics affected`
