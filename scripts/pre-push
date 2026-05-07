@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# Git pre-push hook: run the test suite when a push touches Python files
+# under in-scope paths.
+#
+# Approved by Peng 2026-05-07 (replaces "discipline-only" test-running).
+# In-scope paths mirror the adversary-review skip-rule:
+#   sweep/ tools/ corpora/ scripts/ corpus/ corpora/ AND any top-level *.py
+#
+# Bypass: `git push --no-verify` (recorded in shell history). Only use when
+# you have an explicit reason — the hook exists because discipline failed.
+#
+# Install: git config core.hooksPath scripts
+#   (already in scripts/README.md; one-liner per repo clone)
+
+set -euo pipefail
+
+PYTHON="${PYTHON:-$HOME/envs/torch211/bin/python}"
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+# Make `from sweep.X import Y` and `from tools.X import Y` work regardless of
+# the test file's invocation path. Many test files do `sys.path.insert(0, REPO_ROOT)`
+# themselves, but a few (e.g. sweep/test_results_loader.py) don't.
+export PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}"
+
+# Stdin format (one line per ref being pushed):
+#   <local_ref> <local_sha> <remote_ref> <remote_sha>
+# A zero sha means "delete" (local) or "new branch" (remote).
+ZERO="0000000000000000000000000000000000000000"
+
+# Collect all changed files across all refs being pushed
+changed_files=""
+while read -r local_ref local_sha remote_ref remote_sha; do
+    if [ "$local_sha" = "$ZERO" ]; then
+        # Branch deletion — nothing to test
+        continue
+    fi
+    if [ "$remote_sha" = "$ZERO" ]; then
+        # New branch — diff against upstream main as a reasonable proxy
+        # (avoids running tests on an entire branch's history)
+        range="origin/main..$local_sha"
+    else
+        range="$remote_sha..$local_sha"
+    fi
+    files="$(git diff --name-only "$range" 2>/dev/null || true)"
+    changed_files="$changed_files
+$files"
+done
+
+if [ -z "$(echo "$changed_files" | tr -d '[:space:]')" ]; then
+    # No commits being pushed (or all were deletions)
+    exit 0
+fi
+
+# Filter to in-scope Python files
+in_scope="$(echo "$changed_files" | grep -E '\.py$' | grep -E '^(sweep/|tools/|corpora/|scripts/|corpus/|[^/]+\.py$)' || true)"
+
+if [ -z "$in_scope" ]; then
+    echo "[pre-push] no in-scope Python files changed; skipping tests"
+    exit 0
+fi
+
+echo "[pre-push] in-scope Python files changed:"
+echo "$in_scope" | sed 's/^/  /'
+echo ""
+echo "[pre-push] running test suite (PYTHON=$PYTHON)..."
+
+cd "$REPO_ROOT"
+
+# Discover test files; run each in sequence so one failure surfaces clearly.
+# Test files live alongside the code they test (sweep/test_*.py, tools/test_*.py).
+test_files="$(find sweep tools -maxdepth 2 -name 'test_*.py' -type f 2>/dev/null | sort)"
+
+if [ -z "$test_files" ]; then
+    echo "[pre-push] no test files found under sweep/ or tools/; skipping (hook misconfigured?)"
+    exit 0
+fi
+
+failures=0
+for tf in $test_files; do
+    echo "  ── $tf"
+    if ! "$PYTHON" "$tf" > /tmp/pre-push-test.out 2>&1; then
+        echo "  [FAIL] $tf"
+        echo "  ─── output ───"
+        sed 's/^/    /' /tmp/pre-push-test.out | tail -40
+        failures=$((failures + 1))
+    fi
+done
+
+if [ "$failures" -gt 0 ]; then
+    echo ""
+    echo "[pre-push] REFUSED: $failures test file(s) failed."
+    echo "[pre-push] fix the failures, OR use --no-verify if you have explicit reason."
+    exit 1
+fi
+
+echo "[pre-push] all test files passed; allowing push."
+exit 0
