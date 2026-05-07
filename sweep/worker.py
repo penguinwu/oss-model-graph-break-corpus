@@ -1296,14 +1296,33 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
     else:
         base_model_name = model_name
 
-    # Derive config from spec if available, otherwise from base model name
-    config_name = spec.get("hf_config") or base_model_name.replace("Model", "Config")
+    # Resolve the config class. Priority chain:
+    #   1. spec.get("hf_config") — explicit override (enumerator stores this; trust it)
+    #   2. model_cls.config_class — authoritative: the model class knows its own config
+    #
+    # The PREVIOUS heuristic `base_model_name.replace("Model", "Config")` produced
+    # invented config names that don't always exist. Documented failures (2026-05-06):
+    #   - FlaubertWithLMHeadModel → heuristic guesses "FlaubertWithLMHeadConfig" (does
+    #     not exist); actual config is FlaubertConfig per model_cls.config_class.
+    #   - MarianMTModel → "MarianMTConfig" (does not exist); actual is MarianConfig.
+    #   - SeamlessM4TTextToUnitForConditionalGeneration → "SeamlessM4TTextToUnitConfig"
+    #     (does not exist); actual is SeamlessM4TConfig.
+    # All three surface as `module transformers has no attribute <FakeName>Config` ->
+    # create_error in any sweep where the spec was stripped down to {name, source}
+    # (e.g. cohort extracted from prior identify_results that didn't carry hf_config).
+    # Using model_cls.config_class.__name__ matches what sweep/models.py:enumerate_hf
+    # uses as the authoritative source.
+    model_cls = getattr(transformers, model_name)
+    hf_config_override = spec.get("hf_config")
+    if hf_config_override:
+        config_name = hf_config_override
+    else:
+        config_name = model_cls.config_class.__name__
     # Gemma4VisionModel.config_class incorrectly points to Gemma4Config (composite)
     # instead of Gemma4VisionConfig — use the correct vision-specific config.
     if config_name == "Gemma4Config" and "Vision" in model_name:
         config_name = "Gemma4VisionConfig"
     config_cls = getattr(transformers, config_name)
-    model_cls = getattr(transformers, model_name)
 
     config = _create_config(base_model_name, config_cls)
 
