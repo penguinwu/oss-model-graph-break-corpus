@@ -114,6 +114,13 @@ The test file's own header ("deliberately weak test for the adversary-review smo
 - ✅ Verbatim raw output captured + SHA256 computed
 - ✅ Disposition discipline practiced for each gap
 
-**Commit:** pending (initial bootstrap commit will introduce this file)
+**Meta-loop feedback (added 2026-05-07 post-Peng-review):** smoke gaps were initially marked deferred-as-throwaway. Peng correctly pushed back: the gaps are usable feedback for the system itself even if the /tmp files are throwaway. Acted on:
+- Persona blind-spot #5 sharpened: added missing-key vs zero-value-key vs falsy-value distinction (from gap 3); added explicit boundary-value rule "for `x > N`, BOTH `x = N` and `x = N+1` must be tested" (from gap 4)
+- Persona blind-spot #8 sharpened: added "precedence between branches must be explicitly pinned by tests" (from gap 2)
+- Persona blind-spot #11 added: "Dead schema — fields in input contract never read by the function body" (from gap 5)
+- Gap 1 (lenient `is not None`) was already covered by blind-spot #4 — confirmed working as designed
+- Persona enhancements committed in same hardening commit as this log update
+
+**Commit:** initial bootstrap = `0b115a5`; persona hardening = pending (next commit, will be backfilled)
 
 ---

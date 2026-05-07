@@ -117,6 +117,27 @@ adversary-review fired for <case_id>: <N> gaps, <A> addressed / <D> deferred / <
 
 If any disputes are pending Peng review, prefix with `🚨` and include the escalation summary.
 
+## When skipping the trigger (explicit acknowledgment required)
+
+If you commit a substantial script change that does NOT invoke adversary-review (because it falls outside the trigger conditions above), the commit message MUST include:
+
+```
+adversary-review-skipped: <reason>
+```
+
+This rule applies to any commit touching files under `sweep/`, `corpus/` (if it exists), or any new top-level Python module in the repo. Pure docs, config, or `tools/analyze_*.py` commits do NOT need the line.
+
+Examples of valid skip reasons:
+- `tooling-only — modifies tools/check_X.py, no validator semantics affected`
+- `harness-mechanical — covered by test-sweep-changes 5 gates instead`
+- `rename only, no semantic change`
+- `comment/docstring updates only, no logic touched`
+- `skill-artifact — modifies skills/adversary-review/* meta-files, no validator/sweep code`
+
+If you cannot articulate a clean skip reason, that is itself a signal to invoke adversary-review.
+
+**Rationale:** without this rule, "I forgot" is indistinguishable from "I deliberately didn't think it needed it." Forcing the explicit line makes the choice visible in commit history and Peng can challenge skips she disagrees with.
+
 ## Iteration cadence
 
 After every 3 reviews, spend 5 minutes on retrospective:
@@ -128,16 +149,18 @@ After every 3 reviews, spend 5 minutes on retrospective:
 
 Track running tallies in a `## Stats` section at the bottom of `reviews_log.md`.
 
-## V2 promotion criteria
+## V2 promotion (Peng's call)
 
-When ALL of the following hold, propose V2 (Rocky) to Peng:
+V2 = swap local Agent for Rocky as the reviewer. **Peng calls the V2 timing.** This skill does not auto-promote on any threshold.
 
-- ≥20 invocations in `reviews_log.md`
-- True-positive rate ≥30% (reviewer caught ≥1 real gap in ≥30% of reviews)
-- Persona has stabilized (≤1 edit in last 5 reviews)
-- Calibration friction is real (you've found yourself wishing Peng could tune the reviewer directly without going through you)
+When proposing V2 to Peng, include these inputs (not gates — just data for her decision):
 
-See `V2_PROMOTION.md` for what changes.
+- Total invocations in `reviews_log.md`
+- True-positive rate (gaps that turned out to be real)
+- Persona stability (edits in recent reviews)
+- Whether calibration friction has been felt (Otter wishing Peng could tune the reviewer directly without going through Otter)
+
+See `V2_PROMOTION.md` for what changes mechanically when she says go.
 
 ## Failure modes
 

@@ -2,14 +2,16 @@
 
 V1 uses a local Agent (in-session subagent). V2 will swap to Rocky (separate MyClaw peer instance). This doc captures exactly what changes — the goal is for V1 artifacts to carry forward unchanged where possible.
 
-## Promotion criteria (must all hold)
+## Promotion timing — Peng's call
 
-See `SKILL.md` "V2 promotion criteria" — copied here for one-page reading:
+There are no auto-trigger thresholds. Peng decides when V1 → V2 happens.
 
-- ≥20 invocations in `reviews_log.md`
-- True-positive rate ≥30% (reviewer caught ≥1 real gap in ≥30% of reviews)
-- Persona has stabilized (≤1 edit in last 5 reviews)
-- Calibration friction is real — Otter has caught itself wishing Peng could tune the reviewer directly without going through Otter
+When Otter proposes V2, the proposal should include these inputs (data for her decision, not gates):
+
+- Total invocations in `reviews_log.md`
+- True-positive rate (gaps that turned out to be real)
+- Persona stability (edits in recent reviews)
+- Whether calibration friction has been felt — Otter wishing Peng could tune the reviewer directly without going through Otter
 
 ## What carries forward unchanged
 
