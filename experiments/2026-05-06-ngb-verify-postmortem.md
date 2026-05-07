@@ -88,6 +88,19 @@ A canonical full NGB verify on the regenerated cohort + right stack has not yet 
 
 Both should be filed as upstream issues per `tools/file_issues.py pytorch-upstream`.
 
+## Trust update — 2026-05-07 14:23 ET (Peng directive)
+
+The "Load-bearing data from Run 2" section above carves out the 14 D1 catastrophic train-mode divergences as "legitimate signal" with the argument that those models are in the explain ok subset and therefore "the divergence is real on the right stack."
+
+**That carve-out is suspect.** Run 2 was non-canonical (broken cohort). When a sweep's process is broken, the principle is: treat ALL results as suspect until validated by a clean process. Selectively rescuing some results based on argument-from-set-membership ("those models should have been in the cohort, so their divergence must be real") is the same class of selective interpretation that produced the original failure mode.
+
+Disposition (per Peng 2026-05-07 14:23 ET): **No upstream PyTorch issues will be filed based on Run 1 or Run 2 data.** No `known_errors.json` registration of the D1 divergences. The "14 D1 divergences are real" claim is now PROVISIONAL — it requires reproduction on a canonical NGB verify run (right stack + regenerated cohort + new validator + new sample-sweep pre-flight gate) before any upstream action.
+
+This pause applies to:
+- S2 (file 14 D1 upstream issues): PAUSED
+- M1 (register in known_errors.json): PAUSED
+- D1 disposition: PROVISIONAL until canonical run reproduces them
+
 ## Diagnosis update — 2026-05-07
 
 (Added after the postmortem was nominally closed, per S1 investigation in `experiments/ngb-verify-launch-plan.md`.)
