@@ -1,0 +1,33 @@
+{
+  "_comment": "NGB verify: identify pass on models that passed the canonical 2026-05-05 NGB explain pass; verifies correctness (numeric_status / numeric_max_diff fields, populated by identify pass per sweep/worker.py:3793-3822) under nested_graph_breaks=true + fullgraph=false on the current stack. Anchored on sweep_results/experiments/nested-gb-2026-05-05-2026-05-05/explain_results.json (canonical NGB experiment per the 2026-05-06 report at https://docs.google.com/document/d/1qDcd-q4qZZMVIMfMCJt2aFfpcE0-D0P-V0lhP59bIgk/edit). Both 2026-05-06 NGB runs are ABANDONED — do not anchor on them.",
+
+  "name": "ngb-verify-2026-05-07",
+  "description": "NGB verify on cohort of models that passed the canonical 2026-05-05 NGB explain pass.",
+
+  "models": {
+    "_comment": "Filter from the 2026-05-05 explain pass results (status==ok subset). REQUIRES the proposed extension to corpus_filter — accept optional 'from' field pointing at an arbitrary sweep results file rather than always reading corpus/corpus.json. source_sha256 pins the source's content for reproducibility.",
+    "source": "corpus_filter",
+    "from": "sweep_results/experiments/nested-gb-2026-05-05-2026-05-05/explain_results.json",
+    "status": "ok",
+    "source_sha256": "a96d3e1ed5c30b26e223031a99b5968479109b714754cfbe61d8784e33dfbf2b"
+  },
+
+  "configs": [
+    {
+      "_comment": "Single config — NGB verify is one experiment, not an A/B. fullgraph=false is REQUIRED: NGB allows breaks; fullgraph=true would refuse to compile when breaks happen.",
+      "name": "ngb",
+      "compile_kwargs": {"fullgraph": false},
+      "dynamo_flags": {"nested_graph_breaks": true}
+    }
+  ],
+
+  "settings": {
+    "device": "cuda",
+    "modes": ["eval", "train"],
+    "workers": 4,
+    "timeout_s": 180,
+    "pass_num": 1,
+    "_comment_pass": "1 = identify (which now ALSO populates numeric_status / numeric_max_diff for correctness checking — verified in worker.py:3793-3822 + abandoned NGB run's identify_results.json). No need for pass 2 (explain) — that adds break_reasons logging, separate concern.",
+    "_pinning_advisory": "Stack: torch-nightly-cu126 venv + transformers 5.6.2 + diffusers 0.38.0. Match what 2026-05-05 explain pass used. Pass via CLI: `--transformers 5.6.2 --diffusers 0.38.0` AND launch via `~/envs/torch-nightly-cu126/bin/python tools/run_experiment.py run <this-config>`. v1.1 may add a 'pinning' field in settings to enforce this in the config itself (not currently extension)."
+  }
+}
