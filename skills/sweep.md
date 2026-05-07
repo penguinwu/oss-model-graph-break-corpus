@@ -82,6 +82,7 @@ For parameter changes (workers, timeouts):
 - [ ] Confirm settings match baseline (4 workers, 180s/600s)
 - [ ] Check large_models.json is clean (no spurious entries)
 - [ ] Verify torch/transformers versions
+- [ ] **If your cohort came from a different sweep**, use `--models-from <source.json> --filter '<expr>'` (NOT `--models <flat.json>`). The launcher reads the source's torch/transformers/diffusers versions and refuses launch on mismatch — protects against the "I derived from torch-nightly-cu126 baseline but launched on torch211" failure mode (cautionary tale: 2026-05-06, this caused 25 spurious "regressions" because transformers 5.6.2 → 5.5.3 doesn't have the newer model `*Config` classes). Override only with `--allow-version-mismatch` and only when you mean it.
 - [ ] **Install the watchdog cron** (see "Watchdog — mandatory for any non-trivial sweep" below)
 
 ### Execution order

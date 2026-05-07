@@ -133,6 +133,42 @@ def _parse_kv_overrides(items):
     return out
 
 
+def _parse_filter_predicate(expr):
+    """Parse a --filter expression into a callable predicate(record) -> bool.
+
+    Supported grammar (minimal, intentional):
+        status in foo,bar,baz   →  record['status'] in {'foo','bar','baz'}
+        status == foo           →  record['status'] == 'foo'
+        status != foo           →  record['status'] != 'foo'
+
+    Whitespace tolerant; case-sensitive on values; only the `status` field is
+    supported in v1 (extend if needed). Raises SystemExit with a clear message
+    on any unsupported form so users get fast feedback at launch, not silent
+    no-op filtering.
+    """
+    s = expr.strip()
+    # status in foo,bar,baz
+    import re as _re
+    m = _re.match(r'^status\s+in\s+(.+)$', s)
+    if m:
+        values = {v.strip() for v in m.group(1).split(',') if v.strip()}
+        if not values:
+            print(f"ERROR: --filter {expr!r} has empty value list", file=sys.stderr)
+            sys.exit(2)
+        return lambda r: r.get('status') in values
+    m = _re.match(r'^status\s*(==|!=)\s*(.+)$', s)
+    if m:
+        op, val = m.group(1), m.group(2).strip()
+        if op == '==':
+            return lambda r: r.get('status') == val
+        else:
+            return lambda r: r.get('status') != val
+    print(f"ERROR: --filter {expr!r} is not a supported expression. "
+          f"Supported: 'status in <a,b,c>', 'status == <v>', 'status != <v>'.",
+          file=sys.stderr)
+    sys.exit(2)
+
+
 def _build_extra_worker_args(args):
     """Translate args namespace → list of CLI args appended to each worker invocation.
 
@@ -568,17 +604,177 @@ def run_sweep(args):
                     sys.exit(1)
 
     # ── Load or enumerate models ──
-    if args.models:
+    models_from = getattr(args, "models_from", None)
+    if models_from:
+        # Cohort extraction: read source sweep, version-check, apply filter.
+        # See tools/issue_filing_plan.md / methodology rule (cross-version
+        # cohorts must run on matched torch+transformers+diffusers).
+        try:
+            from sweep.results_loader import load_raw
+        except ImportError:
+            from results_loader import load_raw
+        try:
+            raw = load_raw(models_from)
+        except Exception as e:
+            print(f"ERROR: --models-from {models_from!r} could not be loaded: {e}",
+                  file=sys.stderr)
+            sys.exit(1)
+        source_metadata = raw.get("metadata", {}) or {}
+        source_versions = source_metadata.get("versions", {}) or {}
+        source_results = raw.get("results", []) or []
+
+        # Fallback: older sweep formats wrote versions to a sibling versions.json
+        # instead of into metadata. Check that path so the version-compat gate
+        # actually fires on real-world baselines (e.g. 2026-05-03 nightly).
+        if not source_versions:
+            sibling_versions = Path(models_from).resolve().parent / "versions.json"
+            if sibling_versions.is_file():
+                try:
+                    with open(sibling_versions) as f:
+                        sv = json.load(f)
+                    source_versions = {
+                        "torch": sv.get("pytorch") or sv.get("torch"),
+                        "transformers": sv.get("transformers"),
+                        "diffusers": sv.get("diffusers"),
+                    }
+                    source_versions = {k: v for k, v in source_versions.items() if v}
+                    if source_versions:
+                        print(f"[run_sweep] read source versions from {sibling_versions}: {source_versions}")
+                except Exception as e:
+                    print(f"[run_sweep] WARN: sibling versions.json unparseable: {e}",
+                          file=sys.stderr)
+
+        # Version-compat check (refuses on mismatch unless --allow-version-mismatch).
+        if source_versions and version_info:
+            mismatches = []
+            for pkg in ("torch", "transformers", "diffusers"):
+                src = source_versions.get(pkg)
+                cur = version_info.get(pkg)
+                if src and cur and src != cur:
+                    mismatches.append(f"  {pkg}: source={src!r}  launching={cur!r}")
+            if mismatches:
+                msg_lines = [
+                    f"[run_sweep] --models-from VERSION MISMATCH",
+                    f"  source sweep: {models_from}",
+                ] + mismatches + [
+                    f"",
+                    f"  This refusal exists because cross-version cohorts produce confounded results",
+                    f"  (e.g. transformers downgrade causes create_errors that look like flag regressions).",
+                    f"  See cautionary tale: 2026-05-06 NGB correctness sweep on torch211 vs torch-nightly-cu126 baseline.",
+                    f"",
+                    f"  To proceed, EITHER:",
+                    f"    (a) Re-launch with the matching venv. Suggested flags based on source:",
+                ]
+                # Suggest --transformers / --diffusers flags
+                if source_versions.get("transformers"):
+                    msg_lines.append(f"        --transformers {source_versions['transformers']}")
+                if source_versions.get("diffusers"):
+                    msg_lines.append(f"        --diffusers {source_versions['diffusers']}")
+                if source_versions.get("torch"):
+                    msg_lines.append(f"        # source ran on torch={source_versions['torch']!r}; pick a matching ~/envs/<venv>/bin/python")
+                msg_lines += [
+                    f"",
+                    f"    (b) Pass --allow-version-mismatch to override (recorded in sweep_state.json).",
+                ]
+                print("\n".join(msg_lines), file=sys.stderr)
+                if not getattr(args, "allow_version_mismatch", False):
+                    sys.exit(1)
+                else:
+                    print(f"[run_sweep] --allow-version-mismatch set; proceeding despite mismatch",
+                          file=sys.stderr)
+                    early_state["models_from_version_mismatch_overridden"] = True
+
+        # Apply --filter (currently: status in / status == predicates)
+        filter_expr = getattr(args, "filter", None)
+        if filter_expr:
+            predicate = _parse_filter_predicate(filter_expr)
+            matching_names = {r["name"] for r in source_results
+                              if predicate(r) and "name" in r}
+        else:
+            matching_names = {r["name"] for r in source_results if "name" in r}
+
+        # Build cohort: one entry per matching model name (dedup across modes),
+        # carrying forward source-side metadata (hf_class, variant, etc.) so the
+        # worker doesn't need to re-enumerate.
+        seen = set()
+        specs = []
+        for r in source_results:
+            name = r.get("name")
+            if not name or name in seen or name not in matching_names:
+                continue
+            seen.add(name)
+            spec = {"name": name, "source": r.get("source", "hf")}
+            for k in ("hf_class", "hf_config", "variant", "input_type",
+                      "constructor_args", "inputs"):
+                if k in r:
+                    spec[k] = r[k]
+            specs.append(spec)
+        print(f"[run_sweep] --models-from {models_from}")
+        print(f"  source versions: {source_versions}")
+        print(f"  filter: {filter_expr or '(none — all models)'}")
+        print(f"  resolved cohort: {len(specs)} models")
+
+        # Optional: save resolved cohort to file for downstream reuse.
+        save_cohort = getattr(args, "save_cohort", None)
+        if save_cohort:
+            payload = {
+                "_metadata": {
+                    "derived_from": str(models_from),
+                    "derived_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "source_versions": source_versions,
+                    "filter": filter_expr or "(none)",
+                    "model_count": len(specs),
+                },
+                "models": specs,
+            }
+            save_path = Path(save_cohort).expanduser().resolve()
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(save_path, "w") as f:
+                json.dump(payload, f, indent=2)
+            print(f"  saved cohort: {save_path}")
+
+        # Record provenance in sweep_state for the run.
+        early_state["models_from"] = str(models_from)
+        early_state["models_from_source_versions"] = source_versions
+        early_state["models_from_filter"] = filter_expr or "(none)"
+        with open(state_file, "w") as f:
+            json.dump(early_state, f, indent=2)
+    elif args.models:
         try:
             with open(args.models) as f:
-                specs = json.load(f)
+                loaded = json.load(f)
         except json.JSONDecodeError as e:
             print(f"ERROR: Invalid JSON in {args.models}: {e}")
             sys.exit(1)
         except FileNotFoundError:
             print(f"ERROR: File not found: {args.models}")
             sys.exit(1)
-        print(f"Loaded {len(specs)} models from {args.models}")
+        # Accept both shapes: flat list (legacy) OR {_metadata, models} (saved cohort).
+        if isinstance(loaded, dict) and "models" in loaded:
+            specs = loaded["models"]
+            cohort_meta = loaded.get("_metadata", {}) or {}
+            # If the saved cohort has source_versions, run the same check as --models-from
+            if cohort_meta.get("source_versions") and version_info:
+                src_v = cohort_meta["source_versions"]
+                mismatches = [f"  {p}: source={src_v.get(p)!r}  launching={version_info.get(p)!r}"
+                              for p in ("torch", "transformers", "diffusers")
+                              if src_v.get(p) and version_info.get(p) and src_v.get(p) != version_info.get(p)]
+                if mismatches:
+                    print(f"[run_sweep] --models {args.models} VERSION MISMATCH (cohort has _metadata):",
+                          file=sys.stderr)
+                    print("\n".join(mismatches), file=sys.stderr)
+                    if not getattr(args, "allow_version_mismatch", False):
+                        print("[run_sweep] aborting; pass --allow-version-mismatch to override",
+                              file=sys.stderr)
+                        sys.exit(1)
+            print(f"Loaded {len(specs)} models from {args.models} (with _metadata)")
+        else:
+            specs = loaded
+            print(f"Loaded {len(specs)} models from {args.models}")
+            # Flat list — no provenance, can't version-check. WARN.
+            print(f"[run_sweep] WARNING: --models was a flat list; cohort has no provenance, "
+                  f"cannot detect version mismatches. Prefer --models-from for new work.",
+                  file=sys.stderr)
     else:
         # Enumerate from source(s)
         from models import enumerate_timm, enumerate_hf, enumerate_diffusers, enumerate_custom

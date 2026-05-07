@@ -1807,7 +1807,29 @@ def main():
                              choices=["timm", "hf", "diffusers", "custom", "all"],
                              help="Model libraries to enumerate (default: hf diffusers custom)")
     sweep_input.add_argument("--models",
-                             help="JSON file with explicit model list")
+                             help="JSON file with explicit model list (flat shape: "
+                                  "[{name,source}, ...]). Has no provenance — "
+                                  "version-mismatch warning at launch. Prefer --models-from.")
+    sweep_input.add_argument("--models-from", default=None, metavar="SWEEP_RESULTS",
+                             help="Path to a prior sweep's identify_results.json (or .jsonl). "
+                                  "Cohort is derived inline by applying --filter to the source's "
+                                  "results. Source's metadata.versions are read and compared to "
+                                  "the launching venv's torch/transformers/diffusers — mismatch "
+                                  "REFUSES launch (use --allow-version-mismatch to override). "
+                                  "Replaces the ad-hoc cohort-extraction pattern.")
+    sub_sweep.add_argument("--filter", default=None, metavar="EXPR",
+                           help="Filter expression for --models-from. Supported forms: "
+                                "'status in <comma-separated>' (e.g. 'status in graph_break,error,compile_error'), "
+                                "'status == <value>'. Applied per-result; a model is included "
+                                "if ANY of its (mode) results match. Default: no filter (all models).")
+    sub_sweep.add_argument("--save-cohort", default=None, metavar="PATH",
+                           help="When --models-from is used, also write the resolved cohort "
+                                "to PATH (with a _metadata block recording derived_from + "
+                                "source_versions + filter). Useful for repro across runs.")
+    sub_sweep.add_argument("--allow-version-mismatch", action="store_true",
+                           help="Override the --models-from version-compat refusal. "
+                                "Recorded in sweep_state.json. Only use when the mismatch "
+                                "is intentional (cross-version experiment).")
     sub_sweep.add_argument("--stability", choices=["stable", "unstable"],
                            help="Filter by corpus stability")
     sub_sweep.add_argument("--limit", type=int,
