@@ -83,7 +83,37 @@ For parameter changes (workers, timeouts):
 - [ ] Check large_models.json is clean (no spurious entries)
 - [ ] Verify torch/transformers versions
 - [ ] **If your cohort came from a different sweep**, use `--models-from <source.json> --filter '<expr>'` (NOT `--models <flat.json>`). The launcher reads the source's torch/transformers/diffusers versions and refuses launch on mismatch — protects against the "I derived from torch-nightly-cu126 baseline but launched on torch211" failure mode (cautionary tale: 2026-05-06, this caused 25 spurious "regressions" because transformers 5.6.2 → 5.5.3 doesn't have the newer model `*Config` classes). Override only with `--allow-version-mismatch` and only when you mean it.
+- [ ] **If using --models <flat.json>** (no provenance, e.g. a hand-built cohort file), explicitly identify the venv + version stack the cohort was derived from, and verify your launch flags match. The harness emits a `WARNING: --models was a flat list; cannot detect version mismatches` line — read it and act on it. Do NOT rationalize past it.
+- [ ] **Run the smoke pre-flight** (see "Smoke pre-flight — mandatory before any sweep with a changed stack or cohort" below). Skipping requires written approval.
 - [ ] **Install the watchdog cron** (see "Watchdog — mandatory for any non-trivial sweep" below)
+
+### Smoke pre-flight — mandatory before any sweep with a changed stack or cohort
+
+Run a 5-10 model smoke (eval-only, ~3-5 min wall) BEFORE the full launch when ANY of these is true:
+- Version stack (torch / transformers / diffusers) differs from last successful sweep on this cohort
+- Cohort is new or modified (added/removed models)
+- Last successful run on this exact stack+cohort was >7 days ago
+- You changed sweep harness code (also covered by `skills/test-sweep-changes/SKILL.md` — both apply)
+
+**Smoke composition (6 fixed models, NOT random):**
+- 1 known-stable baseline (e.g. `AutoformerModel`)
+- 2 known-version-sensitive (e.g. `BartModel`, `BlenderbotModel` — `error` under wrong transformers due to `EncoderDecoderCache(DynamicCache(config=self.config))` pattern in older versions)
+- 1 known-network-sensitive (e.g. `BambaModel` — `create_error` on DNS/Hub jail)
+- 1 small diffusers model (e.g. `AutoencoderDC`)
+- 1 model from your cohort that the source baseline showed had a graph break (proves verify path fires on cohort, not just on incidentally-clean models)
+
+**Smoke pass criteria — script-checked, NOT eyeballed:**
+1. All 6 models produced a result row (no infrastructure crash)
+2. Version-sensitive models are NOT `status=error`
+3. Network-sensitive model is NOT `status=create_error`
+4. ≥1 row has `numeric_status` populated (verify path fires)
+5. **All cohort-provenance models have `numeric_status` populated** (verify path fires on cohort models, regardless of whether NGB collapses them to `success` or leaves them as `graph_break` — the cohort provenance is what matters, NOT the result status)
+
+If smoke passes → launch full. If smoke fails → halt, root-cause, do NOT launch full.
+
+**Cautionary tale (2026-05-06):** NGB correctness run #1 ran 2h41m on `torch211 + transformers 5.5.3` when the explain pass it was supposed to verify ran on `torch-nightly-cu126 + transformers 5.6.2`. NGB correctness run #2 same evening: same wrong stack, only caught after 11 results in. A 5-min smoke covering BartModel + BlenderbotModel + BambaModel would have aborted both before launch — these were `error`/`create_error` on the wrong stack but `success` on the right stack.
+
+**Smoke design pitfall (also 2026-05-06):** initial criterion-5 was "≥1 row with `status=graph_break` AND `numeric_status` populated." Wrong: under `nested_graph_breaks=true`, the entire cohort of "originally graph-broke" models tends to compile cleanly to `status=success`, so 0 rows had `status=graph_break`. The substantive intent — "verify path fires on cohort models" — should be checked by **cohort provenance** (was this model in the cohort?), not by **result status** (did it still break?). Don't conflate provenance with status.
 
 ### Execution order
 1. **Run eval mode first** — 50% of work items, gives early signal
@@ -287,6 +317,7 @@ Without this step, feedback only lives in Otter's session memory (which expires)
 | | Added post-mortem skill improvement | Peng feedback: "need a skill for improving the skill system — capture contextual learning into the file" |
 | 2026-04-14 | Added pitfall: incomplete re-run specs | Re-run with only name+source caused 30+ false create_errors. Config name derivation fails for ForCausalLM variants without hf_config field |
 | | Added Tier 2 autonomy for merging/re-running | Tiger autonomy tiers doc: merge + re-run after sweep is obvious next step, don't ask |
+| 2026-05-06 | Added smoke pre-flight subsection (§4) + flat-list provenance check | NGB correctness sweeps #1 and #2 same day burned 2h41m + 11min on wrong version stack (torch211 + transformers 5.5.3) when explain pass had run on torch-nightly + transformers 5.6.2. Smoke including BartModel + BlenderbotModel + BambaModel would have aborted both before launch. Also includes the "provenance vs status" pitfall in criterion design (initial criterion-5 confused cohort provenance with result status). |
 
 ---
 
