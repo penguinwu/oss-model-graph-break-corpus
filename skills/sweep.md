@@ -84,36 +84,23 @@ For parameter changes (workers, timeouts):
 - [ ] Verify torch/transformers versions
 - [ ] **If your cohort came from a different sweep**, use `--models-from <source.json> --filter '<expr>'` (NOT `--models <flat.json>`). The launcher reads the source's torch/transformers/diffusers versions and refuses launch on mismatch — protects against the "I derived from torch-nightly-cu126 baseline but launched on torch211" failure mode (cautionary tale: 2026-05-06, this caused 25 spurious "regressions" because transformers 5.6.2 → 5.5.3 doesn't have the newer model `*Config` classes). Override only with `--allow-version-mismatch` and only when you mean it.
 - [ ] **If using --models <flat.json>** (no provenance, e.g. a hand-built cohort file), explicitly identify the venv + version stack the cohort was derived from, and verify your launch flags match. The harness emits a `WARNING: --models was a flat list; cannot detect version mismatches` line — read it and act on it. Do NOT rationalize past it.
-- [ ] **Run the smoke pre-flight** (see "Smoke pre-flight — mandatory before any sweep with a changed stack or cohort" below). Skipping requires written approval.
+- [ ] **Run the sample-sweep gate** (see "Sample-sweep gate — mandatory before any full launch" below). Skipping requires Peng's written approval.
 - [ ] **Install the watchdog cron** (see "Watchdog — mandatory for any non-trivial sweep" below)
+- [ ] **If you are bumping a model library version, installing a new library, or adding new corpus sources** — read `skills/sweep_sanity_check.md` APPLY-D before launching. This is a cohort-expansion run, not a regular sweep. The triage step is mandatory output: the run isn't done when the sweep finishes — it's done when known_errors.json + skip_models.json are updated and a re-run sample shows 0 untriaged errors. **Pre-existing models that regress under the new library version are NOT triage-able — they are real bugs and must be fixed or filed.**
 
-### Smoke pre-flight — mandatory before any sweep with a changed stack or cohort
+### Sample-sweep gate — mandatory before any full launch
 
-Run a 5-10 model smoke (eval-only, ~3-5 min wall) BEFORE the full launch when ANY of these is true:
-- Version stack (torch / transformers / diffusers) differs from last successful sweep on this cohort
-- Cohort is new or modified (added/removed models)
-- Last successful run on this exact stack+cohort was >7 days ago
-- You changed sweep harness code (also covered by `skills/test-sweep-changes/SKILL.md` — both apply)
+Before any full sweep, run a sample sweep on **20 random models from the planned full cohort** with **identical flags** to the planned full launch (same venv, modellibs, workers, timeouts, compile-kwargs, dynamo-config). Suffix the sample's `--run-name` with `-sample` and write the sampled cohort to `/tmp/<run_name>-sample.json`.
 
-**Smoke composition (6 fixed models, NOT random):**
-- 1 known-stable baseline (e.g. `AutoformerModel`)
-- 2 known-version-sensitive (e.g. `BartModel`, `BlenderbotModel` — `error` under wrong transformers due to `EncoderDecoderCache(DynamicCache(config=self.config))` pattern in older versions)
-- 1 known-network-sensitive (e.g. `BambaModel` — `create_error` on DNS/Hub jail)
-- 1 small diffusers model (e.g. `AutoencoderDC`)
-- 1 model from your cohort that the source baseline showed had a graph break (proves verify path fires on cohort, not just on incidentally-clean models)
+When the sample completes (~10-15 min for 20 models × 2 modes at 2 workers), apply `skills/sweep_sanity_check.md` in **APPLY-A mode** against the sample's output. **Any STRICT invariant failure → HALT the full launch and investigate.**
 
-**Smoke pass criteria — script-checked, NOT eyeballed:**
-1. All 6 models produced a result row (no infrastructure crash)
-2. Version-sensitive models are NOT `status=error`
-3. Network-sensitive model is NOT `status=create_error`
-4. ≥1 row has `numeric_status` populated (verify path fires)
-5. **All cohort-provenance models have `numeric_status` populated** (verify path fires on cohort models, regardless of whether NGB collapses them to `success` or leaves them as `graph_break` — the cohort provenance is what matters, NOT the result status)
+If sample finds cohort contamination, the cohort generator is broken — fix the generator, regenerate the cohort, re-sample. Do NOT silently exclude individual contaminated models and proceed; that lets the generator bug ship.
 
-If smoke passes → launch full. If smoke fails → halt, root-cause, do NOT launch full.
+If sample passes → launch full sweep.
 
-**Cautionary tale (2026-05-06):** NGB correctness run #1 ran 2h41m on `torch211 + transformers 5.5.3` when the explain pass it was supposed to verify ran on `torch-nightly-cu126 + transformers 5.6.2`. NGB correctness run #2 same evening: same wrong stack, only caught after 11 results in. A 5-min smoke covering BartModel + BlenderbotModel + BambaModel would have aborted both before launch — these were `error`/`create_error` on the wrong stack but `success` on the right stack.
+**Cautionary tale (2026-05-06):** NGB correctness rerun launched at 21:33 ET with no sample gate. ~2h later the post-completion review found 22 create_error + 4 eager_error: 6 cohort-contamination rows (models removed in the target transformers version), 14 custom-model loader regressions (pre-existing models broke at create), 2 pre-existing diffusers bug, 4 input-gen failures. A 20-random sample on the actual cohort + actual flags would have hit at least one contaminated model and aborted the full launch in ~15 min instead of 3 hours.
 
-**Smoke design pitfall (also 2026-05-06):** initial criterion-5 was "≥1 row with `status=graph_break` AND `numeric_status` populated." Wrong: under `nested_graph_breaks=true`, the entire cohort of "originally graph-broke" models tends to compile cleanly to `status=success`, so 0 rows had `status=graph_break`. The substantive intent — "verify path fires on cohort models" — should be checked by **cohort provenance** (was this model in the cohort?), not by **result status** (did it still break?). Don't conflate provenance with status.
+A separate, earlier 6-fixed-model "smoke" (replaced by this gate) caught version-stack issues but missed all of the above because the fixed picks didn't overlap the contamination. Random 20-from-cohort is the right design.
 
 ### Execution order
 1. **Run eval mode first** — 50% of work items, gives early signal
@@ -201,6 +188,12 @@ When adding new models (new HF release, custom models, etc.):
 ## 8. Post-Sweep Due Diligence
 
 After every sweep completes, do this BEFORE reporting results to Peng:
+
+### Step 0: Run the sanity check (APPLY-C)
+- [ ] Apply `skills/sweep_sanity_check.md` in **APPLY-C mode** to the full output dir
+- [ ] Classify every FAIL as `accepted` (record reason in plan.md or the run's notes) or `blocking`
+- [ ] **Untriaged errors (INV-G1 fail) → HALT.** Either triage them (file a fix, add a known_errors entry, or skip-list with reason) BEFORE proceeding to Step 1, or open a cohort-expansion sub-task to process them as a batch
+- [ ] Do NOT analyze, file issues, or publish results while blocking fails exist
 
 ### Step 1: Error/timeout triage
 - [ ] Count errors + timeouts. If > 2% of in-scope models, investigate before proceeding.
@@ -318,6 +311,7 @@ Without this step, feedback only lives in Otter's session memory (which expires)
 | 2026-04-14 | Added pitfall: incomplete re-run specs | Re-run with only name+source caused 30+ false create_errors. Config name derivation fails for ForCausalLM variants without hf_config field |
 | | Added Tier 2 autonomy for merging/re-running | Tiger autonomy tiers doc: merge + re-run after sweep is obvious next step, don't ask |
 | 2026-05-06 | Added smoke pre-flight subsection (§4) + flat-list provenance check | NGB correctness sweeps #1 and #2 same day burned 2h41m + 11min on wrong version stack (torch211 + transformers 5.5.3) when explain pass had run on torch-nightly + transformers 5.6.2. Smoke including BartModel + BlenderbotModel + BambaModel would have aborted both before launch. Also includes the "provenance vs status" pitfall in criterion design (initial criterion-5 confused cohort provenance with result status). |
+| 2026-05-07 | Replaced 6-fixed smoke with 20-random sample-sweep gate; added APPLY-D cohort-expansion trigger; added §8 Step 0 sanity-check gate. New skill `skills/sweep_sanity_check.md` v2.1 holds the invariants (families A-G) + four apply contexts. Library-bump rule encoded: pre-existing models that regress are real bugs, not triage-able. | NGB verify 2026-05-06: 6-fixed smoke passed but full sweep surfaced 22 create_error + 4 eager_error from cohort contamination + custom-model loader regression that the fixed picks didn't overlap. Random 20-from-cohort is the right design. Peng's directive: "infra solid > moving fast" + skill-form-not-script (different sweep types have different invariants — judgment over enforcement). |
 
 ---
 
