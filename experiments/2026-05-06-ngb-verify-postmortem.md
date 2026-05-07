@@ -4,6 +4,23 @@ status: closed
 owner: otter
 created: 2026-05-07
 last_check: 2026-05-07
+disposition: ABANDONED — both runs non-canonical; do not use result data for analysis or issue filing
+---
+
+# ⚠️ DATA ABANDONED — 2026-05-07 14:26 ET (Peng directive)
+
+**Both Run 1 and Run 2 produce result data that is NOT to be used for any analysis, issue filing, known_errors registration, or other downstream conclusions.** The runs surfaced infrastructure gaps which are now fixed; that was their useful contribution. The result rows themselves are non-canonical and abandoned.
+
+What stays:
+- The infrastructure improvements derived from the FAILURE PATTERN (validator, sampler, invariant executor, pre-push hook, expanded adversary-review scope, external-engagement guardrail).
+- This postmortem as the historical record of what went wrong.
+
+What goes:
+- Any analysis based on Run 1 or Run 2 result rows (D1 divergences, sanity-check counts, etc.).
+- Any open loops or handoff items proposing action on Run 2 data.
+
+The next-up canonical NGB verify run (M2 + full verify in `experiments/ngb-verify-launch-plan.md`) is the source of truth going forward.
+
 ---
 
 # NGB Verify Pass — Postmortem (2026-05-06 → 2026-05-07)
