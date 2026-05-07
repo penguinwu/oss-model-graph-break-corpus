@@ -1,0 +1,119 @@
+# Adversary Review Log
+
+Append-only log of every adversary-review invocation. **Do not edit prior entries** — the SHA256 hashes catch tampering. To correct a record, append a new "correction" entry referencing the original case_id.
+
+Read `SKILL.md` for the procedure that produces these entries.
+
+---
+
+## Schema (per entry)
+
+```
+### <case_id: YYYY-MM-DD-HHMMSS-slug>
+
+| field | value |
+|-------|-------|
+| date_utc | <ISO8601, e.g., 2026-05-07T13:33:00Z> |
+| trigger | <validator-code | new-sweep-case | other> |
+| files | <comma-separated paths under review> |
+| persona_sha | <git rev of persona.md at time of invocation> |
+| verdict | <approve | approve-with-gaps | reject | unable-to-review> |
+| output_sha256 | <hash of the raw output block> |
+
+**Reviewer raw output:**
+\`\`\`
+<the Agent's full reply, verbatim — no edits, no truncation>
+\`\`\`
+
+**My disposition:**
+- gap 1: <one-line summary> → <addressed | deferred (open-loop ID, reason) | disputed (escalation ID)>
+- gap 2: ...
+
+**Commit:** <git sha or "pending">
+```
+
+---
+
+## Stats (running tallies — update at each retrospective)
+
+- Total invocations: 0
+- Verdicts: approve=0, approve-with-gaps=0, reject=0, unable-to-review=0
+- Gap dispositions: addressed=0, deferred=0, disputed=0
+- True-positive estimate (gaps that turned out to be real): n/a until ≥3 reviews
+
+---
+
+## Entries
+
+<!-- Append new entries below this line. Do not modify any entry above. -->
+
+### 2026-05-07-093400-smoke
+
+| field | value |
+|-------|-------|
+| date_utc | 2026-05-07T13:34:00Z |
+| trigger | smoke (V1 bootstrap loop validation) |
+| files | /tmp/smoke_validator.py, /tmp/smoke_test_validator.py |
+| persona_sha | pre-commit (initial bootstrap; persona uncommitted at invocation time) |
+| verdict | approve-with-gaps |
+| output_sha256 | e6f114c590290067fe5ee96eb307b779cd74901b95f3da47f0cbf010e67b84f2 |
+
+**Reviewer raw output:**
+```
+VERDICT: approve-with-gaps
+
+CONFIDENCE: high
+CONFIDENCE_RATIONALE: The files are short and self-contained; gaps are visible directly in the source. Confidence would only drop if there's a hidden upstream contract for `result` that isn't shown here.
+
+FILES_READ:
+- /tmp/smoke_validator.py
+- /tmp/smoke_test_validator.py
+
+GAPS_FOUND:
+1. [SEVERITY: high] `test_full_graph` uses `assert classify_run(result) is not None`, which would pass if the function returned literally any non-None value (including `"graph_break"` or `"create_error"`).
+   WHY_IT_MATTERS: This is the canonical "lenient assertion" anti-pattern from Otter's blind-spot list (#4). A regression that misclassifies the no-break, no-error case as `graph_break` would be GREEN under this test. Since `full_graph` is the entire reason this validator exists for the corpus, a silent miscount here would corrupt sweep aggregation without any signal.
+   SUGGESTED_FIX: Change to `assert classify_run(result) == "full_graph"`. Apply the same exact-equality discipline to all three tests (the other two already do this — only `test_full_graph` is broken).
+
+2. [SEVERITY: high] Precedence between `error` and `graph_breaks` is untested. If a result has BOTH `error="boom"` AND `graph_breaks=5`, the validator returns `"create_error"` — but no test pins this contract.
+   WHY_IT_MATTERS: This is exactly the "categorical labels must have crisp boundaries" concern (#8). A future refactor could swap the order of the two `if` branches and silently reclassify error-with-partial-tracing runs as `graph_break`, polluting graph-break counts in the corpus. The validator's behavior on overlap is a load-bearing semantic that needs a pinned test.
+   SUGGESTED_FIX: Add `test_error_takes_precedence_over_graph_breaks` with `result = {"compiled": False, "graph_breaks": 5, "error": "boom"}` asserting `== "create_error"`.
+
+3. [SEVERITY: medium] No test for empty / edge inputs: `{}`, `{"error": ""}` (falsy string), `{"graph_breaks": 0, "error": None}` with no `compiled` key, `{"graph_breaks": -1}`.
+   WHY_IT_MATTERS: Otter blind-spot #5. The validator silently treats `error=""` and `error=None` as the same (both falsy), and treats missing keys the same as zero-value keys via `.get(..., 0)` / `.get(...)`. These are reasonable defaults but they're undocumented and unpinned — a future change to use `result["error"]` instead of `result.get("error")` would crash on `{}` with no test catching it.
+   SUGGESTED_FIX: Add `test_empty_dict_returns_full_graph` (asserts `classify_run({}) == "full_graph"`) and `test_empty_string_error_treated_as_no_error` to lock the falsy-error behavior, OR document that `error` must be `None` or a non-empty string and validate the input.
+
+4. [SEVERITY: medium] `graph_breaks` boundary at exactly 0 vs exactly 1 is untested. The current tests use 0 (full_graph branch) and 3 (graph_break branch) — the boundary case `graph_breaks=1` is not exercised.
+   WHY_IT_MATTERS: Off-by-one regressions (`> 0` → `>= 0`, or `> 0` → `> 1`) would not be caught. For a categorical validator, the boundary value is the most important value to pin.
+   SUGGESTED_FIX: Add `test_single_graph_break` with `graph_breaks=1` asserting `== "graph_break"`.
+
+5. [SEVERITY: low] The `compiled` field is in the input contract but never read by `classify_run`. Either it's dead schema, or the validator is missing logic.
+   WHY_IT_MATTERS: If `compiled` is meaningful (e.g., `compiled=False` with no error and no breaks should arguably not be `full_graph`), the validator has a silent gap. If it's not meaningful, it shouldn't be in the documented input contract.
+   SUGGESTED_FIX: Either remove `compiled` from the docstring's input schema, or add a branch + test for `compiled=False, error=None, graph_breaks=0` (which currently returns `"full_graph"` — almost certainly wrong if `compiled` means anything).
+
+SUGGESTED_ADDITIONAL_TESTS:
+- Parametrized table-driven test covering all 2x2 combinations of `error in {None, "boom"}` x `graph_breaks in {0, 1, 5}` to lock the full truth table.
+- Test that the return value is always one of the three documented strings (no other values can leak out) — guards against future refactors that add a fourth branch without updating the docstring.
+- Test with `graph_breaks` as `None` explicitly (not just missing) — current code does `result.get("graph_breaks", 0) > 0` which raises `TypeError` on `None > 0` in Python 3.
+
+NOTES:
+The test file's own header ("deliberately weak test for the adversary-review smoke test") is itself the strongest signal that gaps exist by design — but the gaps found here are real, not synthetic: gap #1 (lenient assertion), gap #2 (precedence), and the `None`-vs-missing distinction in `SUGGESTED_ADDITIONAL_TESTS` would all be real defects in production validator code. The file is `/tmp/`-scoped, which is fine for the smoke test, but for real `sweep/explain.py` work the same patterns would block-the-commit. Adversary loop appears to function: independent read of the code surfaced the planted weakness (lenient `is not None`) plus adjacent real gaps the planter may not have intended.
+```
+
+**My disposition:**
+- gap 1 (lenient `is not None`): deferred — `/tmp/` smoke files are throwaway; loop validation only. Reviewer correctly identified the planted weakness.
+- gap 2 (error/graph_breaks precedence): deferred — same reason; finding noted as legitimate for any real validator change.
+- gap 3 (empty/edge inputs): deferred — same reason.
+- gap 4 (graph_breaks=1 boundary): deferred — same reason.
+- gap 5 (`compiled` field unused): deferred — same reason.
+
+**Smoke verification (loop validation, not commit-gating):**
+- ✅ Agent invocation mechanically works
+- ✅ Persona produces output in required structure
+- ✅ Reviewer reads files independently (FILES_READ confirms)
+- ✅ Reviewer caught planted weakness (gap 1) AND surfaced 4 real adjacent gaps not planted
+- ✅ Verbatim raw output captured + SHA256 computed
+- ✅ Disposition discipline practiced for each gap
+
+**Commit:** pending (initial bootstrap commit will introduce this file)
+
+---
