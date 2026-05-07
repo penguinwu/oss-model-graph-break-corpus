@@ -14,7 +14,15 @@
 
 set -euo pipefail
 
-PYTHON="${PYTHON:-$HOME/envs/torch211/bin/python}"
+# Resolve user home: under sudo, $HOME is /root which isn't useful here.
+# Canonical push for this repo is `sudo bash -c "HTTPS_PROXY=... git push ..."`
+# (per local CLAUDE.md per-repo override), so the sudo case is the COMMON path.
+if [ -n "${SUDO_USER:-}" ] && [ "$(id -u)" = "0" ]; then
+    USER_HOME="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
+else
+    USER_HOME="$HOME"
+fi
+PYTHON="${PYTHON:-$USER_HOME/envs/torch211/bin/python}"
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 # Make `from sweep.X import Y` and `from tools.X import Y` work regardless of
 # the test file's invocation path. Many test files do `sys.path.insert(0, REPO_ROOT)`
@@ -77,7 +85,20 @@ fi
 failures=0
 for tf in $test_files; do
     echo "  ── $tf"
-    if ! "$PYTHON" "$tf" > /tmp/pre-push-test.out 2>&1; then
+    # When running under sudo (canonical push for this repo), drop privileges
+    # back to the original user so tests see the real $HOME, file ownership,
+    # and PATH. Running tests as root makes pool-health checks (test_venv_setup)
+    # spuriously fail and is also wrong: tests should validate the user's env,
+    # not root's.
+    if [ -n "${SUDO_USER:-}" ] && [ "$(id -u)" = "0" ]; then
+        # Do NOT use -E (would carry HOME=/root into the test, breaking
+        # ~/envs path resolution). Instead, sudo -u sets HOME correctly
+        # and we pass only the env vars the tests need.
+        run_as=(sudo -u "$SUDO_USER" env "PYTHONPATH=$PYTHONPATH" "$PYTHON" "$tf")
+    else
+        run_as=("$PYTHON" "$tf")
+    fi
+    if ! "${run_as[@]}" > /tmp/pre-push-test.out 2>&1; then
         echo "  [FAIL] $tf"
         echo "  ─── output ───"
         sed 's/^/    /' /tmp/pre-push-test.out | tail -40
