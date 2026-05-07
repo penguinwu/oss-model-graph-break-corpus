@@ -1,9 +1,9 @@
 # Sweep Experiment Spec — Design Doc
 
-**Revision:** 3
+**Revision:** 4
 **Owner:** otter (with Peng-in-the-loop)
 **Created:** 2026-05-07
-**Status:** draft — pending Peng approval before implementation. Rev 3 incorporates rev 2 adversary review + Peng's "start simple" directive (defer non-essential v1 features to v1.1).
+**Status:** draft — pending Peng approval before implementation. Rev 4 incorporates rev 3 adversary review + Peng's directive to include `derive_spec_from_prior.py` in v1 (because it directly supports the NGB verify re-sweep — the immediate next launch we want to do).
 
 ---
 
@@ -99,7 +99,7 @@ EXACTLY ONE of the following keys must be present in `cohort`:
 |---|---|---|
 | `derive_from` | yes | Path to a prior run's results file (typically `identify_results.json` or `explain_results.json`) |
 | `filter` | yes | Filter expression (see §3.1.6) |
-| `source_sha256` | yes | SHA256 of the source file at spec-creation time. Validator REFUSES if source's current sha256 doesn't match. Forces awareness when prior run is regenerated. v1 expects the spec author to compute this manually (`sha256sum <source-file>`); v1.1 may add a `--refresh-content-hashes` helper. |
+| `source_sha256` | yes | SHA256 of the source file at spec-creation time. Validator REFUSES if source's current sha256 doesn't match. Forces awareness when prior run is regenerated. v1 expects the spec author to compute this manually (`sha256sum <source-file>`); v1.1 may add a `--refresh-content-hashes` helper. **Placeholder handling:** if the spec author writes a literal `<sha256 captured at spec-creation time>` (or any value matching `<.*>` literal), the validator REFUSES with a help message containing the exact `sha256sum <derive_from-path>` command — distinct from a generic "sha256 mismatch" error. (Closes rev-3 adversary new gap #1.) |
 
 (`cohort.cache` was in rev 2 but is dropped from v1 per Peng's "start simple" — it was documentation-only and created a stale-cache failure mode. v1.1 may add it back if there's demand.)
 
@@ -171,7 +171,7 @@ Three stages: `gate`, `sample`, `full`. Each derives a launch command from the s
 |---|---|---|---|
 | Sub-sample size | `min(gate_size, limit)` | `min(sample_size, limit)` | `limit` if set, else full cohort |
 | Sub-sample written to | `/tmp/<name>-gate.json` | `/tmp/<name>-sample.json` | N/A |
-| `--models` / `--models-from` | Sub-sample → `--models` (with `--allow-bare-cohort` only if sub-sample preservation disabled) | Same as gate | If Form 1: `--models-from` + `--filter`; if Form 2: `--models <path>`; if Form 3: inline materialized to `/tmp/<name>-full.json` + `--allow-bare-cohort` |
+| `--models` / `--models-from` | Sub-sample → `--models` (NO `--allow-bare-cohort` because Phase 1.5 preserves _metadata in sub-samples — they are CANONICAL cohorts per §3.4) | Same as gate | If Form 1: `--models-from` + `--filter`; if Form 2: `--models <path>`; Form 3 deferred to v2 |
 | `--output-dir` | template with `{stage}=gate` | template with `{stage}=sample` | template with `{stage}=full` |
 | `--run-name` | template with `{stage}=gate` | template with `{stage}=sample` | template with `{stage}=full` |
 | nohup | Foreground by default | Foreground by default | nohup by default |
@@ -189,10 +189,12 @@ Three stages: `gate`, `sample`, `full`. Each derives a launch command from the s
   ...all parent fields preserved (derived_from, filter, source_versions, etc.)...,
   "sub_sampled_from": "<parent cohort path>",
   "sub_sample_size": 5,
-  "sub_sample_seed": 42,
+  "sub_sample_seed_resolved": 13188663043791988478,
   "sub_sample_parent_sha256": "<parent cohort sha256 at sample time>"
 }
 ```
+
+The recorded `sub_sample_seed_resolved` is the integer seed actually used (whether explicit from `spec.sub_sample_seed` or derived via `_seed_from_cohort` when spec is `null`). Reading the sub-sample's `_metadata` always reproduces the sample. (Field renamed from rev 2's `sub_sample_seed` per rev-3 adversary new gap #4 — the recorded value is the resolved int, not the spec setting.)
 
 **Consequence:** sub-samples are CANONICAL cohorts (not bare lists). The validator runs full §4 validation on them. `--allow-bare-cohort` is NOT needed for spec-derived sub-samples. This closes adversary gap #14 cleanly: sub-samples carry provenance + are version-checkable.
 
@@ -261,8 +263,9 @@ The emitted bash MUST:
 - `cd` to repo root before launch
 - Verify venv path exists at runtime: `[ -x "$VENV" ] || { echo "venv missing: $VENV"; exit 2; }`
 - Verify cohort path exists at runtime: `[ -f "$COHORT" ] || { echo "cohort missing"; exit 2; }`
+- Verify output dir doesn't already exist: `[ -d "$OUT" ] && { echo "output dir exists: $OUT (re-emit to get a fresh timestamp)"; exit 3; }` — this catches same-second re-runs of the same emission, closing rev-3 adversary new gap #2.
 
-(Closes adversary gap #11.)
+(Closes adversary gap #11 from rev 1 + rev-3 new gap #2.)
 
 ## 5. Workflows
 
@@ -390,10 +393,13 @@ echo "Launched. PID=$(cat $OUT/launch.pid). Monitor: tail -f $OUT/launch.log"
 # Watchdog cron (mandatory for full stage)
 ( crontab -l ; echo "*/10 * * * * $VENV ~/projects/oss-model-graph-break-corpus/sweep/sweep_watchdog.py $PWD/$OUT/ --interval-min 10 --post-to spaces/AAQANraxXE4 >> /tmp/sweep-watchdog.log 2>&1" ) | crontab -
 
-# Wake-cron at +30 min for invariant check (per spec.wake_cron_eta_min)
-echo "Schedule wake-cron via myclaw-cron with prompt:"
-echo "  Run: $VENV tools/check_cohort_invariants.py --post-sweep $OUT/identify_results.json"
-echo "  Reply: \"PASS\" or \"FAIL: <details>\""
+# Wake-cron at +30 min for invariant check (per spec.wake_cron_eta_min).
+# Emitted as a LITERAL myclaw-cron registration command — copy-paste-and-run, no English prose.
+# (Per rev-3 adversary feedback: English advisory re-opens the wake-cron-misfire failure mode
+# because the human re-types the prompt and may drop a flag.)
+WAKE_AT_EPOCH=$(($(date +%s) + 30*60))
+echo "Register wake-cron via:"
+echo "  meta cron one-shot --at $WAKE_AT_EPOCH --prompt \"Run: $VENV tools/check_cohort_invariants.py --post-sweep $OUT/identify_results.json. Reply: PASS or FAIL: <details>. Post to spaces/AAQANraxXE4 via --as-bot.\""
 ```
 
 ### Example 4: derive_spec_from_prior.py round-trip
@@ -509,15 +515,16 @@ The `skills/sweep.md` and `skills/test-sweep-changes/SKILL.md` skills are partia
 
 5. **Both skills' revision logs** — entries dated to the spec-system commit referencing this design doc.
 
-6. **Mechanical enforcement** (Phase 0 test): `tools/test_skill_headers.py` greps both skill files for the verbatim STOP header strings and fails CI if absent. Cheap, mechanical, makes §9 load-bearing instead of trust-only.
+6. **Mechanical enforcement** (Phase 0 test): `tools/test_skill_headers.py` greps both skill files for the verbatim STOP header strings AND the nightly carve-out paragraph. Both must be present. Test fails CI if either is absent or modified. Per rev-3 adversary new gap #5: explicit grep scope is "the entire STOP block including the nightly carve-out paragraph." Editorial changes to either trigger a CI failure that requires explicit re-acknowledgment.
 
 Without these changes (especially #6), the spec system lands but is silently bypassed.
 
 ## 10. What's NOT in v1 (intentional non-goals — "start simple" per Peng)
 
 **Deferred to v1.1:**
-- **`derive_spec_from_prior.py`** — would help reproduction; not critical for new launches. v1 humans write specs from scratch.
-- **`derive_wake_cron.py`** — v1 ships an advisory line in the emitted bash; v1.1 emits the full myclaw-cron registration command.
+- **`derive_wake_cron.py` as a separate tool** — v1 emits the LITERAL myclaw-cron registration command inline (per rev-3 adversary feedback; no separate tool needed). v1.1 may extract this into a helper if it grows.
+
+(`derive_spec_from_prior.py` was deferred in rev 3 but moved BACK INTO v1 in rev 4 per Peng — the NGB verify re-sweep needs it, and deferring re-opens the 2026-05-07 afternoon failure mode that motivated this entire effort.)
 - **`--refresh-content-hashes` helper** — v1 spec author runs `sha256sum <file>` manually; v1.1 adds the helper to reduce friction.
 - **`cohort.cache`** (Form 1 optional sub-field) — was in rev 2; dropped from v1 because it's documentation-only and creates a stale-cache failure mode.
 - **Form 4 (`cohort.sources`)** for nightly — nightly retains direct-CLI per §9 carve-out.
@@ -546,13 +553,15 @@ Without these changes (especially #6), the spec system lands but is silently byp
 
 **Phase 2:** `tools/derive_sweep_commands.py` — uses Phase 1 module, emits bash for each stage. Includes `--validate`, `--report`, `--stage X --emit` modes. Adds tests.
 
-**Phase 3:** Skill updates (per §9). Update local CLAUDE.md trigger entry. Run `tools/test_skill_headers.py` to verify mechanical enforcement passes.
+**Phase 3:** `tools/derive_spec_from_prior.py` — re-uses `tools/run_experiment.py` argparse (DRY), reads `sweep_state.json`'s `args` field, emits a v1 spec. REQUIRES explicit `--venv <path>` (sweep_state.json doesn't record resolved venv path). Adds tests including round-trip fidelity (re-emit-from-derived-spec → diff against original args). **In v1 per Peng directive 2026-05-07 18:26: directly supports the NGB verify re-sweep use case and closes the 2026-05-07 afternoon memory-vs-record failure mode.**
 
-**Phase 4:** Write a spec for the next-up canonical NGB verify (the M2 use case from today). Use it to validate the system end-to-end. This becomes the first real spec.
+**Phase 4:** Skill updates (per §9). Update local CLAUDE.md trigger entry. Run `tools/test_skill_headers.py` to verify mechanical enforcement passes.
 
-**Deferred to v1.1 (separate workstream):** `derive_spec_from_prior.py`, `derive_wake_cron.py`, `--refresh-content-hashes`, Form 4 (sources), `cohort.cache`. Each gets its own design + adversary review when scheduled.
+**Phase 5:** Use `derive_spec_from_prior.py` against the abandoned 2026-05-06 NGB verify run to produce the v1 spec for the new NGB verify launch. This validates the system end-to-end and IS the spec we use for the next launch.
 
-**Estimated v1 effort:** ~4 hours total (vs rev 2's 6-8 hour estimate before the simplifications).
+**Deferred to v1.1 (separate workstream):** `derive_wake_cron.py` (extracted from inline emission), `--refresh-content-hashes`, Form 4 (sources for nightly), `cohort.cache`. Each gets its own design + adversary review when scheduled.
+
+**Estimated v1 effort:** ~5 hours total (rev 3 was ~4h before adding `derive_spec_from_prior.py` back).
 
 ---
 
@@ -563,3 +572,4 @@ Without these changes (especially #6), the spec system lands but is silently byp
 | 1 | 2026-05-07 | Initial draft — captures Peng's proposal + my proposed extensions. |
 | 2 | 2026-05-07 | Addresses adversary review of rev 1 (14 gaps + 16 tests). Major changes: (a) `cohort` field replaced by block with three forms (Form 1 derivation preferred, per Peng question); (b) added required `spec_version`, `torch` fields; (c) made `compile_kwargs` and `dynamo_config` REQUIRED (no defaulting); (d) version-coherence check made asymmetric (cohort-declares-but-spec-doesn't = REJECTED); (e) cohort content pinning via sha256 (Form 1: `source_sha256`; Form 2: `expected_sha256`); (f) `strict_modellibs` default ON; (g) added optional fields covering ALL relevant CLI flags (limit, dynamic_dim, stability, setup_script, cuda_variant, etc.) per §8 coverage table; (h) `output_dir_template` default includes HHMMSS suffix; (i) sub-sample preservation via §3.4 (sample_cohort.py upgrade); (j) emitted bash includes `set -euo pipefail` + path safety net per §4.6; (k) `post_sweep_check:` field added (per adversary opinion on open Q3); (l) Phase 4 skill migration spelled out concretely (per gap #9); (m) Phase 0 (test contract) added before Phase 1; (n) `--allow-bare-cohort` renamed to `bare-list` to match validator code; (o) Form 3 (inline) deferred to v2. |
 | 3 | 2026-05-07 | Addresses adversary review of rev 2 (3 HIGH new gaps + 7 MED + 3 LOW + 20 additional tests) + Peng's "start simple" directive. Autonomous changes: (a) replaced parameterized `version-mismatch:<pkg>` with separate `version_mismatch_allow` field — cleaner; (b) `sub_sample_seed` default changed from `42` to `null` (cohort-anchored via `_seed_from_cohort`) — fixes regression; (c) clarified CLI flag stays `--allow-bare-cohort`; only spec vocabulary uses `bare-list`; (d) `post_sweep_check` made passes-aware (defaults to `identify` or `explain` results based on `passes`); (e) Phase 6 (sample_cohort.py upgrade) renamed Phase 1.5 + made strict prereq of Phase 2; (f) added `test_skill_headers.py` to Phase 0 for §9 mechanical enforcement; (g) dropped `cohort.cache` from v1 (defer to v1.1); (h) added nightly carve-out to §9 STOP header; (i) v1 simplified — `derive_spec_from_prior.py`, `derive_wake_cron.py`, `--refresh-content-hashes`, Form 4 all deferred to v1.1 separate workstream. Implementation effort estimate dropped from 6-8 hours to ~4 hours. Pending Peng approval before implementation. |
+| 4 | 2026-05-07 | Addresses adversary review of rev 3 (2 RECONSIDER deferrals + 6 new gaps + 8 additional tests). Autonomous changes: (a) sha256 placeholder validator behavior: detects literal `<...>` pattern + emits help with `sha256sum <path>` command (closes new gap #1); (b) emitted bash adds `[ -d "$OUT" ] && exit 3` to safety preamble (closes new gap #2 — same-second collision); (c) §3.3 cleaned up — `--allow-bare-cohort` NOT emitted by spec system after Phase 1.5 (sub-samples are canonical) (closes new gaps #3, #4); (d) §3.4 example renamed `sub_sample_seed` field to `sub_sample_seed_resolved` for clarity (closes new gap #4); (e) §6 Example 3 wake-cron advisory becomes literal myclaw-cron registration command (no English prose) — closes wake-cron RECONSIDER without needing separate `derive_wake_cron.py` tool; (f) §9 #6 `test_skill_headers.py` scope explicitly defined as "STOP block + nightly carve-out paragraph verbatim"; (g) **`derive_spec_from_prior.py` moved BACK into v1** per Peng directive: directly supports the NGB verify re-sweep + closes the 2026-05-07 afternoon memory-vs-record failure mode that motivated this entire effort. Phase added: Phase 3 builds the tool, Phase 5 uses it to derive the actual NGB verify spec from the abandoned 2026-05-06 run. v1 effort estimate: ~4h → ~5h. |
