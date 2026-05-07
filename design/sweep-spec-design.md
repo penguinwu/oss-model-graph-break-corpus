@@ -1,9 +1,9 @@
 # Sweep Experiment Spec — Design Doc
 
-**Revision:** 4
+**Revision:** 5
 **Owner:** otter (with Peng-in-the-loop)
 **Created:** 2026-05-07
-**Status:** draft — pending Peng approval before implementation. Rev 4 incorporates rev 3 adversary review + Peng's directive to include `derive_spec_from_prior.py` in v1 (because it directly supports the NGB verify re-sweep — the immediate next launch we want to do).
+**Status:** draft — pending Peng approval before implementation. Rev 5 adds §5.2.1 (derive_spec_from_prior tool behavior specification) per Peng's question "do we need to extend the spec to express such use cases?" Answer: no new fields, but tool behavior needed pinning down.
 
 ---
 
@@ -283,8 +283,44 @@ The emitted bash MUST:
 1. `tools/derive_spec_from_prior.py sweep_results/experiments/<prior-run>/ --venv <venv-path>` → emits a spec file
    - Re-uses `tools/run_experiment.py`'s argparse for parsing (DRY)
    - REQUIRES explicit `--venv` because `sweep_state.json` doesn't record resolved venv path (sweep_state records `versions.python` which is a fingerprint string, not a path) — closes adversary gap #8
+
 2. Edit (e.g., bump versions, change cohort)
 3. Continue from §5.1 step 2
+
+#### 5.2.1 Tool behavior (specifies what derive_spec_from_prior actually emits)
+
+**Cohort form selection:**
+- If prior run used `--models-from <source> --filter <expr>`: emit Form 1 with `derive_from = <source>` and `filter = <expr>`
+- If prior run used `--models <cohort-path>`: open the cohort file
+  - If cohort has `_metadata.derived_from + filter`: emit Form 1 using those values (preferred — propagates the original derivation)
+  - Else (bare list or partial metadata): emit Form 2 with `path = <cohort-path>`
+
+**sha256 capture (no human computes sha256):**
+- For Form 1: tool reads `derive_from` source file, computes sha256, writes to `cohort.source_sha256`
+- For Form 2: tool reads cohort path file, computes sha256, writes to `cohort.expected_sha256`
+- The literal `<sha256...>` placeholder pattern (per §3.1.5) is NEVER emitted by the tool — only by humans writing specs from scratch
+
+**v1.1-deferred flag handling:**
+- If the prior's `args` field contains `--source`, `--torch <spec>`, `--save-cohort`, or any other flag listed as v1.1-deferred in §8: REFUSE with explicit error naming the unsupported flag and pointing to the v1.1 deferral list
+- The user can manually write a partial spec OR wait for v1.1
+
+**Missing cohort file:**
+- If the prior used `--models <cohort-path>` and that file no longer exists: REFUSE (spec can't be validated without the file; can't compute sha256)
+
+**Output dir / run-name handling:**
+- The prior's `--output-dir` and `--run-name` are NOT copied into the spec — they're derived per stage from `output_dir_template` and `run_name_template`
+- Tool prints an informational line: `previous run-name was '<old>'; current spec will derive new names per template`
+
+**Default `name` field:**
+- Derived from prior run's `--run-name` with a `-repro-<YYYY-MM-DD>` suffix (e.g., `ngb-verify-2026-05-06-repro-2026-05-07`)
+- User typically edits to something more meaningful before launch
+
+**Default `description` field:**
+- Auto-populated as `Reproduced from <prior-run-dir> on <date>. Edit before launch.` — the "Edit before launch" suffix is intentional friction so the user is forced to update it
+
+**Round-trip fidelity contract:**
+- For any prior run whose `args` contain only v1-supported flags: `derive_spec → derive_sweep_commands --stage full --emit` produces a `tools/run_experiment.py sweep ...` invocation whose flag SET equals the prior `args` SET (modulo `--output-dir`, `--run-name`, modellib path-vs-version form)
+- This is testable (Group H test H1 in `design/sweep-spec-test-contract.md`) and is the load-bearing contract for closing the 2026-05-07 afternoon failure mode
 
 ### 5.3 Bump a library version
 
@@ -573,3 +609,4 @@ Without these changes (especially #6), the spec system lands but is silently byp
 | 2 | 2026-05-07 | Addresses adversary review of rev 1 (14 gaps + 16 tests). Major changes: (a) `cohort` field replaced by block with three forms (Form 1 derivation preferred, per Peng question); (b) added required `spec_version`, `torch` fields; (c) made `compile_kwargs` and `dynamo_config` REQUIRED (no defaulting); (d) version-coherence check made asymmetric (cohort-declares-but-spec-doesn't = REJECTED); (e) cohort content pinning via sha256 (Form 1: `source_sha256`; Form 2: `expected_sha256`); (f) `strict_modellibs` default ON; (g) added optional fields covering ALL relevant CLI flags (limit, dynamic_dim, stability, setup_script, cuda_variant, etc.) per §8 coverage table; (h) `output_dir_template` default includes HHMMSS suffix; (i) sub-sample preservation via §3.4 (sample_cohort.py upgrade); (j) emitted bash includes `set -euo pipefail` + path safety net per §4.6; (k) `post_sweep_check:` field added (per adversary opinion on open Q3); (l) Phase 4 skill migration spelled out concretely (per gap #9); (m) Phase 0 (test contract) added before Phase 1; (n) `--allow-bare-cohort` renamed to `bare-list` to match validator code; (o) Form 3 (inline) deferred to v2. |
 | 3 | 2026-05-07 | Addresses adversary review of rev 2 (3 HIGH new gaps + 7 MED + 3 LOW + 20 additional tests) + Peng's "start simple" directive. Autonomous changes: (a) replaced parameterized `version-mismatch:<pkg>` with separate `version_mismatch_allow` field — cleaner; (b) `sub_sample_seed` default changed from `42` to `null` (cohort-anchored via `_seed_from_cohort`) — fixes regression; (c) clarified CLI flag stays `--allow-bare-cohort`; only spec vocabulary uses `bare-list`; (d) `post_sweep_check` made passes-aware (defaults to `identify` or `explain` results based on `passes`); (e) Phase 6 (sample_cohort.py upgrade) renamed Phase 1.5 + made strict prereq of Phase 2; (f) added `test_skill_headers.py` to Phase 0 for §9 mechanical enforcement; (g) dropped `cohort.cache` from v1 (defer to v1.1); (h) added nightly carve-out to §9 STOP header; (i) v1 simplified — `derive_spec_from_prior.py`, `derive_wake_cron.py`, `--refresh-content-hashes`, Form 4 all deferred to v1.1 separate workstream. Implementation effort estimate dropped from 6-8 hours to ~4 hours. Pending Peng approval before implementation. |
 | 4 | 2026-05-07 | Addresses adversary review of rev 3 (2 RECONSIDER deferrals + 6 new gaps + 8 additional tests). Autonomous changes: (a) sha256 placeholder validator behavior: detects literal `<...>` pattern + emits help with `sha256sum <path>` command (closes new gap #1); (b) emitted bash adds `[ -d "$OUT" ] && exit 3` to safety preamble (closes new gap #2 — same-second collision); (c) §3.3 cleaned up — `--allow-bare-cohort` NOT emitted by spec system after Phase 1.5 (sub-samples are canonical) (closes new gaps #3, #4); (d) §3.4 example renamed `sub_sample_seed` field to `sub_sample_seed_resolved` for clarity (closes new gap #4); (e) §6 Example 3 wake-cron advisory becomes literal myclaw-cron registration command (no English prose) — closes wake-cron RECONSIDER without needing separate `derive_wake_cron.py` tool; (f) §9 #6 `test_skill_headers.py` scope explicitly defined as "STOP block + nightly carve-out paragraph verbatim"; (g) **`derive_spec_from_prior.py` moved BACK into v1** per Peng directive: directly supports the NGB verify re-sweep + closes the 2026-05-07 afternoon memory-vs-record failure mode that motivated this entire effort. Phase added: Phase 3 builds the tool, Phase 5 uses it to derive the actual NGB verify spec from the abandoned 2026-05-06 run. v1 effort estimate: ~4h → ~5h. |
+| 5 | 2026-05-07 | Addresses Peng's question "do we need to extend the spec to express such use cases?" Answer: no new spec FIELDS needed; the existing format covers all v1 derive_spec_from_prior use cases. But §5.2 needed more BEHAVIOR specification. Added §5.2.1 specifying: (a) cohort form selection (Form 1 preferred when prior cohort has _metadata.derived_from); (b) sha256 capture at derivation time (humans never hand-compute); (c) v1.1-deferred flag handling (REFUSE with explicit error); (d) missing-cohort-file behavior (REFUSE); (e) output_dir/run-name not copied (template-derived); (f) default `name` and `description` field auto-population with `-repro-<date>` suffix and "Edit before launch" friction; (g) round-trip fidelity contract (testable via Group H test H1). |
