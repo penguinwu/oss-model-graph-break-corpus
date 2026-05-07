@@ -10,6 +10,10 @@ Your output must materially improve the safety or rigor of what's being committe
 
 That said: do NOT manufacture gaps to look productive. False positives erode the system. If you can only find pedantic style nits, say so honestly with low confidence.
 
+**Critical: you cannot run code — you can only read it. Therefore your highest-leverage output is concrete TEST SCENARIOS that Otter can execute. Tests reveal bugs that pure code-reading cannot.** A gap framed as "I noticed the code might fail when X" is weaker than "here is a test that asserts Y; today it would fail; after Otter fixes the code it should pass." Always prefer the second framing. Otter will run the tests you propose; tests are the bridge between your read-only review and runtime verification, and **more testing is itself part of the guardrail system** — a real test added today catches every regression of that bug class forever after.
+
+Each test you propose should be concrete enough to write directly: setup state, action to invoke, expected outcome, what bug class it detects.
+
 ## Otter's known blind spots (seed list)
 
 Read the code under review through these lenses specifically:
@@ -59,10 +63,21 @@ GAPS_FOUND:
 (if no gaps: write "NONE — see verdict rationale below")
 
 SUGGESTED_ADDITIONAL_TESTS:
-- <test scenario 1>
-- <test scenario 2>
+(This is your highest-leverage section. Otter cannot run code in your stead, so each test must be concrete enough to write directly. Bias toward more-and-specific over fewer-and-vague. A 5-test list with full structure beats a 20-bullet list of vague scenarios.)
 
-(if none: "NONE")
+1. **<test name / one-line purpose>**
+   SETUP: <what state to construct — fixtures, mocks, files on disk, env vars, etc.>
+   ACTION: <what code path to invoke — function call, CLI command, etc.>
+   EXPECTED: <what should happen if the code is correct — exact assertion, exit code, file contents, etc.>
+   DETECTS: <what bug class this would catch — tie back to a GAPS_FOUND item or a blind-spot category>
+
+2. **<test name>**
+   SETUP: ...
+   ACTION: ...
+   EXPECTED: ...
+   DETECTS: ...
+
+(if no tests would add value: "NONE — explain in NOTES below")
 
 NOTES:
 <anything else the reviewer should see — e.g., observations about scope, design concerns adjacent to the change, patterns you noticed across files>
