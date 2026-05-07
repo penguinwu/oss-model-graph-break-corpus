@@ -2,6 +2,21 @@
 
 How to add models, fix compiler quality issues (graph breaks, numerical divergences, infra failures), run sweeps, and extend the corpus.
 
+## Where to find things
+
+If you don't know which tool or module to use, start here:
+
+| Need | Look at |
+|---|---|
+| "What tools exist? What does each do?" | [`tools/README.md`](../tools/README.md) — categorized index of every tool with one-line synopsis + use-when |
+| "How is the sweep package organized?" | [`sweep/README.md`](../sweep/README.md) — module-by-module architecture map for `sweep/` |
+| "How do I run / inspect / verify a sweep?" | [`docs/running-sweeps.md`](running-sweeps.md) — workflow doc; agents also load [`skills/sweep.md`](../skills/sweep.md) at session start |
+| "Is my sweep result valid? What invariants do I check?" | [`skills/sweep_sanity_check.md`](../skills/sweep_sanity_check.md) — post-completion guardrail; mandatory before any analysis |
+| "I'm modifying sweep harness code — what's the validation workflow?" | [`skills/test-sweep-changes/SKILL.md`](../skills/test-sweep-changes/SKILL.md) — 5-gate workflow |
+| "I'm filing a pytorch upstream issue with a repro" | [`tools/file_issues.py pytorch-upstream`](../tools/file_issues.py) + the five-must-haves checklist in [`tools/issue_filing_plan.md`](../tools/issue_filing_plan.md) §2 |
+
+**Convention:** when you add a new tool to `tools/`, add an entry to `tools/README.md` in the same commit. When you change the sweep architecture, update `sweep/README.md`.
+
 ## Fix a model
 
 Model-specific fixes live in `sweep/worker.py`:
