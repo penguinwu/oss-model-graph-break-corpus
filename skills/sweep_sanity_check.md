@@ -17,10 +17,10 @@ Living checklist of what "looks right" for a sweep. Walk it at three points: pre
 Default is STRICT for curated cohorts (verify, correctness, explain follow-ups, hand-built model lists). For full-corpus identify sweeps, A1-A3 and C1-C2 are LENIENT (some error at corpus scale is normal). For cohort-expansion runs, see §Cohort expansion.
 
 ### Cohort
-- **A1.** No `module X has no attribute Y` create_errors (cohort drift / version contamination)
-- **A2.** If `--models <flat.json>`: cohort file has a `_metadata` block declaring `source_run` + `filter` + `target_versions`
-- **A3.** Every cohort model exists in the declared source per the declared filter — no extras (cautionary: NGB verify 2026-05-06 had MiniCPMV4_6 + PPFormulaNet that weren't in the explain pass it was supposedly filtered from)
-- **A4.** No cohort model is in `skip_models.json`
+- **A1.** No `module X has no attribute Y` create_errors (cohort drift / version contamination). Mechanically checked by `tools/check_cohort_invariants.py --post-sweep <results.json>`.
+- **A2.** If `--models <cohort.json>`: cohort file has a `_metadata` block declaring `derived_from` + `filter` + `model_count` + `source_versions` (NOT "target_versions" — name was historically wrong; corrected 2026-05-07 per adversary-review case_id 2026-05-07-124100). Mechanically enforced at load time by `sweep/cohort_validator.py` (REJECTED unless `--allow-bare-cohort`).
+- **A3.** Every cohort model exists in the declared source per the declared filter — no extras (cautionary: NGB verify 2026-05-06 had MiniCPMV4_6 + PPFormulaNet that weren't in the explain pass it was supposedly filtered from). Mechanically checked by `tools/check_cohort_invariants.py <cohort.json>` (pre-launch).
+- **A4.** No cohort model is in `skip_models.json`. Mechanically checked by `tools/check_cohort_invariants.py <cohort.json>`.
 
 ### Status
 - **C1.** No `create_error` (cohort / loader / network bug)
@@ -59,3 +59,4 @@ The expansion run is a discovery pass — it exists to surface what doesn't yet 
 | Date | Change |
 |---|---|
 | 2026-05-07 | Initial v3 — simplified from v2.1 (~80 lines vs 286). Cut: per-invariant 5-field blocks, four named apply contexts, sweep-type matrix, lifecycle hygiene family (operational, belongs in sweep.md), D1/D2 sub-flavors of expansion, G2/G3 (belong in known_errors.json `_doc` and a weekly hygiene routine respectively), triage-authority and wiring sections. Kept: the invariants themselves, the cohort-expansion bump-vs-new rule, the triage discipline. |
+| 2026-05-07 | v3.1 (adversary-review case_id 2026-05-07-124100-cohort-regen-fix): A2 wording corrected (`target_versions` → `source_versions`; was a live drift between this skill text and the code's `_metadata.source_versions`). A1, A2, A3, A4 each cross-referenced to mechanical executors (`sweep/cohort_validator.py`, `tools/check_cohort_invariants.py`) so the markdown checklist is no longer the only enforcement. |

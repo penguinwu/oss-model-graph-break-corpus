@@ -740,41 +740,49 @@ def run_sweep(args):
         with open(state_file, "w") as f:
             json.dump(early_state, f, indent=2)
     elif args.models:
+        # Validate via sweep.cohort_validator (adversary-review case_id 2026-05-07-124100).
+        # Default behavior is fail-loud on bare list, missing metadata keys, empty/partial
+        # source_versions, version mismatch, and stale cohorts. Each check has an explicit
+        # --allow-* override flag. Overrides are recorded in sweep_state.json.
         try:
-            with open(args.models) as f:
-                loaded = json.load(f)
-        except json.JSONDecodeError as e:
-            print(f"ERROR: Invalid JSON in {args.models}: {e}")
+            from sweep.cohort_validator import validate_cohort, CohortValidationError
+        except ImportError:
+            from cohort_validator import validate_cohort, CohortValidationError
+        try:
+            validated = validate_cohort(
+                Path(args.models),
+                allow_bare=getattr(args, "allow_bare_cohort", False),
+                allow_empty_versions=getattr(args, "allow_empty_versions", False),
+                allow_partial_versions=getattr(args, "allow_partial_versions", False),
+                allow_version_mismatch=getattr(args, "allow_version_mismatch", False),
+                allow_stale=getattr(args, "allow_stale_cohort", False),
+                version_info=version_info,
+            )
+        except CohortValidationError as e:
+            print(f"[run_sweep] --models {args.models} REJECTED: {e}", file=sys.stderr)
+            print(f"[run_sweep] failure code: {e.code}", file=sys.stderr)
+            if e.details:
+                print(f"[run_sweep] details: {e.details}", file=sys.stderr)
             sys.exit(1)
-        except FileNotFoundError:
-            print(f"ERROR: File not found: {args.models}")
-            sys.exit(1)
-        # Accept both shapes: flat list (legacy) OR {_metadata, models} (saved cohort).
-        if isinstance(loaded, dict) and "models" in loaded:
-            specs = loaded["models"]
-            cohort_meta = loaded.get("_metadata", {}) or {}
-            # If the saved cohort has source_versions, run the same check as --models-from
-            if cohort_meta.get("source_versions") and version_info:
-                src_v = cohort_meta["source_versions"]
-                mismatches = [f"  {p}: source={src_v.get(p)!r}  launching={version_info.get(p)!r}"
-                              for p in ("torch", "transformers", "diffusers")
-                              if src_v.get(p) and version_info.get(p) and src_v.get(p) != version_info.get(p)]
-                if mismatches:
-                    print(f"[run_sweep] --models {args.models} VERSION MISMATCH (cohort has _metadata):",
-                          file=sys.stderr)
-                    print("\n".join(mismatches), file=sys.stderr)
-                    if not getattr(args, "allow_version_mismatch", False):
-                        print("[run_sweep] aborting; pass --allow-version-mismatch to override",
-                              file=sys.stderr)
-                        sys.exit(1)
-            print(f"Loaded {len(specs)} models from {args.models} (with _metadata)")
-        else:
-            specs = loaded
-            print(f"Loaded {len(specs)} models from {args.models}")
-            # Flat list — no provenance, can't version-check. WARN.
-            print(f"[run_sweep] WARNING: --models was a flat list; cohort has no provenance, "
-                  f"cannot detect version mismatches. Prefer --models-from for new work.",
+        specs = validated.specs
+        # Record any overrides used + the validation outcome in sweep_state.
+        overrides_used = [
+            name for name, used in (
+                ("allow_bare_cohort", getattr(args, "allow_bare_cohort", False)),
+                ("allow_empty_versions", getattr(args, "allow_empty_versions", False)),
+                ("allow_partial_versions", getattr(args, "allow_partial_versions", False)),
+                ("allow_version_mismatch", getattr(args, "allow_version_mismatch", False)),
+                ("allow_stale_cohort", getattr(args, "allow_stale_cohort", False)),
+            ) if used
+        ]
+        if overrides_used:
+            early_state["models_cohort_overrides_used"] = overrides_used
+            print(f"[run_sweep] cohort validation overrides used: {overrides_used}",
                   file=sys.stderr)
+        if validated.is_bare:
+            print(f"Loaded {len(specs)} models from {args.models} (BARE list — provenance overridden)")
+        else:
+            print(f"Loaded {len(specs)} models from {args.models} (validated, source_versions={validated.source_versions})")
     else:
         # Enumerate from source(s)
         from models import enumerate_timm, enumerate_hf, enumerate_diffusers, enumerate_custom

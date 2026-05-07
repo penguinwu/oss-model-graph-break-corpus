@@ -111,7 +111,18 @@ def _load_sibling_versions(path: Path) -> dict:
         return {}
 
 
+REQUIRED_VERSION_KEYS = ("torch", "transformers", "diffusers")
+
+
 def main() -> int:
+    # Adversary-review case_id 2026-05-07-124100 gap 9: explicit Python-version
+    # guard. Path.is_relative_to() is 3.9+; print a useful error instead of an
+    # AttributeError if someone runs from an older venv.
+    if sys.version_info < (3, 9):
+        sys.exit(f"ERROR: tools/generate_cohort.py requires Python >= 3.9 "
+                 f"(got {sys.version_info.major}.{sys.version_info.minor}). "
+                 f"Use ~/envs/torch211/bin/python or newer.")
+
     p = argparse.ArgumentParser(
         description="Generate a sweep cohort from a prior sweep's results, with provenance metadata.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -125,6 +136,16 @@ def main() -> int:
                    help='Output cohort path (typically experiments/configs/<name>.json)')
     p.add_argument('--force', action='store_true',
                    help='Overwrite output file if it exists')
+    # Adversary-review case_id 2026-05-07-124100 gap 6:
+    # default fail-loud on partial/empty source_versions. Overrides require
+    # explicit opt-in so the generator and loader stay symmetric.
+    p.add_argument('--allow-empty-versions', action='store_true',
+                   help='Allow generating a cohort whose source has NO versions metadata. '
+                        'Default: REFUSED (the resulting cohort cannot be version-checked).')
+    p.add_argument('--allow-partial-versions', action='store_true',
+                   help='Allow generating a cohort whose source has only some of '
+                        'torch/transformers/diffusers in metadata.versions. Default: REFUSED '
+                        '(cross-version mismatches in the unchecked library silently corrupt results).')
     args = p.parse_args()
 
     if args.output.exists() and not args.force:
@@ -137,9 +158,25 @@ def main() -> int:
     results, source_versions = load_source(args.source)
     print(f"  loaded {len(results)} result rows")
     if source_versions:
+        present = sorted(source_versions.keys())
+        missing = [k for k in REQUIRED_VERSION_KEYS if k not in source_versions]
         print(f"  source versions: {source_versions}")
+        if missing and not args.allow_partial_versions:
+            sys.exit(
+                f"ERROR: source versions are PARTIAL (missing: {', '.join(missing)}; "
+                f"present: {', '.join(present)}).\n"
+                f"  Cross-version mismatches in unchecked libraries (e.g. transformers) silently\n"
+                f"  corrupt sweep results — this is the run-1 failure shape from 2026-05-06.\n"
+                f"  Pass --allow-partial-versions to override (records partial state in cohort)."
+            )
     else:
-        print(f"  WARNING: no source_versions found in metadata or sibling versions.json")
+        if not args.allow_empty_versions:
+            sys.exit(
+                f"ERROR: source has NO versions metadata (and no sibling versions.json).\n"
+                f"  The resulting cohort would have no version-compat assertion.\n"
+                f"  Pass --allow-empty-versions to override (records empty state in cohort)."
+            )
+        print(f"  WARNING: no source_versions found in metadata or sibling versions.json (--allow-empty-versions set)")
 
     predicate = parse_filter_predicate(args.filter_expr)
     matching_names = {r['name'] for r in results if predicate(r) and 'name' in r}

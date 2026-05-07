@@ -123,16 +123,95 @@ def test_metadata_block_present():
         assert meta["source_versions"]["torch"] == "2.13.0"
 
 
-def test_metadata_versions_empty_when_source_lacks():
-    """Source without versions metadata produces empty source_versions (warning, not crash)."""
+def test_metadata_versions_empty_source_refused_by_default():
+    """Source without versions metadata REJECTED by default (gap 6, adversary-review case_id 2026-05-07-124100).
+
+    Previously this test asserted empty source_versions was FINE — that test enforced the
+    very bug that produced the 2026-05-06 incident. Inverted: empty must now require
+    --allow-empty-versions to succeed.
+    """
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
         source = _make_source([{"name": "A", "source": "hf", "status": "ok"}], tmp, with_versions=False)
         out = tmp / "cohort.json"
         r = _run(source, "status == ok", out)
-        assert r.returncode == 0
+        assert r.returncode != 0, f"empty-versions cohort should be refused; got rc={r.returncode}"
+        assert "PARTIAL" in r.stderr or "NO versions" in r.stderr or "empty" in r.stderr.lower(), \
+            f"stderr should explain refusal; got: {r.stderr[:300]}"
+
+
+def test_metadata_versions_empty_allowed_with_override():
+    """--allow-empty-versions opts in to legacy behavior."""
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        source = _make_source([{"name": "A", "source": "hf", "status": "ok"}], tmp, with_versions=False)
+        out = tmp / "cohort.json"
+        cmd = [sys.executable, str(TOOL), "--from", str(source), "--filter", "status == ok",
+               "--output", str(out), "--allow-empty-versions"]
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        assert r.returncode == 0, f"override should succeed; rc={r.returncode}, stderr={r.stderr[:300]}"
         data = json.loads(out.read_text())
         assert data["_metadata"]["source_versions"] == {}
+
+
+def test_metadata_versions_partial_refused_by_default():
+    """Source with only torch (no transformers/diffusers) is REJECTED by default (gap 6)."""
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        # Use _make_source but stub out transformers/diffusers
+        source = tmp / "source.json"
+        source.write_text(json.dumps({
+            "metadata": {"versions": {"torch": "2.13.0"}},  # missing transformers + diffusers
+            "results": [{"name": "A", "source": "hf", "status": "ok"}],
+        }))
+        out = tmp / "cohort.json"
+        r = _run(source, "status == ok", out)
+        assert r.returncode != 0, f"partial-versions cohort should be refused; rc={r.returncode}"
+        assert "PARTIAL" in r.stderr, f"stderr should mention PARTIAL; got: {r.stderr[:300]}"
+
+
+def test_metadata_versions_partial_allowed_with_override():
+    """--allow-partial-versions opts in."""
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        source = tmp / "source.json"
+        source.write_text(json.dumps({
+            "metadata": {"versions": {"torch": "2.13.0"}},
+            "results": [{"name": "A", "source": "hf", "status": "ok"}],
+        }))
+        out = tmp / "cohort.json"
+        cmd = [sys.executable, str(TOOL), "--from", str(source), "--filter", "status == ok",
+               "--output", str(out), "--allow-partial-versions"]
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        assert r.returncode == 0, f"override should succeed; rc={r.returncode}"
+        data = json.loads(out.read_text())
+        assert data["_metadata"]["source_versions"] == {"torch": "2.13.0"}
+
+
+def test_round_trip_generator_to_validator_version_mismatch():
+    """Gap 3 / review test 4: generator writes cohort, validator reads it, version mismatch is caught.
+
+    Catches future renames on either side (the live drift the reviewer found in INV-A2:
+    skill said target_versions, code uses source_versions).
+    """
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        source = _make_source([{"name": "A", "source": "hf", "status": "ok"}], tmp,
+                              with_versions=True)  # writes torch 2.13.0
+        cohort = tmp / "cohort.json"
+        r = _run(source, "status == ok", cohort)
+        assert r.returncode == 0
+        # Now load via validator with a DIFFERENT version_info — must reject as VERSION_MISMATCH
+        sys.path.insert(0, str(REPO_ROOT))
+        from sweep.cohort_validator import validate_cohort, CohortValidationError
+        try:
+            validate_cohort(cohort, version_info={
+                "torch": "2.11.0", "transformers": "5.6.2", "diffusers": "0.38.0",
+            })
+        except CohortValidationError as e:
+            assert e.code == "VERSION_MISMATCH", f"got code {e.code!r}"
+            return
+        assert False, "round-trip should have raised VERSION_MISMATCH"
 
 
 def test_carries_forward_spec_fields():
@@ -219,28 +298,71 @@ def test_regression_2026_05_06_real_explain_pass():
 
     The broken cohort file had 214 models built from nightly identify
     status=graph_break filter; the correct cohort is the explain pass
-    status=ok subset (190 models). This test runs against the real explain
-    pass results and asserts the tool produces 190 names — exactly the count
-    that should have been generated last night.
+    status=ok subset. This test runs against a snapshotted name list
+    captured 2026-05-07 (so the test never silently SKIPs after artifact
+    pruning — that was gap 8 in adversary-review case_id 2026-05-07-124100).
+
+    If the snapshot is missing, the test FAILS LOUD (not skip) so missing
+    fixtures don't masquerade as PASS.
     """
+    snapshot = REPO_ROOT / "tools" / "fixtures" / "ngb_2026-05-05_explain_ok_names.json"
     explain = REPO_ROOT / "sweep_results/experiments/nested-gb-2026-05-05-2026-05-05/explain_results.json"
-    if not explain.is_file():
-        # Skip silently if the historical artifact has been pruned
-        print("  SKIP test_regression_2026_05_06_real_explain_pass: source artifact missing")
+
+    # Prefer the snapshot (always available, immune to artifact pruning).
+    if snapshot.is_file():
+        snap_data = json.loads(snapshot.read_text())
+        expected_count = snap_data["model_count"]
+        expected_names = set(snap_data["names"])
+
+        # Test the tool can generate from a synthetic source built FROM the snapshot.
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            synthetic_source = tmp / "synthetic_explain.json"
+            synthetic_source.write_text(json.dumps({
+                "metadata": {"versions": snap_data.get("source_versions", {
+                    "torch": "2.13.0.dev20260502+cu126",
+                    "transformers": "5.6.2",
+                    "diffusers": "0.38.0",
+                })},
+                "results": [{"name": n, "source": "hf", "status": "ok"} for n in expected_names],
+            }))
+            out = tmp / "cohort.json"
+            r = _run(synthetic_source, "status == ok", out)
+            assert r.returncode == 0, f"exited {r.returncode}: {r.stderr}"
+            data = json.loads(out.read_text())
+            assert data["_metadata"]["model_count"] == expected_count, \
+                f"regression: expected {expected_count}, got {data['_metadata']['model_count']}"
+            for contaminated in ("MiniCPMV4_6ForConditionalGeneration", "MiniCPMV4_6Model",
+                                 "PPFormulaNetForConditionalGeneration"):
+                assert contaminated not in {m["name"] for m in data["models"]}, \
+                    f"regression: contaminated extra {contaminated} should not be in result"
         return
-    with tempfile.TemporaryDirectory() as d:
-        out = Path(d) / "cohort.json"
-        r = _run(explain, "status == ok", out)
-        assert r.returncode == 0, f"exited {r.returncode}: {r.stderr}"
-        data = json.loads(out.read_text())
-        assert data["_metadata"]["model_count"] == 190, \
-            f"regression: expected 190 models from explain pass status==ok filter, got {data['_metadata']['model_count']}"
-        # Confirm the broken cohort's contaminated extras are NOT in the regenerated cohort
-        names = {m["name"] for m in data["models"]}
-        for contaminated in ("MiniCPMV4_6ForConditionalGeneration", "MiniCPMV4_6Model",
-                             "PPFormulaNetForConditionalGeneration"):
-            assert contaminated not in names, \
-                f"regression: {contaminated} reappeared in cohort (was filtered out 2026-05-07)"
+
+    # Fallback: real explain artifact still present (one-shot before snapshot exists).
+    if explain.is_file():
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d) / "cohort.json"
+            r = _run(explain, "status == ok", out)
+            assert r.returncode == 0, f"exited {r.returncode}: {r.stderr}"
+            data = json.loads(out.read_text())
+            count = data["_metadata"]["model_count"]
+            names = {m["name"] for m in data["models"]}
+            print(f"  [INFO] real-artifact path: {count} models")
+            print(f"  [INFO] consider snapshotting via:")
+            print(f"  [INFO]   echo '{{\"model_count\": {count}, \"names\": [...]}}' > {snapshot}")
+            for contaminated in ("MiniCPMV4_6ForConditionalGeneration", "MiniCPMV4_6Model",
+                                 "PPFormulaNetForConditionalGeneration"):
+                assert contaminated not in names, \
+                    f"regression: {contaminated} reappeared in cohort"
+        return
+
+    # Both missing — FAIL LOUD instead of silent skip.
+    raise AssertionError(
+        f"regression test cannot run: neither snapshot ({snapshot}) nor real artifact "
+        f"({explain}) is present. Snapshot the explain pass names into the fixtures dir to fix. "
+        f"This is intentional fail-loud (gap 8 of adversary-review case_id 2026-05-07-124100) — "
+        f"silent skips let load-bearing tests become no-ops invisibly."
+    )
 
 
 # Runner ────────────────────────────────────────────────────────────────────

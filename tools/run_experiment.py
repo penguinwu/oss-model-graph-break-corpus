@@ -1830,6 +1830,22 @@ def main():
                            help="Override the --models-from version-compat refusal. "
                                 "Recorded in sweep_state.json. Only use when the mismatch "
                                 "is intentional (cross-version experiment).")
+    # Cohort-validation overrides (added by adversary-review case_id 2026-05-07-124100).
+    # Default behavior is fail-loud; each flag opts out of one specific check, recorded
+    # in sweep_state.json.
+    sub_sweep.add_argument("--allow-bare-cohort", action="store_true",
+                           help="Allow --models <flat-list.json> with no _metadata block. "
+                                "Default: REJECTED (this is the exact 2026-05-06 failure shape).")
+    sub_sweep.add_argument("--allow-empty-versions", action="store_true",
+                           help="Allow a cohort whose _metadata.source_versions is empty. "
+                                "Default: REJECTED (version-compat cannot be verified).")
+    sub_sweep.add_argument("--allow-partial-versions", action="store_true",
+                           help="Allow a cohort whose _metadata.source_versions is missing one "
+                                "of torch/transformers/diffusers. Default: REJECTED (mismatches "
+                                "in the unchecked library silently corrupt results).")
+    sub_sweep.add_argument("--allow-stale-cohort", action="store_true",
+                           help="Allow loading a cohort whose source file (per _metadata.derived_from) "
+                                "now has a newer mtime. Default: REJECTED (forces fresh-cohort discipline).")
     sub_sweep.add_argument("--stability", choices=["stable", "unstable"],
                            help="Filter by corpus stability")
     sub_sweep.add_argument("--limit", type=int,
