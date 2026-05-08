@@ -140,8 +140,10 @@ Self-revision protocol (aligned with persona.md): Mode B attempts ONE self-revis
 | Target | Authority | Posting command |
 |---|---|---|
 | **Corpus repo** (bug or feature) | Otter posts | `python3 tools/file_issues.py corpus-issue --via-skill <case_id> --body /tmp/file-issue-<case_id>-body.md`, then one-line FYI to Peng's space |
-| **pytorch/pytorch** (any) | **Peng must approve** | "🚨 EXTERNAL ENGAGEMENT PROPOSED" block in Peng's space with Mode B's verbatim body; wait for token (`approved`/`go`/`(a)`); only THEN `python3 tools/file_issues.py pytorch-upstream --via-skill <case_id> --post` |
-| **Comment on existing pytorch/pytorch issue** | **Peng must approve** | Same proposal block + `python3 tools/file_issues.py pytorch-upstream --via-skill <case_id> --comment <issue#> --post` |
+| **pytorch/pytorch** (any) | **Peng must approve** | "🚨 EXTERNAL ENGAGEMENT PROPOSED" block in Peng's space with Mode B's verbatim body; wait for token (`approved`/`go`/`(a)`); flip `PYTORCH_UPSTREAM_POSTING_ENABLED = True` in `tools/file_issues.py`; THEN `python3 tools/file_issues.py pytorch-upstream --via-skill <case_id> --post`; flip the constant back to `False` and commit. |
+| **Comment on existing pytorch/pytorch issue** | **Peng must approve** | Same proposal block + same flip-constant flow + `python3 tools/file_issues.py pytorch-upstream --via-skill <case_id> --comment <issue#> --post` |
+
+**Code-level guard on pytorch-upstream posting** (per Peng directive 2026-05-08 19:56 ET): the constant `PYTORCH_UPSTREAM_POSTING_ENABLED` in `tools/file_issues.py` defaults to `False`. When `False`, `--post` exits non-zero with an explanation. The ONLY way to actually post is a deliberate source-code edit (constant → `True`) plus the External Engagement Approval token. Test `test_pytorch_upstream_posting_disabled_by_default` asserts the committed default stays `False`. This is mechanical defense-in-depth: a future Otter that forgets the External Engagement rule still cannot post by accident.
 
 **`--via-skill` is REQUIRED on every posting subcommand**, including `corpus-issue` (adversary-review case 2026-05-08-153427 gap #4). Implemented as argparse `required=True` at the CLI level — the tool refuses to even start without it. No tier of light enforcement.
 

@@ -213,6 +213,27 @@ def test_via_skill_rejects_body_without_footer_marker():
         Path(body_path).unlink(missing_ok=True)
 
 
+def test_pytorch_upstream_posting_disabled_by_default():
+    """Per Peng directive 2026-05-08 19:56 ET: pytorch-upstream --post must
+    refuse to fire unless PYTORCH_UPSTREAM_POSTING_ENABLED constant in the
+    source is True. CLI flag alone is not enough.
+
+    Defense-in-depth on top of the External Engagement Approval rule.
+    """
+    # Read the constant directly from source — must be False by default.
+    src = (REPO_ROOT / "tools/file_issues.py").read_text()
+    import re as _re
+    m = _re.search(
+        r"^PYTORCH_UPSTREAM_POSTING_ENABLED\s*=\s*(True|False)\s*$",
+        src, _re.MULTILINE,
+    )
+    assert m, "PYTORCH_UPSTREAM_POSTING_ENABLED constant missing from tools/file_issues.py"
+    assert m.group(1) == "False", (
+        "PYTORCH_UPSTREAM_POSTING_ENABLED must be False in committed code. "
+        "If you set it to True for a post, set it back to False before committing."
+    )
+
+
 def test_correctness_apply_is_deprecated():
     """Gap #5 of design: correctness-apply was the umbrella-issue path; deprecated."""
     rc, out, err = _run("correctness-apply", "--plan", "/tmp/nonexistent.json")

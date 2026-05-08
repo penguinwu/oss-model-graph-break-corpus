@@ -56,6 +56,17 @@ REPO_SLUG = "penguinwu/oss-model-graph-break-corpus"
 PROXY_URL = "http://localhost:7824/fetch"
 ISSUE_MARKER = "<!-- filed-by: otter/file_issues.py -->"
 
+# ── HARD GUARD against accidental pytorch/pytorch posting ───────────────────
+# Per Peng directive 2026-05-08 19:56 ET: pytorch-upstream posting must require
+# a deliberate code edit (NOT just an environment variable or CLI flag) before
+# it can fire. This prevents an agent from EVER posting to pytorch/pytorch
+# without explicit human review at the source-code level.
+#
+# To enable a pytorch/pytorch post: edit this file, set the constant to True,
+# get the change reviewed, then run with --post. After posting, set it back
+# to False. The mechanical defense-in-depth is by design.
+PYTORCH_UPSTREAM_POSTING_ENABLED = False
+
 
 # ── Graph-break classifier ──────────────────────────────────────────────
 # Maps break_reasons from explain_results.json to issue-level categories.
@@ -1471,6 +1482,21 @@ def cmd_pytorch_upstream(args):
 
     # Optional: actually post.
     if args.post:
+        # HARD GUARD: refuse to post unless the code-level constant is True.
+        # Per Peng directive 2026-05-08 19:56 ET — the only way to enable a
+        # pytorch/pytorch post is a deliberate source-code edit. CLI flag
+        # alone is not enough.
+        if not PYTORCH_UPSTREAM_POSTING_ENABLED:
+            print(
+                "ERROR: pytorch-upstream posting is disabled by code-level guard.\n"
+                "  To enable: edit tools/file_issues.py and set\n"
+                "    PYTORCH_UPSTREAM_POSTING_ENABLED = True\n"
+                "  Get the change reviewed by Peng before flipping. After posting,\n"
+                "  set the constant back to False. This guard prevents accidental\n"
+                "  posts to pytorch/pytorch even when --post is passed.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         if args.comment:
             endpoint = f"/repos/{UPSTREAM_REPO_SLUG}/issues/{args.comment}/comments"
             payload = {"body": body}
