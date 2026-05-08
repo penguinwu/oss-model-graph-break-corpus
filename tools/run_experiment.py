@@ -631,7 +631,17 @@ def run_experiment(config, args):
                      "break_reasons", "ops_per_graph", "compile_times",
                      "create_time_s", "eager_time_s", "compile_time_s",
                      "gpu_mem_mb", "fullgraph_ok", "compile_kwargs",
-                     "error_type"):
+                     "error_type",
+                     # Numeric correctness fields populated by worker.py
+                     # (sweep/worker.py:3793-3822). Required for verify
+                     # experiments — without these the run is just "did
+                     # it compile" not "did it produce correct output."
+                     # Caught missing 2026-05-07 20:46 ET when NGB verify
+                     # gate produced numeric_status=None for all rows.
+                     "numeric_status", "numeric_max_diff",
+                     "numeric_bitwise_equal", "numeric_severity_ratio",
+                     "numeric_first_divergence", "numeric_skip_reason",
+                     "numeric_error", "numeric_noise_floor_dominant"):
             if key in r:
                 experiment_result[key] = r[key]
         if dynamo_flags:

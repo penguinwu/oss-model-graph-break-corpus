@@ -203,6 +203,30 @@ def test_post_sweep_handles_jsonl_format():
         assert not strict, f"JSONL parse should succeed; got {[str(f) for f in strict]}"
 
 
+def test_post_sweep_recognizes_success_status():
+    """Regression for 2026-05-07 20:46: run_experiment.py 'run' subcommand emits
+    status='success' (vs sweep's 'ok'/'full_graph'). check_cohort_invariants
+    must recognize 'success' as a non-failure status; otherwise every row from
+    a config-driven launch false-flags as G1 untriaged."""
+    with tempfile.TemporaryDirectory() as d:
+        results = Path(d) / "results.jsonl"
+        # Mimic actual run_experiment.py 'run' output: JSONL, status='success'
+        lines = [
+            json.dumps({"_record_type": "metadata", "pass": "identify"}),
+            json.dumps({"name": "ModelA", "mode": "eval", "status": "success",
+                        "numeric_status": "match", "numeric_max_diff": 0.0}),
+            json.dumps({"name": "ModelA", "mode": "train", "status": "success",
+                        "numeric_status": "match", "numeric_max_diff": 0.0}),
+        ]
+        results.write_text("\n".join(lines) + "\n")
+        failures = check_post_sweep(results)
+        # G1 should NOT fire on success rows
+        g1 = [f for f in failures if f.code == "G1"]
+        assert not g1, f"G1 should not fire on status='success' rows; got {[str(f) for f in g1]}"
+        strict = [f for f in failures if f.severity == "STRICT_FAIL"]
+        assert not strict, f"no strict failures expected; got {[str(f) for f in strict]}"
+
+
 def test_post_sweep_jsonl_with_create_error_still_caught():
     """Regression: ensure the JSONL fallback still applies the invariants
     (specifically C1 — create_error rows should STRICT_FAIL even via JSONL path)."""

@@ -244,8 +244,11 @@ def emit_bash(transformed_config_path: Path, original_config: dict, stage: str) 
     # Note: --transformers / --diffusers are flags on `sweep` subcommand, not `run`.
     # `run` injects via PYTHONPATH. We document both: the canonical run path
     # is via run_experiment.py run, with PYTHONPATH front-loading the modellib trees.
+    # Resolve $HOME at python time — shlex.quote single-quotes the result and
+    # bash won't expand $HOME inside single quotes.
+    home = str(Path.home())
     pythonpath_paths = [
-        f"$HOME/envs/modellibs/{pkg}-{ver}"
+        f"{home}/envs/modellibs/{pkg}-{ver}"
         for pkg, ver in pins.items()
     ]
     pythonpath_str = ":".join(pythonpath_paths)

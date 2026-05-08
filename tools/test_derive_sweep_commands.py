@@ -327,6 +327,29 @@ def test_emitted_bash_includes_modellib_pins():
         out.unlink(missing_ok=True)
 
 
+def test_emitted_bash_pythonpath_does_not_use_unexpanded_dollar_home():
+    """Regression for 2026-05-07 20:32 bug: $HOME inside shlex.quote-wrapped
+    single quotes does NOT expand in bash, so PYTHONPATH literally became
+    '$HOME/envs/modellibs/...' and the worker couldn't find transformers.
+    Fix: resolve $HOME at python time (Path.home()) before quoting."""
+    from derive_sweep_commands import emit_bash, write_transformed_config
+    cfg = _make_config()
+    derived = derive_stage_config(cfg, "gate")
+    out = write_transformed_config(derived, "test")
+    try:
+        bash = emit_bash(out, cfg, "gate")
+        # Find the PYTHONPATH line
+        ppath_lines = [line for line in bash.splitlines() if "PYTHONPATH=" in line]
+        assert ppath_lines, "expected a PYTHONPATH= line"
+        for line in ppath_lines:
+            assert "$HOME" not in line, \
+                f"PYTHONPATH must not contain unexpanded $HOME (single-quote-trap); got: {line}"
+            # Should contain a real /home/<user>/envs/modellibs path instead
+            assert "/envs/modellibs/" in line, f"expected resolved modellibs path; got: {line}"
+    finally:
+        out.unlink(missing_ok=True)
+
+
 def test_emitted_bash_quoting_handles_special_chars():
     """Adversary test #6: paths with special chars are quoted correctly (bash -n parses)."""
     from derive_sweep_commands import emit_bash

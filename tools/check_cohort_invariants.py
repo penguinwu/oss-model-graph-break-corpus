@@ -240,7 +240,15 @@ def check_post_sweep(results_path: Path) -> list:
     # We can only check this if known_errors.json + skip_models.json exist.
     # For this lightweight executor, we report the COUNT of untriaged candidates
     # — the harness's --strict-known-errors mode is the canonical enforcer.
-    success_statuses = {"ok", "full_graph", "graph_break"}
+    # Status vocabulary varies by launch path:
+    # - sweep subcommand (via run_sweep.py): "ok", "full_graph", "graph_break"
+    # - run subcommand (via run_experiment.py + orchestrator): "success" (when
+    #   compile succeeded with non-fullgraph mode), plus the others
+    # Both paths emit the worker's status field; we accept all success synonyms.
+    # (Caught missing 2026-05-07 20:46 ET when NGB verify gate via `run` produced
+    # status="success" for all rows and check_cohort_invariants false-flagged them
+    # as untriaged.)
+    success_statuses = {"ok", "full_graph", "graph_break", "success"}
     non_success = [r for r in rows if r.get("status") not in success_statuses]
     if non_success:
         # Cross-check against known_errors.json/skip_models.json
