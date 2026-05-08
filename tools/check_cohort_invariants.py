@@ -149,6 +149,69 @@ def check_pre_launch(cohort_path: Path) -> list:
     return failures
 
 
+def _check_spec_provenance(rows_or_text, results_path: Path) -> list:
+    """SP1 — verify the results file's metadata header matches the spec it
+    claims to be from. Catches:
+    - results file moved to wrong dir / mis-attributed to wrong spec
+    - spec file modified between launch and analysis (silent drift)
+    - older results file lacking provenance (FLAG, not STRICT)
+
+    Reads the first metadata record from the results file (the JSONL header
+    written by tools/run_experiment.py run subcommand at launch time).
+    """
+    import hashlib
+    failures = []
+    # Find the metadata header
+    text = results_path.read_text()
+    metadata = None
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            break
+        if isinstance(rec, dict) and rec.get("_record_type") == "metadata":
+            metadata = rec
+        break  # header is the first non-empty line; if it's not metadata, no header
+    if metadata is None:
+        failures.append(InvariantFailure(
+            "SP1", "FLAG",
+            "results file has no provenance header (older format or written by a non-canonical path)",
+        ))
+        return failures
+    spec_path = metadata.get("spec_path")
+    spec_sha256 = metadata.get("spec_sha256")
+    if not spec_path or not spec_sha256:
+        failures.append(InvariantFailure(
+            "SP1", "FLAG",
+            f"metadata header missing spec_path or spec_sha256 (header keys: {sorted(metadata.keys())})",
+        ))
+        return failures
+    spec_file = Path(spec_path)
+    if not spec_file.is_file():
+        failures.append(InvariantFailure(
+            "SP1", "STRICT_FAIL",
+            f"spec file recorded in metadata not found: {spec_file}",
+            examples=[f"recorded sha256: {spec_sha256}"],
+        ))
+        return failures
+    actual_sha256 = hashlib.sha256(spec_file.read_bytes()).hexdigest()
+    if actual_sha256 != spec_sha256:
+        failures.append(InvariantFailure(
+            "SP1", "STRICT_FAIL",
+            f"spec_sha256 drift: spec file has been modified since the run completed",
+            examples=[
+                f"spec_path: {spec_file}",
+                f"recorded sha256: {spec_sha256}",
+                f"current sha256:  {actual_sha256}",
+                f"This means the spec was edited after launch — interpretation of these "
+                f"results requires reading the spec AS IT WAS AT LAUNCH TIME (git history).",
+            ],
+        ))
+    return failures
+
+
 def check_post_sweep(results_path: Path) -> list:
     """Apply A1 + C1-C2 + G1 to a results file. Returns list of InvariantFailure.
 
@@ -190,6 +253,11 @@ def check_post_sweep(results_path: Path) -> list:
     if not isinstance(rows, list):
         return [InvariantFailure("INVALID_RESULTS", "STRICT_FAIL",
                                  "results does not contain a list of rows")]
+
+    # SP1 — spec provenance: results file's metadata header must reference the
+    # spec it claims to be from, and that spec file's current sha256 must match
+    # what was recorded at launch time. Catches mis-attribution + silent edits.
+    failures.extend(_check_spec_provenance(rows, results_path))
 
     # A1 — no attribute-not-found create_errors
     a1_examples = []

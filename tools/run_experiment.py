@@ -45,6 +45,7 @@ Usage:
 """
 import argparse
 import json
+import hashlib
 import os
 import re
 import signal
@@ -617,6 +618,8 @@ def run_experiment(config, args):
             for line in f:
                 try:
                     r = json.loads(line)
+                    if isinstance(r, dict) and r.get("_record_type") == "metadata":
+                        continue  # skip header line on resume
                     model_name = r.get("name", r.get("model"))
                     key = (model_name, r["config"], r.get("mode", "eval"))
                     resume_from[key] = r
@@ -626,6 +629,44 @@ def run_experiment(config, args):
 
     # Open results file for appending
     results_fh = open(results_file, "a")
+
+    # Provenance header (extension 2026-05-07): write a metadata record as the
+    # FIRST line of results.jsonl with spec_path + spec_sha256 + run context.
+    # Lets sanity checks verify "this results file came from the spec it claims
+    # to come from" and catches the failure mode where a results dir gets
+    # mis-attributed to the wrong experiment.
+    # Only write the header when starting a NEW results file (not on resume —
+    # the original header from the original run is the canonical reference).
+    if not resume_dir:
+        spec_path = Path(args.config).resolve()
+        spec_sha256 = hashlib.sha256(spec_path.read_bytes()).hexdigest()
+        provenance_header = {
+            "_record_type": "metadata",
+            "pass": "identify",  # run subcommand is identify-equivalent
+            "spec_path": str(spec_path),
+            "spec_sha256": spec_sha256,
+            "spec_name": config["name"],
+            "started": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "total_models": len(specs),
+            "total_work_items": total_work_items,
+            "modes": settings.get("modes", ["eval"]),
+            "configs": [c["name"] for c in configs],
+            # If this config was derived from another spec (per
+            # tools/derive_sweep_commands.py), record the source spec ref too.
+            "_derived_from": config.get("_derived_from"),
+            "_derived_stage": config.get("_derived_stage"),
+            "_derived_source_sha256": config.get("_derived_source_sha256"),
+            "_writer": "tools/run_experiment.py run subcommand",
+        }
+        # Drop None values for cleanliness
+        provenance_header = {k: v for k, v in provenance_header.items() if v is not None}
+        results_fh.write(json.dumps(provenance_header) + "\n")
+        results_fh.flush()
+        # Also embed in sweep_state for convenience
+        sweep_state["spec_path"] = str(spec_path)
+        sweep_state["spec_sha256"] = spec_sha256
+        with open(sweep_state_file, "w") as f:
+            json.dump(sweep_state, f, indent=2)
 
     # Signal handler: flush and mark interrupted on SIGTERM/SIGINT
     interrupted = False

@@ -203,6 +203,79 @@ def test_post_sweep_handles_jsonl_format():
         assert not strict, f"JSONL parse should succeed; got {[str(f) for f in strict]}"
 
 
+def test_post_sweep_sp1_passes_with_matching_spec():
+    """SP1: results metadata header references a real spec file with matching sha256."""
+    import hashlib
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        spec = tmp / "test-spec.json"
+        spec.write_text('{"name": "test-spec"}')
+        spec_sha = hashlib.sha256(spec.read_bytes()).hexdigest()
+        results = tmp / "results.jsonl"
+        lines = [
+            json.dumps({"_record_type": "metadata", "spec_path": str(spec),
+                        "spec_sha256": spec_sha}),
+            json.dumps({"name": "M1", "status": "success"}),
+        ]
+        results.write_text("\n".join(lines) + "\n")
+        failures = check_post_sweep(results)
+        sp1 = [f for f in failures if f.code == "SP1"]
+        assert not sp1, f"SP1 should pass with matching sha256; got {[str(f) for f in sp1]}"
+
+
+def test_post_sweep_sp1_strict_fail_on_spec_drift():
+    """SP1: spec file's sha256 differs from recorded — STRICT_FAIL."""
+    import hashlib
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        spec = tmp / "test-spec.json"
+        spec.write_text('{"name": "test-spec"}')
+        results = tmp / "results.jsonl"
+        lines = [
+            json.dumps({"_record_type": "metadata", "spec_path": str(spec),
+                        "spec_sha256": "0" * 64}),  # wrong sha
+            json.dumps({"name": "M1", "status": "success"}),
+        ]
+        results.write_text("\n".join(lines) + "\n")
+        failures = check_post_sweep(results)
+        sp1 = [f for f in failures if f.code == "SP1"]
+        assert sp1, "SP1 should fire on sha mismatch"
+        assert sp1[0].severity == "STRICT_FAIL"
+        assert "drift" in sp1[0].message
+
+
+def test_post_sweep_sp1_strict_fail_on_missing_spec_file():
+    """SP1: spec file recorded in metadata doesn't exist — STRICT_FAIL."""
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        results = tmp / "results.jsonl"
+        lines = [
+            json.dumps({"_record_type": "metadata",
+                        "spec_path": "/nonexistent/spec.json",
+                        "spec_sha256": "0" * 64}),
+            json.dumps({"name": "M1", "status": "success"}),
+        ]
+        results.write_text("\n".join(lines) + "\n")
+        failures = check_post_sweep(results)
+        sp1 = [f for f in failures if f.code == "SP1"]
+        assert sp1
+        assert sp1[0].severity == "STRICT_FAIL"
+        assert "not found" in sp1[0].message
+
+
+def test_post_sweep_sp1_flag_on_missing_provenance_header():
+    """SP1: older results files without metadata header — FLAG (not STRICT)."""
+    with tempfile.TemporaryDirectory() as d:
+        results = Path(d) / "results.jsonl"
+        # No metadata header — just data rows
+        results.write_text(json.dumps({"name": "M1", "status": "success"}) + "\n")
+        failures = check_post_sweep(results)
+        sp1 = [f for f in failures if f.code == "SP1"]
+        assert sp1
+        assert sp1[0].severity == "FLAG"
+        assert "provenance" in sp1[0].message.lower()
+
+
 def test_post_sweep_d1_strict_fail_on_catastrophic_divergence():
     """D1: max_diff > 1e-3 = catastrophic divergence, STRICT_FAIL.
     Was missing from the executor; surfaced 2026-05-07 20:50 when NGB verify

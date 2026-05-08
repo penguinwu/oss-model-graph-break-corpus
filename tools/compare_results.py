@@ -30,7 +30,12 @@ def load_experiment(path):
     results = {}
     with open(path) as f:
         for line in f:
+            if not line.strip():
+                continue
             r = json.loads(line)
+            # Skip metadata header (run_experiment.py provenance header)
+            if isinstance(r, dict) and r.get("_record_type") == "metadata":
+                continue
             name = r.get("name", r.get("model"))
             key = (name, r.get("mode", "eval"))
             results[key] = r["status"]
