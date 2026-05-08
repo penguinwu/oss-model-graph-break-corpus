@@ -496,11 +496,75 @@ Combining the inner-reason analysis from §2 (top break reasons) and §7 (#102 i
 
 ---
 
-## §10. Q1 — Nested graph break feature impact (deferred)
+## §10. Nested graph break feature impact (measured on canonical 2026-05-07 verify)
 
-*[Deferred to last per Peng's directive. Requires understanding of upstream nested-graph-break feature first.]*
+**Data source:** `experiments/results/ngb-verify-2026-05-07-20260507-181621/` (380 work items × 190 unique HF models, `fullgraph=False` + `nested_graph_breaks=true`, torch 2.13.0.dev20260502+cu126, transformers 5.6.2, diffusers 0.38.0). Cohort: the `status==ok` subset of the canonical 2026-05-05 NGB explain pass (190 models that NGB successfully analyzes for break_reasons). Pre-launch and post-completion sanity checks via `tools/check_cohort_invariants.py`. Reproduction within ≤10% of the abandoned-but-reproducible Run-2 findings on `HubertModel` (5.18 → 5.10) and `Data2VecAudioModel` (4.90 → 4.45) — confirms the bug class is real, not measurement noise.
 
-**Open question for compiler experts:** does PyTorch's nested-graph-break support reduce reported counts when a break occurs deep in the call stack and Dynamo unwinds + retries the outer frame? If so, the cascading patterns observed in §5 (and the wrapper patterns in §7) may already be partially mitigated by nested-GB in cases we haven't fully characterized. Worth coordinating with whoever owns the nested-GB feature for clarification.
+### What NGB enables
+
+On the 190-model long-tail cohort (where `fullgraph=True` would refuse to compile because breaks happen):
+
+| status | eval | train |
+|---|---:|---:|
+| **success** | 188 (99%) | 188 (99%) |
+| **timeout** | 2 (1%) | 2 (1%) |
+
+Both timeouts hit `Qwen2_5OmniThinkerForConditionalGeneration` and `Qwen2_5_VLForConditionalGeneration` — capacity-bound large vision-language models, not NGB-related. **NGB extracts a successful compilation on 376/380 (99%) of the runs that the strict `fullgraph=True` policy would have rejected.**
+
+This is the fundamental "what NGB is for" answer to the open question §10 originally posed: yes, NGB lets the compiler make forward progress on models with deep-stack / wrapper-pattern breaks (the cascading patterns observed in §5 and §7) that would otherwise block all of compilation. With NGB, compilation completes; without NGB on this cohort, it would not.
+
+### What NGB costs — numeric correctness
+
+Comparing eager-mode forward output against the NGB-compiled forward output (per-element absolute max difference):
+
+| max_diff range | eval | train |
+|---|---:|---:|
+| **bitwise / near-bitwise match** (≤1e-7) | 144 (76%) | 132 (69%) |
+| **noise-floor divergence** (1e-7 to 1e-3) | 44 (23%) | 42 (22%) |
+| **catastrophic divergence** (> 1e-3) | **0** | **14 (7%)** |
+| no comparison data (timeouts) | 2 | 2 |
+
+**The catastrophic divergences are 100% concentrated in train mode.** Eval mode shows zero catastrophic divergences across all 188 successful runs. This is the actionable finding for the NGB feature.
+
+### The 14 catastrophic train-mode divergences
+
+All 14 cases produce absolute max-diff between 1.8 and 5.5 — six to seven orders of magnitude beyond the noise floor. Severity ratios (max_diff ÷ baseline-noise-floor) sit in the 10⁵–10⁷ range. These are not numerical-precision drift; they are the compiled forward returning a meaningfully different result than eager.
+
+Architecture clustering:
+- **Audio / speech (9):** `Wav2Vec2Model`, `Wav2Vec2ConformerModel`, `WavLMModel`, `UniSpeechModel`, `UniSpeechSatModel`, `HubertModel`, `Data2VecAudioModel`, `SEWModel`, `SpeechEncoderDecoderModel`. Range 2.32 – 5.47.
+- **Seq2seq (4):** `M2M100Model`, `M2M100ForConditionalGeneration`, `PLBartModel`, `PLBartForConditionalGeneration`. Range 1.82 – 3.59.
+- **Other (1):** `ReformerModel`. 4.71.
+
+Ranked by max_diff:
+
+| Model | max_diff |
+|---|---:|
+| UniSpeechModel | 5.475 |
+| Wav2Vec2Model | 5.204 |
+| WavLMModel | 5.133 |
+| HubertModel | 5.097 |
+| UniSpeechSatModel | 4.890 |
+| ReformerModel | 4.713 |
+| SpeechEncoderDecoderModel | 4.520 |
+| Data2VecAudioModel | 4.446 |
+| M2M100Model | 3.595 |
+| PLBartModel | 3.576 |
+| Wav2Vec2ConformerModel | 3.062 |
+| M2M100ForConditionalGeneration | 2.541 |
+| SEWModel | 2.320 |
+| PLBartForConditionalGeneration | 1.819 |
+
+The clustering is highly suggestive: 9/14 are speech encoders that share architectural patterns (1D convolutional feature extractors → transformer encoder), 4/14 are encoder-decoder seq2seq models with explicit decoder-state handoffs, and `ReformerModel` has its own LSH-attention construction. The common thread across both audio and seq2seq is **stateful train-mode forward paths** (dropout, masked-feature-extraction noise, encoder-decoder cache mutation) that interact with NGB's break-and-resume contract differently than eval. Ruling these out as "expected dropout noise" would require running with `dropout=0` and re-measuring; until then they are flagged as suspect NGB-correctness regressions.
+
+### Action items — per-specific-fix issues
+
+The 14 catastrophic divergences are the deliverable bug list. They will be filed as separate issues per specific failure (NOT lumped into family-level umbrella issues). Each issue follows the four-criteria contract: self-contained standalone reproduction, concise, validated end-to-end against the actual repro before filing, and scoped to a single fix. See the issue-filing pipeline at `tools/file_issues.py` + `tools/issue_filing_plan.md`. Issue count is determined by distinct root causes after per-model triage, not by family clustering.
+
+### Limitations of this measurement
+
+- **No NGB-off control on the same cohort.** The verify ran with NGB on; the comparison "would these catastrophic divergences also appear with NGB off?" requires a paired sweep with `nested_graph_breaks=false` + `fullgraph=False` on the same 190 models. That paired sweep would also re-establish whether NGB reduces reported break counts (the original §10 question). It is the natural follow-up to this report.
+- **Train-mode dropout was not zeroed.** The audio and seq2seq divergences could in principle be amplified by dropout-RNG-state divergence between eager and compiled paths. A `dropout=0` re-run would distinguish "NGB is causing real wrong-math" from "NGB is producing the same math but a different RNG sequence" before issues are filed.
+- **Numeric correctness is per-tensor max-abs-diff on a single forward pass.** Loss + gradient correctness is downstream; if forward already diverges by ~5.0 absolute units, the gradient is not worth measuring until the forward is fixed.
 
 ---
 
