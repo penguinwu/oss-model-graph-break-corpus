@@ -38,7 +38,7 @@ Created 2026-05-07 at Peng's request: "I am nervous that we may lose track of th
 
 | # | Item | Status | Notes |
 |---|---|---|---|
-| X1 | Adversary review of cohort-regen fix bundle | ✅ | Invoked 2026-05-07 12:41 ET (case_id `2026-05-07-124100-cohort-regen-fix`); 9 gaps + 12 tests surfaced. Full output preserved at `/tmp/raw_output_cohort_regen.txt` (sha256 `5f4a88d4...`); summary in `skills/adversary-review/reviews_log.md`. |
+| X1 | Adversary review of cohort-regen fix bundle | ✅ | Invoked 2026-05-07 12:41 ET (case_id `adv-2026-05-07-124100-cohort-regen-fix`); 9 gaps + 12 tests surfaced. Full output preserved at `/tmp/raw_output_cohort_regen.txt` (sha256 `5f4a88d4...`); case file at `subagents/adversary-review/invocations/adv-2026-05-07-124100-cohort-regen-fix.md`. |
 | X1.1 | Address all 9 gaps + 12 tests | ✅ | Built `sweep/cohort_validator.py` + `tools/sample_cohort.py` + `tools/check_cohort_invariants.py` + 35 net-new tests + skill drift fix + regression-test fail-loud + Python-version guards. Full suite 55/55 PASS. See log dispositions per gap. |
 | X2 | External engagement strong-guardrail rule encoded in local CLAUDE.md | ✅ | Approved 2026-05-07 12:35; encoded in local CLAUDE.md; supersedes prior feedback-space thread-reply leniency. |
 

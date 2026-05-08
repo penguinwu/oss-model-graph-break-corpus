@@ -1,7 +1,7 @@
 """Cohort file validator — fail-loud on the failure modes that produced 2026-05-06.
 
-Surfaced by adversary-review case_id 2026-05-07-124100-cohort-regen-fix
-(skills/adversary-review/reviews_log.md). The original cohort-regen mitigation
+Surfaced by adversary-review case_id adv-2026-05-07-124100-cohort-regen-fix
+(subagents/adversary-review/invocations/). The original cohort-regen mitigation
 left several asymmetric paths where the loader only WARN'd on conditions the
 sanity-check skill claimed were STRICT. This module collapses validation into
 one place with explicit error codes that callers (run_sweep.py CLI, tests,

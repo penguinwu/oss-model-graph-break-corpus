@@ -24,7 +24,7 @@ PROPOSED RESOLUTION:
 
 ASK: which option, or other?
 
-LOG ENTRY: skills/adversary-review/reviews_log.md#<case_id>
+CASE FILE: subagents/adversary-review/invocations/<case_id>.md
 PERSONA SHA: <git rev of persona.md at invocation>
 RAW REVIEWER OUTPUT (for reference): <link to log entry>
 ```

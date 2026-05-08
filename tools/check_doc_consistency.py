@@ -274,12 +274,102 @@ def rule_d1_threshold_notation() -> list[Violation]:
 
 # Registry ────────────────────────────────────────────────────────────────────
 
+def rule_subagent_required_fields() -> list[Violation]:
+    """Every subagents/<name>/SKILL.md must have YAML frontmatter with `name:`
+    and `description:` fields. Every subagents/<name>/ dir must have an
+    `invocations/` subdirectory.
+
+    Adversary review case adv-2026-05-08-153427-file-issue-design suggested-test #1.
+    """
+    violations: list[Violation] = []
+    subagents_dir = REPO_ROOT / "subagents"
+    if not subagents_dir.is_dir():
+        return []  # subagents not yet introduced
+    for sub in subagents_dir.iterdir():
+        if not sub.is_dir() or sub.name.startswith("_"):
+            continue
+        skill = sub / "SKILL.md"
+        if not skill.is_file():
+            violations.append(f"subagents/{sub.name}/: missing SKILL.md")
+            continue
+        text = skill.read_text()
+        if not text.startswith("---\n"):
+            violations.append(f"subagents/{sub.name}/SKILL.md: missing YAML frontmatter")
+            continue
+        end = text.find("\n---\n", 4)
+        if end < 0:
+            violations.append(f"subagents/{sub.name}/SKILL.md: frontmatter not closed")
+            continue
+        fm = text[4:end]
+        for required in ("name", "description"):
+            if not re.search(rf"^{required}:", fm, re.MULTILINE):
+                violations.append(
+                    f"subagents/{sub.name}/SKILL.md: missing required frontmatter "
+                    f"field `{required}:`"
+                )
+        if not (sub / "invocations").is_dir():
+            violations.append(
+                f"subagents/{sub.name}/: missing `invocations/` subdir "
+                f"(per-case-file convention)"
+            )
+        persona = sub / "persona.md"
+        if not persona.is_file():
+            violations.append(f"subagents/{sub.name}/: missing persona.md")
+    return violations
+
+
+def rule_subagent_paths_migrated() -> list[Violation]:
+    """No stale `skills/adversary-review/` or `skills/file-issue/` references
+    should remain after the 2026-05-08 migration.
+
+    Adversary review case adv-2026-05-08-153427-file-issue-design gap #1
+    + suggested-test #2.
+    """
+    violations: list[Violation] = []
+    bad_patterns = [
+        re.compile(r"\bskills/adversary-review\b"),
+        re.compile(r"\bskills/file-issue\b"),
+    ]
+    # Walk repo .md and .py files, EXCLUDING:
+    # - the migration doc itself (intentional historical refs)
+    # - per-case files (they preserve the pre-migration provenance note)
+    # - this rule's own source (we mention the patterns to detect them)
+    exclude_paths = (
+        "subagents/MIGRATION.md",
+        "subagents/README.md",  # historical "what moved here" context
+        "subagents/adversary-review/invocations/",
+        "subagents/adversary-review/RETROSPECTIVE.md",  # historical
+        "tools/check_doc_consistency.py",
+        "tools/test_file_issues.py",  # docstring references the case_id format
+    )
+    for ext in ("*.md", "*.py"):
+        for path in REPO_ROOT.rglob(ext):
+            rel = path.relative_to(REPO_ROOT)
+            if any(str(rel).startswith(e) for e in exclude_paths):
+                continue
+            # Skip generated invocations_log.md (it's regeneratable)
+            if rel.name == "invocations_log.md":
+                continue
+            text = path.read_text(errors="ignore")
+            for i, line in enumerate(text.splitlines(), start=1):
+                for rx in bad_patterns:
+                    if rx.search(line):
+                        violations.append(
+                            f"{rel}:{i}: stale reference to pre-migration "
+                            f"`{rx.pattern}` path. Update to `subagents/...`."
+                        )
+                        break  # don't double-report same line
+    return violations
+
+
 RULES: dict[str, RuleFn] = {
     "cohort_codes": rule_cohort_codes,
     "apply_modes": rule_apply_modes,
     "results_jsonl_field_name": rule_results_jsonl_field_name,
     "python_bin_precedence": rule_python_bin_precedence,
     "d1_threshold_notation": rule_d1_threshold_notation,
+    "subagent_required_fields": rule_subagent_required_fields,
+    "subagent_paths_migrated": rule_subagent_paths_migrated,
 }
 
 
