@@ -32,6 +32,9 @@ Nightly tracking and per-version details: [`results/`](results/)
 # Install
 bash scripts/setup_env.sh
 
+# Install pre-push test hook (runs the test suite when you push code; refuses on failures)
+git config core.hooksPath scripts
+
 # Browse the corpus
 python3 tools/query.py
 python3 tools/query.py --status graph_break

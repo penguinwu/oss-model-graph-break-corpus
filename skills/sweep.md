@@ -88,6 +88,25 @@ For parameter changes (workers, timeouts):
 - [ ] **Install the watchdog cron** (see "Watchdog — mandatory for any non-trivial sweep" below)
 - [ ] **If you are bumping a model library version, installing a new library, or adding new corpus sources** — read `skills/sweep_sanity_check.md` APPLY-D before launching. This is a cohort-expansion run, not a regular sweep. The triage step is mandatory output: the run isn't done when the sweep finishes — it's done when known_errors.json + skip_models.json are updated and a re-run sample shows 0 untriaged errors. **Pre-existing models that regress under the new library version are NOT triage-able — they are real bugs and must be fixed or filed.**
 
+### Canonical multi-stage launcher: `tools/derive_sweep_commands.py`
+
+When the experiment has a single canonical config (e.g. `experiments/configs/<name>.json` with `settings.python_bin` + `settings.modellib_pins`), use derive_sweep_commands instead of hand-typing gate/sample/full bash:
+
+```bash
+tools/derive_sweep_commands.py <config> --stage gate --run     # 5 models, ~5 min
+tools/derive_sweep_commands.py <config> --stage sample --run   # 20 models, ~15 min
+tools/derive_sweep_commands.py <config> --stage full --run     # entire cohort
+```
+
+Mechanical guarantees:
+- Every stage uses the same flags as the full launch (only sub-sample size + output dir vary)
+- Recursive sha256 validation on inner cohort `from` blocks before each stage
+- Pinned interpreter + pinned modellibs from the source config (no PATH-based `python3` ambiguity)
+- `gate` and `sample` success recorded in `/tmp/derive_sweep_state/<name>-<sha8>.json`
+- `--stage full --run` REFUSED unless gate AND sample have passed for current source-config sha (override: `--allow-skip-gate`, logged loud)
+
+This is the post-2026-05-07 canonical launch path for any experiment that fits the gate→sample→full pattern. The hand-rolled "Sample-sweep gate" instructions below remain valid for ad-hoc launches without a canonical config (e.g. one-off `tools/run_experiment.py sweep --compile-kwargs ...` invocations).
+
 ### Sample-sweep gate — mandatory before any full launch
 
 Before any full sweep, run a sample sweep on **20 random models from the planned full cohort** with **identical flags** to the planned full launch (same venv, modellibs, workers, timeouts, compile-kwargs, dynamo-config). Suffix the sample's `--run-name` with `-sample` and write the sampled cohort to `/tmp/<run_name>-sample.json`.

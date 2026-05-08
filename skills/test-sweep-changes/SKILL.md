@@ -115,6 +115,10 @@ done
 
 **If a specific launch IS planned** (you intend to invoke `tools/run_experiment.py sweep` with specific flags / cohort / stack within this session or the next): you MUST customize this gate to match.
 
+**Preferred path: `tools/derive_sweep_commands.py --stage gate --run`.** If the launch has a canonical experiment config with `settings.python_bin` + `settings.modellib_pins`, the derive tool mechanically guarantees the gate matches the full launch — same flags, same stack, deterministic 5-model sub-sample. After the derived gate passes (recorded in `/tmp/derive_sweep_state/`), `--stage sample --run` becomes the next step (matches §Sample-sweep gate of `skills/sweep.md`).
+
+The hand-rolled procedure below is the FALLBACK for ad-hoc launches that don't have a canonical config (e.g., one-off `tools/run_experiment.py sweep --compile-kwargs ...` invocations).
+
 #### Customized gate (when launch is planned)
 
 ```bash

@@ -46,6 +46,10 @@ The test stays in the repo as a regression guard. If a future change reintroduce
 | `tools/test_generate_cohort.py` | Filter parser correctness (`==`, `!=`, `in` with single + multi values), output `_metadata` shape, dedupe across modes, force-overwrite behavior, error paths, regression guard for the 2026-05-06 broken-cohort bug |
 | `tools/test_feedback_monitor.py` | `load_state` migration of old-format state files, `mark_replied` dedup, `list_needs_reply` audit-log filtering + dedupe + malformed-line resilience. Backfilled for the May-4 incident bug fix. |
 | `tools/test_sweep_watchdog_check.py` | `decide_verdict` logic across all PID/progress/grace combinations, the 2026-04-30 PID-change-reset bug regression guard, `--pass identify\|explain` flag selection of checkpoint+results files |
+| `tools/test_check_cohort_invariants.py` | Pre-launch + `--post-sweep` invariant checks (SP1 spec provenance, A1/A2/A3/A4 cohort, C1/C2 status, D1 catastrophic divergence ≥1e-3, D2 noise floor 1e-7–1e-3, G1 untriaged). JSONL header + JSON fallback parsing |
+| `tools/test_derive_sweep_commands.py` | gate→sample→full transformation, `models.source: "sample"` wrapping, `settings.python_bin` + `modellib_pins` requirement, recursive `source_sha256` walk, skip-to-full guardrail state file, `$HOME` expansion regression in emitted bash |
+| `tools/test_run_experiment_corpus_filter.py` | `corpus_filter` source `from` extension (read arbitrary prior results file), missing-path rejection, `source_sha256` drift detection + matching, real `ngb-verify-2026-05-07.json` config validates |
+| `sweep/test_cohort_validator.py` | `validate_cohort()` stable error codes (BARE_LIST_REJECTED, MISSING_METADATA_KEY, EMPTY_SOURCE_VERSIONS, PARTIAL_SOURCE_VERSIONS, VERSION_MISMATCH, STALE_COHORT, FILE_NOT_FOUND, INVALID_JSON), `--allow-*` override flags, canonical cohort acceptance |
 | `sweep/test_explain.py` | Explain pass result schema |
 | `sweep/test_results_loader.py` | Sweep result file loading across schema variants |
 | `sweep/test_venv_setup.py` | Venv resolution + provisioning |
@@ -102,9 +106,17 @@ if __name__ == "__main__":
 
 ## What enforces this
 
-Today: discipline + commit-message review + this doc. **Open loop:** a pre-commit hook or CI step that runs all `test_*.py` files and fails the commit if any test fails or if a tool change has no corresponding test diff.
+**Pre-push hook (`scripts/pre-push`)** — runs the test suite when a push touches Python files under `sweep/`, `tools/`, `corpora/`, `scripts/`, `corpus/`, or any top-level `*.py`. Refuses on any failure. Bypass: `git push --no-verify`. Approved by Peng 2026-05-07; replaces discipline-only test running.
 
-Until that's mechanized, the rule is: **PRs without tests for behavior changes will be reverted.** No exceptions for "small fixes" — that's exactly the size of fix that breaks silently when reintroduced.
+**Install (one-line, per repo clone):**
+```bash
+git config core.hooksPath scripts
+```
+Override Python interpreter: `PYTHON=/path/to/python git push`.
+
+The hook canonically runs under the per-repo `sudo bash -c "HTTPS_PROXY=… git push origin main"` invocation; it drops privileges back to `$SUDO_USER` for the test invocations so `~/envs/...` paths resolve correctly.
+
+**Plus discipline** (commit-message review + this doc): **PRs without tests for behavior changes will be reverted.** No exceptions for "small fixes" — that's exactly the size of fix that breaks silently when reintroduced.
 
 ## Why this matters (the cautionary tale)
 

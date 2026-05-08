@@ -5,7 +5,7 @@
   "description": "NGB verify on cohort of models that passed the canonical 2026-05-05 NGB explain pass.",
 
   "models": {
-    "_comment": "Filter from the 2026-05-05 explain pass results (status==ok subset). REQUIRES the proposed extension to corpus_filter — accept optional 'from' field pointing at an arbitrary sweep results file rather than always reading corpus/corpus.json. source_sha256 pins the source's content for reproducibility.",
+    "_comment": "Reads the 2026-05-05 explain pass results (status==ok subset) via the corpus_filter `from` extension (landed 2026-05-07). source_sha256 pins the source file's content; validation refuses launch on drift.",
     "source": "corpus_filter",
     "from": "sweep_results/experiments/nested-gb-2026-05-05-2026-05-05/explain_results.json",
     "status": "ok",

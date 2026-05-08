@@ -35,11 +35,31 @@ cat > /tmp/quick-sample.json <<'EOF'
 EOF
 
 # 2) Run it
-python3 tools/run_experiment.py experiment /tmp/quick-sample.json \
-    --python ~/envs/torch-test/bin/python
+SWEEP_PYTHON=~/envs/torch-test/bin/python \
+    python3 tools/run_experiment.py run /tmp/quick-sample.json
 ```
 
 Same `seed` → same 20 models, every time. Bump `size` (e.g. `50`, `100`) for tighter signal, drop it for a faster smoke. See [Running Experiments](running-experiments.md) for the full config schema and other model sources (`list`, `corpus_filter`, `new_since`).
+
+## Multi-stage launches via `derive_sweep_commands.py`
+
+For any experiment that warrants the **gate → sample → full** sequence (anchored on a single canonical config), use `tools/derive_sweep_commands.py` rather than hand-typing the three launches:
+
+```bash
+tools/derive_sweep_commands.py <config> --stage gate --run    # 5 models
+tools/derive_sweep_commands.py <config> --stage sample --run  # 20 models
+tools/derive_sweep_commands.py <config> --stage full --run    # entire cohort
+```
+
+Each stage uses the **same** flags as the full launch — only sub-sample size + output dir vary. Mechanical guarantees:
+- Recursive `source_sha256` validation on inner `from` blocks before each stage
+- Pinned interpreter (`settings.python_bin`) + pinned modellibs (`settings.modellib_pins`) baked into the emitted bash — no PATH-based `python3` ambiguity
+- `gate` and `sample` success recorded in `/tmp/derive_sweep_state/`; `full --run` REFUSES unless both have passed for the current source-config sha (override: `--allow-skip-gate`, logged loud)
+- `--validate` mode runs all checks without executing
+
+The tool requires `settings.python_bin` and `settings.modellib_pins` in the config. See [Running Experiments §settings](running-experiments.md#settings) for the schema.
+
+**Cautionary tale (2026-05-07):** the canonical NGB-verify launch was authored by hand earlier the same day and missed `--compile-kwargs '{"fullgraph": false}'` and `--dynamo-config nested_graph_breaks=true` because the operator derived flags from memory. `derive_sweep_commands.py` exists so flags can no longer be silently dropped — `compile_kwargs` and `dynamo_flags` propagate verbatim from one source config to all three stages.
 
 ## Two-pass architecture
 

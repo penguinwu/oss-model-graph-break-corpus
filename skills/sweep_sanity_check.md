@@ -23,21 +23,24 @@ Default is STRICT for curated cohorts (verify, correctness, explain follow-ups, 
 - **A4.** No cohort model is in `skip_models.json`. Mechanically checked by `tools/check_cohort_invariants.py <cohort.json>`.
 
 ### Status
-- **C1.** No `create_error` (cohort / loader / network bug)
-- **C2.** No `eager_error` unless env-induced (env = CUDA OOM, cudnn, contention only; input-shape mismatch is harness, not env)
-- **C3.** No input-generation error (harness bug — STRICT in all contexts including expansion)
-- **C4.** No generic `error` row that's actually a Python exception in harness code
+- **C1.** No `create_error` (cohort / loader / network bug). Mechanically checked by `tools/check_cohort_invariants.py --post-sweep`.
+- **C2.** No `eager_error` unless env-induced (env = CUDA OOM, cudnn, contention only; input-shape mismatch is harness, not env). Mechanically checked by `tools/check_cohort_invariants.py --post-sweep`.
+- **C3.** No input-generation error (harness bug — STRICT in all contexts including expansion).
+- **C4.** No generic `error` row that's actually a Python exception in harness code.
 
 ### Cross-run
-- **E1.** No status regression on previously-clean models — `(name, mode)` clean in baseline → must be clean in this run
+- **E1.** No status regression on previously-clean models — `(name, mode)` clean in baseline → must be clean in this run.
 
 ### Verification (verify / correctness sweeps only)
-- **D1.** Catastrophic divergences (`max_diff > 1e-3`): every one HALT-and-investigate. No threshold.
-- **D2.** Persistent divergences (`less_flaky=divergence`, `max_diff < 1e-3`): FLAG every model — usually low-magnitude real signal worth filing
-- **D3.** Noise-floor divergences (`less_flaky=match`): expected; only FLAG if rate > 20%
+- **D1.** Catastrophic divergences (`max_diff > 1e-3`): every one HALT-and-investigate. No threshold. Mechanically checked by `tools/check_cohort_invariants.py --post-sweep` (STRICT_FAIL severity).
+- **D2.** Persistent divergences (`less_flaky=divergence`, `max_diff < 1e-3`): FLAG every model — usually low-magnitude real signal worth filing. Mechanically checked by `tools/check_cohort_invariants.py --post-sweep` (FLAG severity, threshold `1e-7 < max_diff <= 1e-3`).
+- **D3.** Noise-floor divergences (`less_flaky=match`): expected; only FLAG if rate > 20%.
 
 ### Hygiene
-- **G1.** Every non-success row is triaged — entry in `known_errors.json` (matching `error_pattern` + `applies_to_versions` covering active torch) OR in `skip_models.json`. Untriaged errors → HALT. (The harness's `--strict-known-errors` mode mechanically enforces this; sanity check sets the discipline of when to use it.)
+- **G1.** Every non-success row is triaged — entry in `known_errors.json` (matching `error_pattern` + `applies_to_versions` covering active torch) OR in `skip_models.json`. Untriaged errors → HALT. (The harness's `--strict-known-errors` mode mechanically enforces this; sanity check sets the discipline of when to use it.) Also mechanically checked by `tools/check_cohort_invariants.py --post-sweep`.
+
+### Provenance
+- **SP1.** Results file's metadata header records the spec it ran from (`spec_path` + `spec_sha256` + run context, written as the FIRST line of `results.jsonl` by `tools/run_experiment.py run`); the spec file's current sha256 must match what was recorded at launch time. STRICT for any results file produced by the `run` subcommand on or after 2026-05-07; FLAG (older format) for older files. Mechanically checked by `tools/check_cohort_invariants.py --post-sweep`. Catches: results file mis-attributed to wrong spec, silent spec edits between launch and analysis, results file moved between dirs and provenance lost.
 
 ### Execution
 - **B1.** Result count = `len(cohort) × len(modes)` — no silent drops
@@ -60,3 +63,4 @@ The expansion run is a discovery pass — it exists to surface what doesn't yet 
 |---|---|
 | 2026-05-07 | Initial v3 — simplified from v2.1 (~80 lines vs 286). Cut: per-invariant 5-field blocks, four named apply contexts, sweep-type matrix, lifecycle hygiene family (operational, belongs in sweep.md), D1/D2 sub-flavors of expansion, G2/G3 (belong in known_errors.json `_doc` and a weekly hygiene routine respectively), triage-authority and wiring sections. Kept: the invariants themselves, the cohort-expansion bump-vs-new rule, the triage discipline. |
 | 2026-05-07 | v3.1 (adversary-review case_id 2026-05-07-124100-cohort-regen-fix): A2 wording corrected (`target_versions` → `source_versions`; was a live drift between this skill text and the code's `_metadata.source_versions`). A1, A2, A3, A4 each cross-referenced to mechanical executors (`sweep/cohort_validator.py`, `tools/check_cohort_invariants.py`) so the markdown checklist is no longer the only enforcement. |
+| 2026-05-07 | v3.2 (adversary-review case_id 2026-05-07-213400-doc-vs-impl): cross-referenced C1, C2, D1, D2, G1 to `tools/check_cohort_invariants.py --post-sweep` (the executor was checking these, but skill didn't say so). NEW: SP1 (Provenance) — checks the results file's metadata header against the spec it claims to be from (sha256 drift + missing-spec detection). SP1 was added to the executor 2026-05-07 21:24 ET per Peng directive ("In the result sanity check check-off list, we should add one more check against the experiment spec"); skill now records it as the canonical invariant definition. |

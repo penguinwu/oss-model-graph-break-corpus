@@ -95,17 +95,24 @@ KNOWN_DYNAMO_FLAGS = {
 def generate_template():
     """Print a starter experiment config with documentation."""
     template = {
-        "_comment": "Experiment config — see experiments/README.md for field reference",
+        "_comment": "Experiment config — see docs/running-experiments.md for field reference. tools/derive_sweep_commands.py uses this format for gate→sample→full multi-stage launches.",
         "name": "my-experiment",
         "description": "Describe what you're testing and why",
         "models": {
-            "_comment": "Model selection. source options: 'list', 'all', 'corpus_filter', 'sample'",
+            "_comment": "Model selection. source options: 'list' / 'all' / 'corpus_filter' / 'sample' / 'new_since'. corpus_filter accepts optional 'from' (read from a sweep results file rather than corpus.json) + 'source_sha256' (pin the source file's content). See docs for the corpus_filter+from anchoring pattern.",
             "source": "list",
             "names": [
                 "GPT2Model",
                 "DistilBertModel",
                 "ViTModel",
             ],
+            "_comment_corpus_filter_example": (
+                "Replace the above with the following to anchor on a specific prior result file:\n"
+                "    \"source\": \"corpus_filter\",\n"
+                "    \"from\": \"sweep_results/experiments/<prior-run>/explain_results.json\",\n"
+                "    \"status\": \"ok\",\n"
+                "    \"source_sha256\": \"<sha256>\""
+            ),
         },
         "configs": [
             {
@@ -128,7 +135,17 @@ def generate_template():
             "workers": 4,
             "timeout_s": 180,
             "pass_num": 1,
-            "_comment_pass": "1=identify (fullgraph check), 2=explain (graph break analysis)",
+            "_comment_pass": "1=identify (fullgraph check + numeric correctness), 2=explain (graph break analysis)",
+            "_comment_pinning": (
+                "python_bin and modellib_pins are OPTIONAL for `run` (uses SWEEP_PYTHON env var as fallback) "
+                "but REQUIRED by tools/derive_sweep_commands.py for stack-pinned multi-stage launches. "
+                "Uncomment + set values to make this config derive-compatible:"
+            ),
+            "_python_bin_example": "/home/<user>/envs/torch-nightly-cu126/bin/python",
+            "_modellib_pins_example": {
+                "transformers": "5.6.2",
+                "diffusers": "0.38.0"
+            },
         },
     }
     print(json.dumps(template, indent=2))

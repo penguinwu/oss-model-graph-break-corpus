@@ -86,15 +86,28 @@ Merges source results into target. If a `(model, config, mode)` entry exists in 
 
 ### `models` — which models to test
 
-| `source` | Required fields | Description |
-|----------|----------------|-------------|
-| `"list"` | `names: ["GPT2Model", ...]` | Explicit list of model class names |
-| `"all"` | — | All models from HF + Diffusers + Custom |
-| `"corpus_filter"` | `status: "graph_break"` | Models with a specific status in `corpus/corpus.json` |
-| `"sample"` | `size: 50` | Random sample. Optional: `seed` (default 42) |
-| `"new_since"` | `baseline: "path/to/results/"` | Models not in an existing results directory |
+| `source` | Required fields | Optional fields | Description |
+|----------|----------------|-----------------|-------------|
+| `"list"` | `names: ["GPT2Model", ...]` | — | Explicit list of model class names |
+| `"all"` | — | — | All models from HF + Diffusers + Custom |
+| `"corpus_filter"` | `status: "graph_break"` | `from: "<path>"`, `source_sha256: "<hex>"` | Models with a specific status. Default reads `corpus/corpus.json`; pass `from` to read any sweep results file (identify/explain). With `source_sha256` validation REFUSES launch on file drift. |
+| `"sample"` | `size: 50` | `seed` (default 42), `from: <models block>` | Random sample. `from` lets you sub-sample from another resolved source (e.g., `corpus_filter` results). |
+| `"new_since"` | `baseline: "path/to/results/"` | — | Models not in an existing results directory |
 
 Model names are HuggingFace class names (e.g., `GPT2Model`, `LlamaForCausalLM`, `StableDiffusionPipeline`). Use `--dry-run` to verify resolution.
+
+**Anchoring on a prior result file (`corpus_filter` + `from` + `source_sha256`):**
+
+```json
+"models": {
+  "source": "corpus_filter",
+  "from": "sweep_results/experiments/nested-gb-2026-05-05-2026-05-05/explain_results.json",
+  "status": "ok",
+  "source_sha256": "a96d3e1ed5c30b26e223031a99b5968479109b714754cfbe61d8784e33dfbf2b"
+}
+```
+
+This is how NGB-verify-style experiments anchor their cohort on a specific prior result set. The `source_sha256` pin catches the failure mode where the prior file is regenerated between launch and analysis (silent drift). Used by `tools/derive_sweep_commands.py` for reproducible multi-stage launches.
 
 ### `configs` — what configurations to test
 
@@ -132,7 +145,7 @@ Common configurations:
 
 **`dynamo_flags`** are applied via `torch._dynamo.config` before compilation. Empty `{}` means default settings.
 
-**Known dynamo flags:** `capture_scalar_outputs`, `capture_dynamic_output_shape_ops`, `automatic_dynamic_shapes`, `assume_static_by_default`, `specialize_int`, `suppress_errors`, `verbose`, `cache_size_limit`, `guard_nn_modules`, `inline_inbuilt_nn_modules`, `optimize_ddp`.
+**Known dynamo flags:** `capture_scalar_outputs`, `capture_dynamic_output_shape_ops`, `automatic_dynamic_shapes`, `assume_static_by_default`, `specialize_int`, `suppress_errors`, `verbose`, `cache_size_limit`, `accumulated_cache_size_limit`, `guard_nn_modules`, `inline_inbuilt_nn_modules`, `optimize_ddp`, `nested_graph_breaks`.
 
 ### `settings` — execution parameters
 
@@ -143,6 +156,8 @@ Common configurations:
 | `workers` | `4` | Number of parallel worker processes |
 | `timeout_s` | `180` | Per-model timeout in seconds |
 | `pass_num` | `1` | `1` = identify, `2` = explain |
+| `python_bin` | `null` | Absolute path to interpreter (e.g., `~/envs/torch-nightly-cu126/bin/python`). Optional for `run` (uses `SWEEP_PYTHON` env var as fallback), but **required by `tools/derive_sweep_commands.py`** for stack pinning. |
+| `modellib_pins` | `null` | Dict mapping `transformers`/`diffusers`/`timm` to version strings. Resolved into PYTHONPATH against `~/envs/modellibs/<lib>-<ver>/`. **Required by `tools/derive_sweep_commands.py`.** Example: `{"transformers": "5.6.2", "diffusers": "0.38.0"}`. |
 
 CLI flags `--workers` and `--timeout` override these values.
 
@@ -150,13 +165,24 @@ CLI flags `--workers` and `--timeout` override these values.
 
 ```
 experiments/results/my-test-20260416-193000/
-  config.json      — input config + resolved models + environment snapshot
-  results.jsonl    — one JSON line per (model, config, mode)
-  checkpoint.jsonl — for resume support
-  summary.md       — auto-generated human-readable report
+  config.json              — input config + resolved models + environment snapshot
+  results.jsonl            — first line: provenance metadata; subsequent lines: one JSON per (model, config, mode)
+  identify_streaming.jsonl — symlink to results.jsonl (sweep_watchdog.py compatibility)
+  sweep_state.json         — phase + progress + spec_path + spec_sha256 (sweep_watchdog.py compatibility)
+  summary.md               — auto-generated human-readable report
 ```
 
 ### `results.jsonl`
+
+**First line — provenance metadata header** (added 2026-05-07):
+
+```json
+{"_record_type": "metadata", "pass": "identify", "spec_path": "/home/.../experiments/configs/ngb-verify-2026-05-07.json", "spec_sha256": "a96d3e1ed5...", "spec_name": "ngb-verify-2026-05-07", "started": "2026-05-08T01:16:32Z", "total_models": 190, "total_work_items": 380, "modes": ["eval", "train"], "configs": ["ngb"], "_writer": "tools/run_experiment.py run subcommand"}
+```
+
+The header lets `tools/check_cohort_invariants.py --post-sweep` verify SP1 (provenance — spec sha256 match). Consumers must skip records where `_record_type == "metadata"` (or filter on the absence of `model`/`status`).
+
+**Subsequent lines — per-result rows:**
 
 ```json
 {"model": "GPT2Model", "config": "baseline", "mode": "eval", "status": "full_graph", "wall_time_s": 12.3, "compile_kwargs": {"fullgraph": true, "backend": "eager"}, "numeric_status": "match", "numeric_max_diff": 0.0, "numeric_bitwise_equal": true}
@@ -164,6 +190,18 @@ experiments/results/my-test-20260416-193000/
 ```
 
 The `numeric_*` fields appear on every identify-pass result (not just baseline). See [Understanding Results §Numeric correctness fields](understanding-results.md#numeric-correctness-fields-identify-pass) for the full schema.
+
+## Multi-stage launches
+
+For experiments warranting the gate → sample → full sequence, use `tools/derive_sweep_commands.py`:
+
+```bash
+tools/derive_sweep_commands.py experiments/configs/my-test.json --stage gate --run    # 5 models, ~5 min
+tools/derive_sweep_commands.py experiments/configs/my-test.json --stage sample --run  # 20 models, ~15 min
+tools/derive_sweep_commands.py experiments/configs/my-test.json --stage full --run    # whole cohort
+```
+
+All three stages mechanically use the same config flags — only the sub-sample size + output dir vary. The tool requires `settings.python_bin` and `settings.modellib_pins` (see settings table above). See [Running Sweeps §Multi-stage launches](running-sweeps.md#multi-stage-launches-via-derive_sweep_commands).
 
 Status values depend on the compile configuration:
 
