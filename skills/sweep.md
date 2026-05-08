@@ -86,7 +86,7 @@ For parameter changes (workers, timeouts):
 - [ ] **If using --models <flat.json>** (no provenance, e.g. a hand-built cohort file), explicitly identify the venv + version stack the cohort was derived from, and verify your launch flags match. The harness emits a `WARNING: --models was a flat list; cannot detect version mismatches` line — read it and act on it. Do NOT rationalize past it.
 - [ ] **Run the sample-sweep gate** (see "Sample-sweep gate — mandatory before any full launch" below). Skipping requires Peng's written approval.
 - [ ] **Install the watchdog cron** (see "Watchdog — mandatory for any non-trivial sweep" below)
-- [ ] **If you are bumping a model library version, installing a new library, or adding new corpus sources** — read `skills/sweep_sanity_check.md` APPLY-D before launching. This is a cohort-expansion run, not a regular sweep. The triage step is mandatory output: the run isn't done when the sweep finishes — it's done when known_errors.json + skip_models.json are updated and a re-run sample shows 0 untriaged errors. **Pre-existing models that regress under the new library version are NOT triage-able — they are real bugs and must be fixed or filed.**
+- [ ] **If you are bumping a model library version, installing a new library, or adding new corpus sources** — read `skills/sweep_sanity_check.md` (Cohort expansion runs section) before launching. This is a cohort-expansion run, not a regular sweep. The triage step is mandatory output: the run isn't done when the sweep finishes — it's done when known_errors.json + skip_models.json are updated and a re-run sample shows 0 untriaged errors. **Pre-existing models that regress under the new library version are NOT triage-able — they are real bugs and must be fixed or filed.**
 
 ### Canonical multi-stage launcher: `tools/derive_sweep_commands.py`
 
@@ -111,7 +111,7 @@ This is the post-2026-05-07 canonical launch path for any experiment that fits t
 
 Before any full sweep, run a sample sweep on **20 random models from the planned full cohort** with **identical flags** to the planned full launch (same venv, modellibs, workers, timeouts, compile-kwargs, dynamo-config). Suffix the sample's `--run-name` with `-sample` and write the sampled cohort to `/tmp/<run_name>-sample.json`.
 
-When the sample completes (~10-15 min for 20 models × 2 modes at 2 workers), apply `skills/sweep_sanity_check.md` in **APPLY-A mode** against the sample's output. **Any STRICT invariant failure → HALT the full launch and investigate.**
+When the sample completes (~10-15 min for 20 models × 2 modes at 2 workers), apply `skills/sweep_sanity_check.md` in **Pre-launch sample mode** against the sample's output. **Any STRICT invariant failure → HALT the full launch and investigate.**
 
 If sample finds cohort contamination, the cohort generator is broken — fix the generator, regenerate the cohort, re-sample. Do NOT silently exclude individual contaminated models and proceed; that lets the generator bug ship.
 
@@ -208,8 +208,8 @@ When adding new models (new HF release, custom models, etc.):
 
 After every sweep completes, do this BEFORE reporting results to Peng:
 
-### Step 0: Run the sanity check (APPLY-C)
-- [ ] Apply `skills/sweep_sanity_check.md` in **APPLY-C mode** to the full output dir
+### Step 0: Run the sanity check (Post-completion mode)
+- [ ] Apply `skills/sweep_sanity_check.md` in **Post-completion mode** to the full output dir
 - [ ] Classify every FAIL as `accepted` (record reason in plan.md or the run's notes) or `blocking`
 - [ ] **Untriaged errors (INV-G1 fail) → HALT.** Either triage them (file a fix, add a known_errors entry, or skip-list with reason) BEFORE proceeding to Step 1, or open a cohort-expansion sub-task to process them as a batch
 - [ ] Do NOT analyze, file issues, or publish results while blocking fails exist
@@ -330,7 +330,8 @@ Without this step, feedback only lives in Otter's session memory (which expires)
 | 2026-04-14 | Added pitfall: incomplete re-run specs | Re-run with only name+source caused 30+ false create_errors. Config name derivation fails for ForCausalLM variants without hf_config field |
 | | Added Tier 2 autonomy for merging/re-running | Tiger autonomy tiers doc: merge + re-run after sweep is obvious next step, don't ask |
 | 2026-05-06 | Added smoke pre-flight subsection (§4) + flat-list provenance check | NGB correctness sweeps #1 and #2 same day burned 2h41m + 11min on wrong version stack (torch211 + transformers 5.5.3) when explain pass had run on torch-nightly + transformers 5.6.2. Smoke including BartModel + BlenderbotModel + BambaModel would have aborted both before launch. Also includes the "provenance vs status" pitfall in criterion design (initial criterion-5 confused cohort provenance with result status). |
-| 2026-05-07 | Replaced 6-fixed smoke with 20-random sample-sweep gate; added APPLY-D cohort-expansion trigger; added §8 Step 0 sanity-check gate. New skill `skills/sweep_sanity_check.md` v2.1 holds the invariants (families A-G) + four apply contexts. Library-bump rule encoded: pre-existing models that regress are real bugs, not triage-able. | NGB verify 2026-05-06: 6-fixed smoke passed but full sweep surfaced 22 create_error + 4 eager_error from cohort contamination + custom-model loader regression that the fixed picks didn't overlap. Random 20-from-cohort is the right design. Peng's directive: "infra solid > moving fast" + skill-form-not-script (different sweep types have different invariants — judgment over enforcement). |
+| 2026-05-07 | Replaced 6-fixed smoke with 20-random sample-sweep gate; added APPLY-D cohort-expansion trigger; added §8 Step 0 sanity-check gate. New skill `skills/sweep_sanity_check.md` v2.1 holds the invariants (families A-G) + four apply contexts. Library-bump rule encoded: pre-existing models that regress are real bugs, not triage-able. *(Note: sanity-check skill v3 simplified the four apply contexts to three modes — Pre-launch sample / Mid-sweep peek / Post-completion + Cohort expansion runs. Cross-refs in this skill updated 2026-05-08.)* | NGB verify 2026-05-06: 6-fixed smoke passed but full sweep surfaced 22 create_error + 4 eager_error from cohort contamination + custom-model loader regression that the fixed picks didn't overlap. Random 20-from-cohort is the right design. Peng's directive: "infra solid > moving fast" + skill-form-not-script (different sweep types have different invariants — judgment over enforcement). |
+| 2026-05-08 | Updated APPLY-A/C/D cross-references to v3 mode names (Pre-launch sample / Post-completion / Cohort expansion runs section); 4 stale refs fixed in §4 Pre-flight, §4 Sample-sweep gate, §8 Step 0. | Adversary review case 2026-05-07-190947-doc-vs-impl, gap #1 — `skills/sweep_sanity_check.md` v3 deleted the four named apply contexts but cross-refs in `skills/sweep.md` weren't updated atomically. |
 
 ---
 

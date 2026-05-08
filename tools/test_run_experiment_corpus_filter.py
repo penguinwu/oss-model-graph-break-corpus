@@ -157,6 +157,46 @@ def test_corpus_filter_source_sha256_matching_passes():
             pass
 
 
+def test_sample_source_with_from_and_status_rejected():
+    """Adversary review case 2026-05-07-190947-doc-vs-impl, gap #5:
+    sample source with BOTH 'from' and 'status' silently dropped 'from'.
+    Now validate_config rejects this combination explicitly.
+    """
+    cfg = _make_config({
+        "source": "sample",
+        "size": 5,
+        "from": {"source": "corpus_filter", "status": "ok"},
+        "status": "ok",
+    })
+    rc, out, err = _validate(cfg)
+    assert rc != 0, f"expected REJECTION for sample+from+status; got rc={rc}\n  out={out}\n  err={err}"
+    body = out + err
+    assert "sample" in body and "from" in body and "status" in body and "ambiguous" in body, \
+        f"error should explicitly name the ambiguity; got: {body}"
+
+
+def test_sample_source_with_just_from_passes():
+    """Sanity: sample with only 'from' (no 'status') still validates."""
+    cfg = _make_config({
+        "source": "sample",
+        "size": 5,
+        "from": {"source": "corpus_filter", "status": "ok"},
+    })
+    rc, out, err = _validate(cfg)
+    assert rc == 0, f"expected PASS for sample+from-only; got rc={rc}\n  out={out}\n  err={err}"
+
+
+def test_sample_source_with_just_status_passes():
+    """Sanity: sample with only 'status' (no 'from') still validates."""
+    cfg = _make_config({
+        "source": "sample",
+        "size": 5,
+        "status": "ok",
+    })
+    rc, out, err = _validate(cfg)
+    assert rc == 0, f"expected PASS for sample+status-only; got rc={rc}\n  out={out}\n  err={err}"
+
+
 def test_real_ngb_verify_config_validates():
     """Integration: the actual NGB verify config validates cleanly."""
     config_path = REPO_ROOT / "experiments" / "configs" / "ngb-verify-2026-05-07.json"

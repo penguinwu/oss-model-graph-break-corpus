@@ -46,10 +46,11 @@ The test stays in the repo as a regression guard. If a future change reintroduce
 | `tools/test_generate_cohort.py` | Filter parser correctness (`==`, `!=`, `in` with single + multi values), output `_metadata` shape, dedupe across modes, force-overwrite behavior, error paths, regression guard for the 2026-05-06 broken-cohort bug |
 | `tools/test_feedback_monitor.py` | `load_state` migration of old-format state files, `mark_replied` dedup, `list_needs_reply` audit-log filtering + dedupe + malformed-line resilience. Backfilled for the May-4 incident bug fix. |
 | `tools/test_sweep_watchdog_check.py` | `decide_verdict` logic across all PID/progress/grace combinations, the 2026-04-30 PID-change-reset bug regression guard, `--pass identify\|explain` flag selection of checkpoint+results files |
-| `tools/test_check_cohort_invariants.py` | Pre-launch + `--post-sweep` invariant checks (SP1 spec provenance, A1/A2/A3/A4 cohort, C1/C2 status, D1 catastrophic divergence ≥1e-3, D2 noise floor 1e-7–1e-3, G1 untriaged). JSONL header + JSON fallback parsing |
+| `tools/test_check_cohort_invariants.py` | Pre-launch + `--post-sweep` invariant checks (SP1 spec provenance, A1/A2/A3/A4 cohort, C1/C2 status, D1 catastrophic divergence `max_diff > 1e-3` strict, D2 noise floor `1e-7 < max_diff <= 1e-3`, G1 untriaged). JSONL header + JSON fallback parsing |
 | `tools/test_derive_sweep_commands.py` | gate→sample→full transformation, `models.source: "sample"` wrapping, `settings.python_bin` + `modellib_pins` requirement, recursive `source_sha256` walk, skip-to-full guardrail state file, `$HOME` expansion regression in emitted bash |
-| `tools/test_run_experiment_corpus_filter.py` | `corpus_filter` source `from` extension (read arbitrary prior results file), missing-path rejection, `source_sha256` drift detection + matching, real `ngb-verify-2026-05-07.json` config validates |
-| `sweep/test_cohort_validator.py` | `validate_cohort()` stable error codes (BARE_LIST_REJECTED, MISSING_METADATA_KEY, EMPTY_SOURCE_VERSIONS, PARTIAL_SOURCE_VERSIONS, VERSION_MISMATCH, STALE_COHORT, FILE_NOT_FOUND, INVALID_JSON), `--allow-*` override flags, canonical cohort acceptance |
+| `tools/test_run_experiment_corpus_filter.py` | `corpus_filter` source `from` extension (read arbitrary prior results file), missing-path rejection, `source_sha256` drift detection + matching, sample-source `from`+`status` ambiguity reject (gap #5), real `ngb-verify-2026-05-07.json` config validates |
+| `tools/test_check_doc_consistency.py` | `check_doc_consistency.py` rules — positive (current repo passes all 5 rules) + negative (synthetic violations are caught: partial cohort-code lists, stale apply-mode references, `"model"` field in results.jsonl examples, backwards python_bin precedence framing, `≥1e-3` / `>=1e-3` D1 threshold notation). Pins the doc-consistency rules themselves against drift |
+| `sweep/test_cohort_validator.py` | `validate_cohort()` stable error codes (BARE_LIST_REJECTED, MISSING_METADATA_KEY, EMPTY_SOURCE_VERSIONS, PARTIAL_SOURCE_VERSIONS, VERSION_MISMATCH, STALE_COHORT, INVALID_MODELS_LIST, FILE_NOT_FOUND, INVALID_JSON — canonical 9-code list per `sweep/README.md`), `--allow-*` override flags, canonical cohort acceptance |
 | `sweep/test_explain.py` | Explain pass result schema |
 | `sweep/test_results_loader.py` | Sweep result file loading across schema variants |
 | `sweep/test_venv_setup.py` | Venv resolution + provisioning |
@@ -107,6 +108,8 @@ if __name__ == "__main__":
 ## What enforces this
 
 **Pre-push hook (`scripts/pre-push`)** — runs the test suite when a push touches Python files under `sweep/`, `tools/`, `corpora/`, `scripts/`, `corpus/`, or any top-level `*.py`. Refuses on any failure. Bypass: `git push --no-verify`. Approved by Peng 2026-05-07; replaces discipline-only test running.
+
+When the hook fires, it runs **every** `test_*.py` under `sweep/` and `tools/` — the path filter only decides whether to run the suite at all, not which subset to skip. Editing one tool will run the full ~10-file test suite (~60+ tests).
 
 **Install (one-line, per repo clone):**
 ```bash

@@ -137,9 +137,11 @@ def generate_template():
             "pass_num": 1,
             "_comment_pass": "1=identify (fullgraph check + numeric correctness), 2=explain (graph break analysis)",
             "_comment_pinning": (
-                "python_bin and modellib_pins are OPTIONAL for `run` (uses SWEEP_PYTHON env var as fallback) "
-                "but REQUIRED by tools/derive_sweep_commands.py for stack-pinned multi-stage launches. "
-                "Uncomment + set values to make this config derive-compatible:"
+                "python_bin and modellib_pins are OPTIONAL for `run` (resolution order: "
+                "SWEEP_PYTHON env var takes precedence if set; otherwise python_bin is used; "
+                "sys.executable is the final fallback). REQUIRED by tools/derive_sweep_commands.py "
+                "for stack-pinned multi-stage launches. Uncomment + set values to make this config "
+                "derive-compatible:"
             ),
             "_python_bin_example": "/home/<user>/envs/torch-nightly-cu126/bin/python",
             "_modellib_pins_example": {
@@ -209,6 +211,16 @@ def validate_config(config, strict=True):
             if source == "sample":
                 if "size" not in models:
                     errors.append("models.size is required when source='sample'")
+                # Reject the silent-drop footgun: if both `from` and `status` are
+                # set on a sample block, resolve_models silently overwrites
+                # `from` with corpus_filter+status. Force the user to disambiguate.
+                # (Adversary review case 2026-05-07-190947-doc-vs-impl gap #5.)
+                if "from" in models and "status" in models:
+                    errors.append(
+                        "models source='sample' with both 'from' and 'status' is "
+                        "ambiguous — pick one. To filter a prior result file by status, "
+                        "use: \"from\": {\"source\": \"corpus_filter\", \"from\": \"<path>\", "
+                        "\"status\": \"<status>\"}.")
             if source == "new_since" and "baseline" not in models:
                 errors.append("models.baseline is required when source='new_since'")
         else:
@@ -619,14 +631,25 @@ def run_experiment(config, args):
     with open(sweep_state_file, "w") as f:
         json.dump(sweep_state, f, indent=2)
 
-    # Symlink for watchdog's identify_streaming.jsonl read path
+    # Symlink for watchdog's identify_streaming.jsonl read path. Fall back to
+    # hardlink if symlinks are disallowed (rare but observed on some mounts).
+    # If both fail, print a loud WARNING — the watchdog will report no progress
+    # until the file appears, and sweep/README.md docs the contract.
+    # (Adversary review case 2026-05-07-190947-doc-vs-impl gap #8 — the prior
+    # `except OSError: pass` silently broke the watchdog-compat claim.)
     streaming_link = output_dir / "identify_streaming.jsonl"
     if not streaming_link.exists():
         try:
             streaming_link.symlink_to("results.jsonl")
         except OSError:
-            # Fallback: hardlink (some filesystems don't support symlinks)
-            pass
+            try:
+                os.link(str(results_file), str(streaming_link))
+            except OSError as e:
+                print(f"WARNING: could not create identify_streaming.jsonl "
+                      f"(neither symlink nor hardlink available): {e}. "
+                      f"sweep_watchdog.py progress reporting will be impaired "
+                      f"until you manually link/copy results.jsonl to "
+                      f"{streaming_link.name}.", file=sys.stderr)
 
     # Load existing results for resume
     resume_from = {}

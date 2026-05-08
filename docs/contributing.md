@@ -84,7 +84,7 @@ python3 tools/validate.py
 | `sweep/orchestrator.py` | Shared worker management (spawn, harvest, timeout, kill, checkpoint) |
 | `sweep/explain.py` | Graph break analysis via Dynamo logging |
 | `sweep/sweep_watchdog.py` | Progress monitor — observation-only; reports DEAD events to GChat, does NOT auto-restart |
-| `sweep/cohort_validator.py` | Runtime cohort validation at launch; raises `CohortValidationError` with stable codes (`BARE_LIST_REJECTED`, `EMPTY_SOURCE_VERSIONS`, `PARTIAL_SOURCE_VERSIONS`, `MISSING_METADATA_KEY`, `VERSION_MISMATCH`, `STALE_COHORT`). Wired into `sweep/run_sweep.py --models`. |
+| `sweep/cohort_validator.py` | Runtime cohort validation at launch; raises `CohortValidationError` with stable codes (`BARE_LIST_REJECTED`, `EMPTY_SOURCE_VERSIONS`, `PARTIAL_SOURCE_VERSIONS`, `MISSING_METADATA_KEY`, `VERSION_MISMATCH`, `STALE_COHORT`, `INVALID_MODELS_LIST`, `FILE_NOT_FOUND`, `INVALID_JSON` — see `sweep/README.md` for the canonical list). Wired into `sweep/run_sweep.py --models`. |
 | `tools/derive_sweep_commands.py` | Derive gate/sample/full launch commands from one experiment config. Pinned interpreter + modellibs; recursive sha256 validation; skip-to-full guardrail. |
 | `tools/check_cohort_invariants.py` | Mechanical executor of `skills/sweep_sanity_check.md` invariants. Pre-launch on cohort files; `--post-sweep` on results files (A1/C1/C2/D1/D2/G1/SP1). |
 | `sweep/test_explain.py` | Unit tests for the graph-break analysis module — `python3 sweep/test_explain.py` (no GPU) |

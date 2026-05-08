@@ -156,7 +156,7 @@ Common configurations:
 | `workers` | `4` | Number of parallel worker processes |
 | `timeout_s` | `180` | Per-model timeout in seconds |
 | `pass_num` | `1` | `1` = identify, `2` = explain |
-| `python_bin` | `null` | Absolute path to interpreter (e.g., `~/envs/torch-nightly-cu126/bin/python`). Optional for `run` (uses `SWEEP_PYTHON` env var as fallback), but **required by `tools/derive_sweep_commands.py`** for stack pinning. |
+| `python_bin` | `null` | Absolute path to interpreter (e.g., `~/envs/torch-nightly-cu126/bin/python`). Optional for `run` — used as fallback when `SWEEP_PYTHON` env var is unset. **`SWEEP_PYTHON` env var takes precedence if both are set.** Resolution order in `run`: `SWEEP_PYTHON` env → `settings.python_bin` → `sys.executable`. **Required by `tools/derive_sweep_commands.py`** for stack pinning. |
 | `modellib_pins` | `null` | Dict mapping `transformers`/`diffusers`/`timm` to version strings. Resolved into PYTHONPATH against `~/envs/modellibs/<lib>-<ver>/`. **Required by `tools/derive_sweep_commands.py`.** Example: `{"transformers": "5.6.2", "diffusers": "0.38.0"}`. |
 
 CLI flags `--workers` and `--timeout` override these values.
@@ -180,16 +180,16 @@ experiments/results/my-test-20260416-193000/
 {"_record_type": "metadata", "pass": "identify", "spec_path": "/home/.../experiments/configs/ngb-verify-2026-05-07.json", "spec_sha256": "a96d3e1ed5...", "spec_name": "ngb-verify-2026-05-07", "started": "2026-05-08T01:16:32Z", "total_models": 190, "total_work_items": 380, "modes": ["eval", "train"], "configs": ["ngb"], "_writer": "tools/run_experiment.py run subcommand"}
 ```
 
-The header lets `tools/check_cohort_invariants.py --post-sweep` verify SP1 (provenance — spec sha256 match). Consumers must skip records where `_record_type == "metadata"` (or filter on the absence of `model`/`status`).
+The header lets `tools/check_cohort_invariants.py --post-sweep` verify SP1 (provenance — spec sha256 match). Consumers must skip records where `_record_type == "metadata"` (or filter on the absence of `name`/`status`).
 
 **Subsequent lines — per-result rows:**
 
 ```json
-{"model": "GPT2Model", "config": "baseline", "mode": "eval", "status": "full_graph", "wall_time_s": 12.3, "compile_kwargs": {"fullgraph": true, "backend": "eager"}, "numeric_status": "match", "numeric_max_diff": 0.0, "numeric_bitwise_equal": true}
-{"model": "GPT2Model", "config": "aot-eager", "mode": "eval", "status": "success", "wall_time_s": 11.8, "compile_kwargs": {"fullgraph": false, "backend": "aot_eager"}, "numeric_status": "match", "numeric_max_diff": 1.19e-06, "numeric_bitwise_equal": false}
+{"name": "GPT2Model", "config": "baseline", "mode": "eval", "status": "full_graph", "wall_time_s": 12.3, "compile_kwargs": {"fullgraph": true, "backend": "eager"}, "numeric_status": "match", "numeric_max_diff": 0.0, "numeric_bitwise_equal": true}
+{"name": "GPT2Model", "config": "aot-eager", "mode": "eval", "status": "success", "wall_time_s": 11.8, "compile_kwargs": {"fullgraph": false, "backend": "aot_eager"}, "numeric_status": "match", "numeric_max_diff": 1.19e-06, "numeric_bitwise_equal": false}
 ```
 
-The `numeric_*` fields appear on every identify-pass result (not just baseline). See [Understanding Results §Numeric correctness fields](understanding-results.md#numeric-correctness-fields-identify-pass) for the full schema.
+The model identifier field is `name` (not `model`) — `corpus_filter` + `from` reads `r["name"]` when chaining a prior `run`-produced `results.jsonl`. The `numeric_*` fields appear on every identify-pass result (not just baseline). See [Understanding Results §Numeric correctness fields](understanding-results.md#numeric-correctness-fields-identify-pass) for the full schema.
 
 ## Multi-stage launches
 
