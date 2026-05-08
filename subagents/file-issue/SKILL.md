@@ -169,6 +169,7 @@ validation_file_path: /tmp/file-issue-<case_id>-validation.md
 validation_sha256: <hash>
 mode_a_verdict: proceed | proceed-with-fixes | reframe | split | reject
 mode_a_sha256: <hash of Mode A raw output>
+mode_a_fixes_applied: <if proceed-with-fixes, multi-line list of fixes Otter applied in-place; one per line, prefixed with "- ". Empty for other verdicts. Per adversary impl-review gap #8.>
 mode_b_sha256: <hash of Mode B raw output, blank if Mode A blocked>
 body_sha256: <hash of JUST the BODY: section that gets posted; this is what --via-skill compares>
 footer_marker: "<!-- via subagents/file-issue case_id=<case_id> -->"

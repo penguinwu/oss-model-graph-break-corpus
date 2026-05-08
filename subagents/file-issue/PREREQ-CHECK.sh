@@ -29,12 +29,15 @@ check "local CLAUDE.md trigger for file-issue" \
     "grep -q 'subagents/file-issue/SKILL.md' '$CLAUDE_MD'"
 
 # 2. tools/file_issues.py has --via-skill required on corpus-issue
-check "tools/file_issues.py corpus-issue --via-skill required" \
-    "python3 '$REPO_ROOT/tools/file_issues.py' corpus-issue --help 2>&1 | grep -q 'via-skill.*required\\|required.*via-skill'"
+# (Both checks: --help mentions via-skill; AND naked invocation refuses with required-arg error.)
+check "tools/file_issues.py corpus-issue --via-skill flag present" \
+    "python3 '$REPO_ROOT/tools/file_issues.py' corpus-issue --help 2>&1 | grep -qi 'via-skill'"
+check "tools/file_issues.py corpus-issue refuses naked invocation" \
+    "{ python3 '$REPO_ROOT/tools/file_issues.py' corpus-issue --body /tmp/_dummy_ --title T 2>&1 || true ; } | grep -q 'via-skill'"
 
 # 3. tools/file_issues.py has --via-skill required on pytorch-upstream
-check "tools/file_issues.py pytorch-upstream --via-skill required" \
-    "python3 '$REPO_ROOT/tools/file_issues.py' pytorch-upstream --help 2>&1 | grep -q 'via-skill'"
+check "tools/file_issues.py pytorch-upstream --via-skill flag present" \
+    "python3 '$REPO_ROOT/tools/file_issues.py' pytorch-upstream --help 2>&1 | grep -qi 'via-skill'"
 
 # 4. tools/build_invocations_log.py exists + runs
 check "tools/build_invocations_log.py available" \

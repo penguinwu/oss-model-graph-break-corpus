@@ -275,11 +275,16 @@ def rule_d1_threshold_notation() -> list[Violation]:
 # Registry ────────────────────────────────────────────────────────────────────
 
 def rule_subagent_required_fields() -> list[Violation]:
-    """Every subagents/<name>/SKILL.md must have YAML frontmatter with `name:`
-    and `description:` fields. Every subagents/<name>/ dir must have an
-    `invocations/` subdirectory.
+    """Every subagents/<name>/ dir must have:
+    - SKILL.md with YAML frontmatter containing `name:` and `description:`
+    - persona.md
+    - invocations/ subdirectory (per-case-file convention)
+    - invocations_log.md (generated aggregate; required for human-scan + audit)
+    - RETROSPECTIVE.md (iteration cadence forcing function — empty header OK
+      but the file must exist; per adversary impl-review gap #6)
 
-    Adversary review case adv-2026-05-08-153427-file-issue-design suggested-test #1.
+    Original: adversary case adv-2026-05-08-153427-file-issue-design suggested-test #1.
+    Extended: adversary case adv-2026-05-08-161753-file-issue-impl gap #6.
     """
     violations: list[Violation] = []
     subagents_dir = REPO_ROOT / "subagents"
@@ -315,6 +320,18 @@ def rule_subagent_required_fields() -> list[Violation]:
         persona = sub / "persona.md"
         if not persona.is_file():
             violations.append(f"subagents/{sub.name}/: missing persona.md")
+        # Gap #6: required additional files
+        if not (sub / "invocations_log.md").is_file():
+            violations.append(
+                f"subagents/{sub.name}/: missing invocations_log.md "
+                f"(generated aggregate; create with "
+                f"`python3 tools/build_invocations_log.py subagents/{sub.name}/`)"
+            )
+        if not (sub / "RETROSPECTIVE.md").is_file():
+            violations.append(
+                f"subagents/{sub.name}/: missing RETROSPECTIVE.md "
+                f"(iteration cadence forcing function — empty header is OK)"
+            )
     return violations
 
 
@@ -334,13 +351,18 @@ def rule_subagent_paths_migrated() -> list[Violation]:
     # - the migration doc itself (intentional historical refs)
     # - per-case files (they preserve the pre-migration provenance note)
     # - this rule's own source (we mention the patterns to detect them)
+    # Whole-file excludes — files that are inherently historical or the rule's
+    # own source. Per adversary impl-review gap #10: keep this list MINIMAL;
+    # broad excludes mask real drift. Each entry needs a stated reason.
     exclude_paths = (
-        "subagents/MIGRATION.md",
-        "subagents/README.md",  # historical "what moved here" context
-        "subagents/adversary-review/invocations/",
-        "subagents/adversary-review/RETROSPECTIVE.md",  # historical
-        "tools/check_doc_consistency.py",
-        "tools/test_file_issues.py",  # docstring references the case_id format
+        "subagents/MIGRATION.md",       # documents the migration; references both paths intentionally
+        "subagents/README.md",          # § History references the prior path
+        "subagents/adversary-review/invocations/",  # per-case files have a top-line provenance note
+        "tools/_migrations/",           # one-shot migration scripts; reference prior paths by design
+        "tools/check_doc_consistency.py",  # rule's own source mentions the patterns it catches
+        "tools/test_file_issues.py",    # test docstrings reference case_id format
+        "tools/test_check_doc_consistency.py",  # negative-case tests construct the patterns
+        "tools/test_build_invocations_log.py",  # synthetic test cases
     )
     for ext in ("*.md", "*.py"):
         for path in REPO_ROOT.rglob(ext):

@@ -29,18 +29,25 @@ if sys.version_info < (3, 9):
     sys.exit("ERROR: build_invocations_log.py requires Python 3.9+")
 
 
-def parse_frontmatter(path: Path) -> dict[str, str]:
+def parse_frontmatter(path: Path) -> tuple[dict[str, str], list[str]]:
     """Extract YAML-ish frontmatter (between --- markers) as a flat dict.
 
     Not a full YAML parser — handles only `key: value` lines, quoted strings,
     and the closing `---`. Sufficient for our schema.
+
+    Returns (fields, warnings). `warnings` is a list of human-readable issues
+    (empty if file is well-formed). Per adversary impl-review gap #5: silent
+    `{}` on malformed input was the failure mode.
     """
+    warnings: list[str] = []
     text = path.read_text()
     if not text.startswith("---\n"):
-        return {}
+        warnings.append(f"{path}: missing leading `---\\n` (no YAML frontmatter)")
+        return {}, warnings
     end = text.find("\n---\n", 4)
     if end < 0:
-        return {}
+        warnings.append(f"{path}: frontmatter not closed (no trailing `---`)")
+        return {}, warnings
     block = text[4:end]
     fields: dict[str, str] = {}
     for line in block.splitlines():
@@ -53,17 +60,22 @@ def parse_frontmatter(path: Path) -> dict[str, str]:
         if (val.startswith('"') and val.endswith('"')) or (val.startswith("'") and val.endswith("'")):
             val = val[1:-1]
         fields[key] = val
-    return fields
+    return fields, warnings
 
 
-def build_index(subagent_dir: Path) -> str:
-    """Build the aggregated invocations_log.md content for a sub-agent dir."""
+def build_index(subagent_dir: Path, strict: bool = False) -> tuple[str, list[str]]:
+    """Build the aggregated invocations_log.md content for a sub-agent dir.
+
+    Returns (content, all_warnings). If `strict` is True, any per-case-file
+    warning causes the function to raise after building the index.
+    """
     invocations_dir = subagent_dir / "invocations"
     if not invocations_dir.is_dir():
         sys.exit(f"ERROR: {invocations_dir} not found")
 
     case_files = sorted(invocations_dir.glob("*.md"))
     sub_name = subagent_dir.name
+    all_warnings: list[str] = []
 
     lines = [
         f"# {sub_name} — invocations index",
@@ -80,9 +92,22 @@ def build_index(subagent_dir: Path) -> str:
         "|---|---|---|---|---|",
     ]
 
+    # Required fields whose absence is a per-file warning (not a parse error).
+    REQUIRED_FIELDS = ("case_id", "date_utc")
+    # At least ONE of these must be present (different sub-agents use different keys).
+    EITHER_FIELDS = (("verdict", "mode_a_verdict"), ("output_sha256", "mode_b_sha256"))
+
     verdicts: dict[str, int] = {}
     for f in case_files:
-        fields = parse_frontmatter(f)
+        fields, warns = parse_frontmatter(f)
+        all_warnings.extend(warns)
+        # Per-file required-field check (gap #5)
+        missing = [k for k in REQUIRED_FIELDS if k not in fields]
+        for either in EITHER_FIELDS:
+            if not any(k in fields for k in either):
+                missing.append("|".join(either))
+        if missing:
+            all_warnings.append(f"{f}: missing fields {missing}")
         case_id = fields.get("case_id", f.stem)
         date_utc = fields.get("date_utc", "?")
         # Sub-agents have different "what was reviewed" fields; pick by what's present
@@ -109,7 +134,7 @@ def build_index(subagent_dir: Path) -> str:
             lines.append(f"  - `{v}`: {n}")
     lines.append("")
 
-    return "\n".join(lines) + "\n"
+    return "\n".join(lines) + "\n", all_warnings
 
 
 def main() -> int:
@@ -118,6 +143,9 @@ def main() -> int:
     parser.add_argument("subagent_dir", nargs="?", type=Path,
                         help="Path to subagents/<name>/ directory. "
                              "If omitted, rebuild ALL subagents/*/.")
+    parser.add_argument("--strict", action="store_true",
+                        help="Exit non-zero if any per-case file is malformed "
+                             "or missing required fields. Use in pre-commit hooks.")
     args = parser.parse_args()
 
     if args.subagent_dir:
@@ -127,12 +155,21 @@ def main() -> int:
         targets = sorted(p for p in (repo_root / "subagents").iterdir()
                          if p.is_dir() and (p / "invocations").is_dir())
 
+    total_warnings = 0
     for t in targets:
         out_path = t / "invocations_log.md"
-        content = build_index(t)
+        content, warnings = build_index(t, strict=args.strict)
         out_path.write_text(content)
         n = sum(1 for _ in (t / "invocations").glob("*.md"))
         print(f"Wrote {out_path} ({n} invocations indexed)")
+        for w in warnings:
+            print(f"  WARNING: {w}", file=sys.stderr)
+        total_warnings += len(warnings)
+
+    if args.strict and total_warnings > 0:
+        print(f"FAIL (--strict): {total_warnings} warning(s) across all subagents",
+              file=sys.stderr)
+        return 1
 
     return 0
 

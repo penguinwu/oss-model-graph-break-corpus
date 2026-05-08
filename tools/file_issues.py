@@ -1395,7 +1395,12 @@ def cmd_pytorch_upstream(args):
         })
 
     # ── Render the body ──
-    body_parts = [UPSTREAM_BODY_MARKER, ""]
+    # Inject the case_id marker FIRST so the upstream body ties back to the
+    # subagents/file-issue invocation. Without this, audit_issue_footers.py
+    # cannot link an upstream issue to the case file that generated it.
+    # (Adversary review case adv-2026-05-08-161753-file-issue-impl gap #2.)
+    case_id_marker = f"<!-- via subagents/file-issue case_id={getattr(args, 'via_skill', 'unknown')} -->"
+    body_parts = [case_id_marker, UPSTREAM_BODY_MARKER, ""]
     if summary_text:
         body_parts += [summary_text, ""]
 
@@ -1487,7 +1492,7 @@ def cmd_pytorch_upstream(args):
         print(f"[upstream] DRY RUN — pass --post to actually create issue / post comment.", file=sys.stderr)
 
 
-def _validate_via_skill(case_id: str, body_path: str | None) -> tuple[bool, str]:
+def _validate_via_skill(case_id: str, body_path: str | None) -> tuple[bool, str, bytes | None]:
     """Validate a --via-skill <case_id> claim before posting.
 
     Reads subagents/file-issue/invocations/<case_id>.md and checks:
@@ -1495,8 +1500,13 @@ def _validate_via_skill(case_id: str, body_path: str | None) -> tuple[bool, str]
     2. mode_a_verdict in {proceed, proceed-with-fixes}
     3. mode_b_sha256 is non-empty (Mode B reached)
     4. If body_path provided, sha256(body) matches body_sha256 in case file
+    5. If body_path provided AND target is corpus issue, body must contain the
+       footer marker `<!-- via subagents/file-issue case_id=<case_id> -->`
+       (gap #3 — Mode B is trusted to include the marker but defense-in-depth
+       requires the tool to check too)
 
-    Returns (ok, error_message). On ok=True, error_message is empty.
+    Returns (ok, error_message, body_bytes). On ok=True, error_message is empty
+    and body_bytes is the verified body content (closes TOCTOU race — gap #11).
     """
     import hashlib
     case_file = REPO_ROOT / f"subagents/file-issue/invocations/{case_id}.md"
@@ -1504,15 +1514,15 @@ def _validate_via_skill(case_id: str, body_path: str | None) -> tuple[bool, str]
         return False, (f"--via-skill: case file not found: {case_file}.\n"
                        f"  Did you forget to invoke subagents/file-issue/SKILL.md? "
                        f"Or rebuild the aggregator with "
-                       f"`python3 tools/build_invocations_log.py subagents/file-issue/`.")
+                       f"`python3 tools/build_invocations_log.py subagents/file-issue/`."), None
     text = case_file.read_text()
 
     # Parse frontmatter (same logic as build_invocations_log.py)
     if not text.startswith("---\n"):
-        return False, f"--via-skill: case file missing YAML frontmatter: {case_file}"
+        return False, f"--via-skill: case file missing YAML frontmatter: {case_file}", None
     end = text.find("\n---\n", 4)
     if end < 0:
-        return False, f"--via-skill: case file frontmatter not closed: {case_file}"
+        return False, f"--via-skill: case file frontmatter not closed: {case_file}", None
     fm_block = text[4:end]
     fields: dict[str, str] = {}
     for line in fm_block.splitlines():
@@ -1528,43 +1538,90 @@ def _validate_via_skill(case_id: str, body_path: str | None) -> tuple[bool, str]
     if verdict not in ("proceed", "proceed-with-fixes"):
         return False, (f"--via-skill: case {case_id} has mode_a_verdict='{verdict}'. "
                        f"Required: proceed or proceed-with-fixes. Run Mode A again "
-                       f"after revisions, or check the case file directly.")
+                       f"after revisions, or check the case file directly."), None
 
     mode_b_sha = fields.get("mode_b_sha256", "")
     if not mode_b_sha:
         return False, (f"--via-skill: case {case_id} has no mode_b_sha256 — Mode B did "
-                       f"not produce a body, or the case file is incomplete.")
+                       f"not produce a body, or the case file is incomplete."), None
 
+    body_bytes: bytes | None = None
     if body_path:
-        body_text = Path(body_path).read_text()
-        actual_sha = hashlib.sha256(body_text.encode()).hexdigest()
+        # Read once, hash once (closes TOCTOU race — gap #11). Caller uses these
+        # exact bytes for the POST payload.
+        body_bytes = Path(body_path).read_bytes()
+        actual_sha = hashlib.sha256(body_bytes).hexdigest()
         expected_sha = fields.get("body_sha256", "")
         if not expected_sha:
             return False, (f"--via-skill: case {case_id} missing body_sha256 in "
-                           f"frontmatter. Cannot verify integrity of body being posted.")
+                           f"frontmatter. Cannot verify integrity of body being posted."), None
         if actual_sha != expected_sha:
             return False, (f"--via-skill: body sha256 mismatch.\n"
                            f"  expected (from case file): {expected_sha}\n"
                            f"  actual (from {body_path}): {actual_sha}\n"
                            f"  The body file has been modified since Mode B wrote it. "
-                           f"Re-run Mode B if the modification was intentional.")
+                           f"Re-run Mode B if the modification was intentional."), None
 
-    return True, ""
+        # Gap #3: enforce footer marker presence at the tool level
+        # (Mode B is trusted to include it; this is defense-in-depth.)
+        expected_marker = f"<!-- via subagents/file-issue case_id={case_id} -->"
+        if expected_marker.encode() not in body_bytes:
+            return False, (f"--via-skill: body does not contain required footer "
+                           f"marker.\n"
+                           f"  expected: {expected_marker}\n"
+                           f"  in body file: {body_path}\n"
+                           f"  Mode B's persona is supposed to include this marker. "
+                           f"Re-run Mode B; it may have drifted."), None
+
+    return True, "", body_bytes
+
+
+def _update_case_posted_url(case_id: str, posted_url: str) -> None:
+    """Atomic-ish update of the `posted_url:` line in a case file's frontmatter
+    after a successful POST. Closes gap #4 (manual update step prone to silent
+    omission). Caller must have already successfully posted.
+    """
+    case_file = REPO_ROOT / f"subagents/file-issue/invocations/{case_id}.md"
+    text = case_file.read_text()
+    # Only operate on the frontmatter block (between leading --- and next ---)
+    if not text.startswith("---\n"):
+        print(f"WARNING: case file lacks frontmatter; cannot update posted_url: {case_file}",
+              file=sys.stderr)
+        return
+    end = text.find("\n---\n", 4)
+    if end < 0:
+        print(f"WARNING: case file frontmatter not closed; cannot update posted_url: {case_file}",
+              file=sys.stderr)
+        return
+    fm = text[4:end]
+    body_after = text[end:]
+    # Replace existing `posted_url:` line (handles quoted/unquoted)
+    new_fm, n = re.subn(
+        r"^posted_url:\s*.+$",
+        f"posted_url: {posted_url}",
+        fm, count=1, flags=re.MULTILINE,
+    )
+    if n == 0:
+        # No existing line — append before the closing ---
+        new_fm = fm.rstrip() + f"\nposted_url: {posted_url}\n"
+    new_text = "---\n" + new_fm + body_after
+    case_file.write_text(new_text)
 
 
 def cmd_corpus_issue(args):
     """Post a single corpus-repo issue, gated by --via-skill validation."""
-    ok, err = _validate_via_skill(args.via_skill, args.body)
+    ok, err, body_bytes = _validate_via_skill(args.via_skill, args.body)
     if not ok:
         print(err, file=sys.stderr)
         sys.exit(1)
-    body_text = Path(args.body).read_text()
+    # Use the bytes _validate_via_skill already hashed (gap #11 — no TOCTOU).
+    body_text = body_bytes.decode("utf-8")
     if not args.post:
         print("[DRY-RUN] would post to penguinwu/oss-model-graph-break-corpus")
         print(f"  case_id: {args.via_skill}")
         print(f"  title:   {args.title}")
         print(f"  labels:  {args.label}")
-        print(f"  body:    {len(body_text)} chars (sha256 verified)")
+        print(f"  body:    {len(body_text)} chars (sha256 + footer marker verified)")
         print(f"  Add --post to actually create the issue.")
         return
     # Post via GitHub API
@@ -1573,10 +1630,13 @@ def cmd_corpus_issue(args):
         payload["labels"] = list(args.label)
     response = _proxy_api(f"/repos/{REPO_SLUG}/issues", method="POST", body=payload)
     issue_url = response.get("html_url", "<unknown>")
+    # Auto-update posted_url in the case file (gap #4)
+    _update_case_posted_url(args.via_skill, issue_url)
     print(f"Posted: {issue_url}")
     print(f"  case_id: {args.via_skill}")
-    print(f"  Update the case file's posted_url field manually, then "
-          f"`python3 tools/build_invocations_log.py subagents/file-issue/` to refresh.")
+    print(f"  case file's posted_url field updated automatically.")
+    print(f"  Refresh the aggregate index: "
+          f"`python3 tools/build_invocations_log.py subagents/file-issue/`")
 
 
 def main():
@@ -1734,7 +1794,7 @@ def main():
               file=sys.stderr)
         sys.exit(2)
     elif args.command == "pytorch-upstream":
-        ok, err = _validate_via_skill(args.via_skill, None)
+        ok, err, _body = _validate_via_skill(args.via_skill, None)
         if not ok:
             print(err, file=sys.stderr)
             sys.exit(1)

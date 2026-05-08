@@ -247,6 +247,156 @@ def test_python_bin_precedence_passes_with_correct_framing():
             cdc.REPO_ROOT = orig
 
 
+def test_subagent_required_fields_passes_on_current_repo():
+    """Adversary impl-review gap #6: rule covers SKILL/persona/invocations/
+    invocations_log.md/RETROSPECTIVE.md — current repo has all of them."""
+    assert cdc.rule_subagent_required_fields() == [], \
+        "subagent_required_fields rule should pass on current repo state"
+
+
+def test_subagent_required_fields_catches_missing_skill_md():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmpdir = Path(tmp)
+        # subagents/foo/ exists but has no SKILL.md
+        (tmpdir / "subagents" / "foo" / "invocations").mkdir(parents=True)
+        (tmpdir / "subagents" / "foo" / "persona.md").write_text("x")
+        (tmpdir / "subagents" / "foo" / "invocations_log.md").write_text("x")
+        (tmpdir / "subagents" / "foo" / "RETROSPECTIVE.md").write_text("x")
+        orig = cdc.REPO_ROOT
+        try:
+            cdc.REPO_ROOT = tmpdir
+            v = cdc.rule_subagent_required_fields()
+            assert any("missing SKILL.md" in x for x in v), \
+                f"should report missing SKILL.md; got: {v}"
+        finally:
+            cdc.REPO_ROOT = orig
+
+
+def test_subagent_required_fields_catches_missing_invocations_dir():
+    """Adversary impl-review gap #6: invocations/ subdir is required."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmpdir = Path(tmp)
+        (tmpdir / "subagents" / "foo").mkdir(parents=True)
+        (tmpdir / "subagents" / "foo" / "SKILL.md").write_text(
+            "---\nname: foo\ndescription: x\n---\n"
+        )
+        (tmpdir / "subagents" / "foo" / "persona.md").write_text("x")
+        (tmpdir / "subagents" / "foo" / "invocations_log.md").write_text("x")
+        (tmpdir / "subagents" / "foo" / "RETROSPECTIVE.md").write_text("x")
+        # NO invocations/ dir
+        orig = cdc.REPO_ROOT
+        try:
+            cdc.REPO_ROOT = tmpdir
+            v = cdc.rule_subagent_required_fields()
+            assert any("invocations" in x and "subdir" in x for x in v), \
+                f"should report missing invocations/ dir; got: {v}"
+        finally:
+            cdc.REPO_ROOT = orig
+
+
+def test_subagent_required_fields_catches_missing_persona():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmpdir = Path(tmp)
+        (tmpdir / "subagents" / "foo" / "invocations").mkdir(parents=True)
+        (tmpdir / "subagents" / "foo" / "SKILL.md").write_text(
+            "---\nname: foo\ndescription: x\n---\n"
+        )
+        (tmpdir / "subagents" / "foo" / "invocations_log.md").write_text("x")
+        (tmpdir / "subagents" / "foo" / "RETROSPECTIVE.md").write_text("x")
+        # NO persona.md
+        orig = cdc.REPO_ROOT
+        try:
+            cdc.REPO_ROOT = tmpdir
+            v = cdc.rule_subagent_required_fields()
+            assert any("persona.md" in x for x in v), \
+                f"should report missing persona.md; got: {v}"
+        finally:
+            cdc.REPO_ROOT = orig
+
+
+def test_subagent_required_fields_catches_missing_invocations_log():
+    """Adversary impl-review gap #6: invocations_log.md (generated) is required."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmpdir = Path(tmp)
+        (tmpdir / "subagents" / "foo" / "invocations").mkdir(parents=True)
+        (tmpdir / "subagents" / "foo" / "SKILL.md").write_text(
+            "---\nname: foo\ndescription: x\n---\n"
+        )
+        (tmpdir / "subagents" / "foo" / "persona.md").write_text("x")
+        (tmpdir / "subagents" / "foo" / "RETROSPECTIVE.md").write_text("x")
+        # NO invocations_log.md
+        orig = cdc.REPO_ROOT
+        try:
+            cdc.REPO_ROOT = tmpdir
+            v = cdc.rule_subagent_required_fields()
+            assert any("invocations_log.md" in x for x in v), \
+                f"should report missing invocations_log.md; got: {v}"
+        finally:
+            cdc.REPO_ROOT = orig
+
+
+def test_subagent_required_fields_catches_missing_retrospective():
+    """Adversary impl-review gap #6: RETROSPECTIVE.md is required (forcing function)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmpdir = Path(tmp)
+        (tmpdir / "subagents" / "foo" / "invocations").mkdir(parents=True)
+        (tmpdir / "subagents" / "foo" / "SKILL.md").write_text(
+            "---\nname: foo\ndescription: x\n---\n"
+        )
+        (tmpdir / "subagents" / "foo" / "persona.md").write_text("x")
+        (tmpdir / "subagents" / "foo" / "invocations_log.md").write_text("x")
+        # NO RETROSPECTIVE.md
+        orig = cdc.REPO_ROOT
+        try:
+            cdc.REPO_ROOT = tmpdir
+            v = cdc.rule_subagent_required_fields()
+            assert any("RETROSPECTIVE.md" in x for x in v), \
+                f"should report missing RETROSPECTIVE.md; got: {v}"
+        finally:
+            cdc.REPO_ROOT = orig
+
+
+def test_subagent_required_fields_catches_skill_missing_description():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmpdir = Path(tmp)
+        (tmpdir / "subagents" / "foo" / "invocations").mkdir(parents=True)
+        # SKILL.md has frontmatter but no `description:` field
+        (tmpdir / "subagents" / "foo" / "SKILL.md").write_text(
+            "---\nname: foo\n---\n# Foo skill\n"
+        )
+        (tmpdir / "subagents" / "foo" / "persona.md").write_text("x")
+        (tmpdir / "subagents" / "foo" / "invocations_log.md").write_text("x")
+        (tmpdir / "subagents" / "foo" / "RETROSPECTIVE.md").write_text("x")
+        orig = cdc.REPO_ROOT
+        try:
+            cdc.REPO_ROOT = tmpdir
+            v = cdc.rule_subagent_required_fields()
+            assert any("description" in x for x in v), \
+                f"should report missing description field; got: {v}"
+        finally:
+            cdc.REPO_ROOT = orig
+
+
+def test_subagent_required_fields_baseline_passes_with_all_files():
+    """All required pieces present → rule reports no violations."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmpdir = Path(tmp)
+        (tmpdir / "subagents" / "foo" / "invocations").mkdir(parents=True)
+        (tmpdir / "subagents" / "foo" / "SKILL.md").write_text(
+            "---\nname: foo\ndescription: a sub-agent for testing\n---\n# Foo\n"
+        )
+        (tmpdir / "subagents" / "foo" / "persona.md").write_text("x")
+        (tmpdir / "subagents" / "foo" / "invocations_log.md").write_text("x")
+        (tmpdir / "subagents" / "foo" / "RETROSPECTIVE.md").write_text("x")
+        orig = cdc.REPO_ROOT
+        try:
+            cdc.REPO_ROOT = tmpdir
+            assert cdc.rule_subagent_required_fields() == [], \
+                "baseline (all files present) should produce no violations"
+        finally:
+            cdc.REPO_ROOT = orig
+
+
 def test_d1_threshold_notation_catches_geq_notation():
     """`D1 ... ≥1e-3` or `D1 ... >=1e-3` in any doc must fail."""
     with tempfile.TemporaryDirectory() as tmp:

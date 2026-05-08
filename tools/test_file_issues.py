@@ -152,9 +152,10 @@ def test_via_skill_rejects_body_sha256_mismatch():
 
 
 def test_via_skill_accepts_matching_body_sha256():
-    """Happy path: matching sha256 in dry-run mode passes."""
+    """Happy path: matching sha256 + footer marker in dry-run mode passes."""
     case_id = "file-2026-05-08-test-sha-match"
-    body_text = "the body Mode B wrote"
+    body_text = (f"the body Mode B wrote\n\n"
+                 f"<!-- via subagents/file-issue case_id={case_id} -->")
     body_sha = hashlib.sha256(body_text.encode()).hexdigest()
     cf = _make_case_file(case_id, mode_a_verdict="proceed",
                          mode_b_sha256="mode_b_full_output_sha",
@@ -175,7 +176,7 @@ def test_via_skill_accepts_matching_body_sha256():
 def test_via_skill_accepts_proceed_with_fixes_verdict():
     """Gap #2: proceed-with-fixes is also a posting-allowed verdict."""
     case_id = "file-2026-05-08-test-proceed-fixes"
-    body_text = "body"
+    body_text = f"body\n<!-- via subagents/file-issue case_id={case_id} -->"
     body_sha = hashlib.sha256(body_text.encode()).hexdigest()
     cf = _make_case_file(case_id, mode_a_verdict="proceed-with-fixes",
                          mode_b_sha256="x", body_sha256=body_sha)
@@ -186,6 +187,27 @@ def test_via_skill_accepts_proceed_with_fixes_verdict():
         rc, out, err = _run("corpus-issue", "--via-skill", case_id,
                             "--body", body_path, "--title", "T")
         assert rc == 0, f"proceed-with-fixes should pass; got rc={rc}\n  err: {err}"
+    finally:
+        cf.unlink(missing_ok=True)
+        Path(body_path).unlink(missing_ok=True)
+
+
+def test_via_skill_rejects_body_without_footer_marker():
+    """Adversary impl-review gap #3: tool enforces footer marker presence in body."""
+    case_id = "file-2026-05-08-test-no-marker"
+    body_text = "body content with NO footer marker at all"
+    body_sha = hashlib.sha256(body_text.encode()).hexdigest()
+    cf = _make_case_file(case_id, mode_a_verdict="proceed",
+                         mode_b_sha256="x", body_sha256=body_sha)
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+            f.write(body_text)
+            body_path = f.name
+        rc, out, err = _run("corpus-issue", "--via-skill", case_id,
+                            "--body", body_path, "--title", "T")
+        assert rc != 0, f"expected non-zero for missing footer marker; got rc={rc}"
+        assert "footer marker" in err, f"err should explain marker missing; got: {err}"
+        assert case_id in err, f"err should include the expected marker text; got: {err}"
     finally:
         cf.unlink(missing_ok=True)
         Path(body_path).unlink(missing_ok=True)
