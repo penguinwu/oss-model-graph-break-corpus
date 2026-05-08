@@ -577,6 +577,39 @@ def run_experiment(config, args):
     # Results file (JSONL — one line per model/config/mode)
     results_file = output_dir / "results.jsonl"
 
+    # Watchdog-compatible state files (extension 2026-05-07: enables
+    # sweep/sweep_watchdog.py to monitor config-driven runs the same way
+    # it monitors sweep-subcommand runs). Two files needed:
+    # 1. sweep_state.json — phase + total_work_items + started + pid
+    # 2. identify_streaming.jsonl — symlink to results.jsonl (watchdog reads
+    #    this filename for progress count)
+    total_work_items = len(specs) * len(configs) * len(settings.get("modes", ["eval"]))
+    sweep_state = {
+        "status": "running",
+        "pid": os.getpid(),
+        "output_dir": str(output_dir.resolve()),
+        "started": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "args": ["run", str(args.config)] + (["--resume", str(resume_dir)] if resume_dir else []),
+        "total_models": len(specs),
+        "total_work_items": total_work_items,
+        "modes": settings.get("modes", ["eval"]),
+        "phase": "identify",  # run subcommand is always identify-equivalent
+        "phase_total": total_work_items,
+        "_writer": "tools/run_experiment.py run subcommand",
+    }
+    sweep_state_file = output_dir / "sweep_state.json"
+    with open(sweep_state_file, "w") as f:
+        json.dump(sweep_state, f, indent=2)
+
+    # Symlink for watchdog's identify_streaming.jsonl read path
+    streaming_link = output_dir / "identify_streaming.jsonl"
+    if not streaming_link.exists():
+        try:
+            streaming_link.symlink_to("results.jsonl")
+        except OSError:
+            # Fallback: hardlink (some filesystems don't support symlinks)
+            pass
+
     # Load existing results for resume
     resume_from = {}
     if resume_dir and results_file.exists():
@@ -759,6 +792,14 @@ def run_experiment(config, args):
     resolved_config["execution"]["total_results"] = len(all_results)
     with open(config_file, "w") as f:
         json.dump(resolved_config, f, indent=2)
+
+    # Watchdog state — mark done so watchdog reports completion + auto-silences
+    sweep_state["status"] = "done"
+    sweep_state["finished"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    sweep_state["duration_s"] = round(experiment_time, 1)
+    sweep_state["phase"] = "report"
+    with open(sweep_state_file, "w") as f:
+        json.dump(sweep_state, f, indent=2)
 
     # Generate summary
     _generate_summary(all_results, config, output_dir, experiment_time)
