@@ -271,6 +271,23 @@ def validate_config(config, strict=True):
     if python_bin is not None and not isinstance(python_bin, str):
         errors.append(f"settings.python_bin must be a string path")
 
+    # Extension 2026-05-07: settings.modellib_pins for stack reproducibility.
+    # Optional in the schema (existing configs without pins still validate)
+    # but REQUIRED by tools/derive_sweep_commands.py for any spec it processes.
+    # Format: {"transformers": "5.6.2", "diffusers": "0.38.0", "timm": "1.0.26"}
+    modellib_pins = settings.get("modellib_pins")
+    if modellib_pins is not None:
+        if not isinstance(modellib_pins, dict):
+            errors.append(f"settings.modellib_pins must be a dict (e.g., "
+                          f'{{"transformers": "5.6.2", "diffusers": "0.38.0"}})')
+        else:
+            for pkg, ver in modellib_pins.items():
+                if pkg not in ("transformers", "diffusers", "timm"):
+                    errors.append(f"settings.modellib_pins: unknown package '{pkg}' "
+                                  f"(supported: transformers, diffusers, timm)")
+                if not isinstance(ver, str):
+                    errors.append(f"settings.modellib_pins.{pkg}: version must be a string, got {type(ver).__name__}")
+
     return errors
 
 

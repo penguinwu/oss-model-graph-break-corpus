@@ -27,7 +27,12 @@
     "workers": 4,
     "timeout_s": 180,
     "pass_num": 1,
+    "python_bin": "/home/pengwu/envs/torch-nightly-cu126/bin/python",
+    "modellib_pins": {
+      "transformers": "5.6.2",
+      "diffusers": "0.38.0"
+    },
     "_comment_pass": "1 = identify (which now ALSO populates numeric_status / numeric_max_diff for correctness checking — verified in worker.py:3793-3822 + abandoned NGB run's identify_results.json). No need for pass 2 (explain) — that adds break_reasons logging, separate concern.",
-    "_pinning_advisory": "Stack: torch-nightly-cu126 venv + transformers 5.6.2 + diffusers 0.38.0. Match what 2026-05-05 explain pass used. Pass via CLI: `--transformers 5.6.2 --diffusers 0.38.0` AND launch via `~/envs/torch-nightly-cu126/bin/python tools/run_experiment.py run <this-config>`. v1.1 may add a 'pinning' field in settings to enforce this in the config itself (not currently extension)."
+    "_comment_pinning": "python_bin + modellib_pins are the canonical stack for this experiment. tools/derive_sweep_commands.py REQUIRES these fields and bakes them into the emitted bash so the launch can't drift to a different stack."
   }
 }
