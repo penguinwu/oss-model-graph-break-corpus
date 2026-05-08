@@ -203,6 +203,49 @@ def test_post_sweep_handles_jsonl_format():
         assert not strict, f"JSONL parse should succeed; got {[str(f) for f in strict]}"
 
 
+def test_post_sweep_d1_strict_fail_on_catastrophic_divergence():
+    """D1: max_diff > 1e-3 = catastrophic divergence, STRICT_FAIL.
+    Was missing from the executor; surfaced 2026-05-07 20:50 when NGB verify
+    sample's HubertModel reproduced a known ~4.9 divergence and the executor
+    silently reported 'all PASS' (because D1 wasn't checked)."""
+    with tempfile.TemporaryDirectory() as d:
+        results = Path(d) / "results.jsonl"
+        lines = [
+            json.dumps({"_record_type": "metadata"}),
+            json.dumps({"name": "GoodModel", "mode": "eval", "status": "success",
+                        "numeric_status": "match", "numeric_max_diff": 0.0}),
+            json.dumps({"name": "DivergentModel", "mode": "train", "status": "success",
+                        "numeric_status": "divergence", "numeric_max_diff": 4.895}),
+        ]
+        results.write_text("\n".join(lines) + "\n")
+        failures = check_post_sweep(results)
+        d1 = [f for f in failures if f.code == "D1"]
+        assert d1, f"D1 should fire on max_diff=4.895; got codes {[f.code for f in failures]}"
+        assert d1[0].severity == "STRICT_FAIL"
+        assert "DivergentModel" in str(d1[0])
+
+
+def test_post_sweep_d2_flag_on_low_magnitude_divergence():
+    """D2: max_diff in (1e-7, 1e-3] = noise-floor divergence, FLAG (not STRICT).
+    Catches the typical 1e-6 numerical noise from float32 op ordering without
+    halting the sweep."""
+    with tempfile.TemporaryDirectory() as d:
+        results = Path(d) / "results.jsonl"
+        lines = [
+            json.dumps({"_record_type": "metadata"}),
+            json.dumps({"name": "NoiseModel", "mode": "eval", "status": "success",
+                        "numeric_status": "divergence", "numeric_max_diff": 5e-6}),
+        ]
+        results.write_text("\n".join(lines) + "\n")
+        failures = check_post_sweep(results)
+        d2 = [f for f in failures if f.code == "D2"]
+        assert d2, "D2 should fire on max_diff=5e-6"
+        assert d2[0].severity == "FLAG"
+        # No STRICT failures should fire (D2 is FLAG-only)
+        strict = [f for f in failures if f.severity == "STRICT_FAIL"]
+        assert not strict, f"only FLAG expected; got STRICT: {[str(f) for f in strict]}"
+
+
 def test_post_sweep_recognizes_success_status():
     """Regression for 2026-05-07 20:46: run_experiment.py 'run' subcommand emits
     status='success' (vs sweep's 'ok'/'full_graph'). check_cohort_invariants

@@ -236,6 +236,46 @@ def check_post_sweep(results_path: Path) -> list:
             examples=non_env_eager_errors,
         ))
 
+    # D1 — catastrophic numeric divergences (max_diff > 1e-3)
+    # Per skills/sweep_sanity_check.md: "every one HALT-and-investigate. No threshold."
+    # Was missing from the executor pre-2026-05-07 20:50 — added when the NGB
+    # verify sample reproduced HubertModel's known ~5.0 divergence and the check
+    # silently passed.
+    D1_THRESHOLD = 1e-3
+    d1_examples = []
+    for r in rows:
+        diff = r.get("numeric_max_diff")
+        if isinstance(diff, (int, float)) and diff > D1_THRESHOLD:
+            d1_examples.append(
+                f"{r.get('name', '<unknown>'):40s} mode={r.get('mode', '?'):6s} "
+                f"max_diff={diff:.6g}"
+            )
+    if d1_examples:
+        failures.append(InvariantFailure(
+            "D1", "STRICT_FAIL",
+            f"{len(d1_examples)} catastrophic numeric divergence(s) (max_diff > {D1_THRESHOLD})",
+            examples=d1_examples,
+        ))
+
+    # D2 — persistent low-magnitude divergences (FLAG, not STRICT)
+    # max_diff in (noise_floor, D1_THRESHOLD]. Flagged so they're visible,
+    # but don't block — the noise floor varies by model class.
+    D2_NOISE_FLOOR = 1e-7
+    d2_examples = []
+    for r in rows:
+        diff = r.get("numeric_max_diff")
+        if isinstance(diff, (int, float)) and D2_NOISE_FLOOR < diff <= D1_THRESHOLD:
+            d2_examples.append(
+                f"{r.get('name', '<unknown>'):40s} mode={r.get('mode', '?'):6s} "
+                f"max_diff={diff:.3e}"
+            )
+    if d2_examples:
+        failures.append(InvariantFailure(
+            "D2", "FLAG",
+            f"{len(d2_examples)} low-magnitude divergence(s) ({D2_NOISE_FLOOR} < max_diff <= {D1_THRESHOLD})",
+            examples=d2_examples,
+        ))
+
     # G1 — every non-success row is triaged
     # We can only check this if known_errors.json + skip_models.json exist.
     # For this lightweight executor, we report the COUNT of untriaged candidates
