@@ -213,6 +213,54 @@ def test_via_skill_rejects_body_without_footer_marker():
         Path(body_path).unlink(missing_ok=True)
 
 
+def test_persona_documents_no_fix_suggestion_rule():
+    """Criterion #4 redefinition (Peng directive 2026-05-08T20:23 ET):
+    persona must explicitly forbid fix-suggestion content. This test pins
+    that the persona file has the rule in writing, so a future edit can't
+    silently drop it.
+
+    The rule's ENFORCEMENT in Mode A (verdict reframe) and Mode B
+    (VALIDATION_FAILED) is exercised when the sub-agent runs against a
+    real draft with the anti-pattern. Until we have a way to harness-test
+    a live Mode A invocation in a unit test, this doc-presence check is
+    the load-bearing pin.
+    """
+    persona = (REPO_ROOT / "subagents/file-issue/persona.md").read_text()
+    # Three load-bearing claims must appear in the persona text
+    required_phrases = [
+        "Forbidden section headers",
+        "Proposed fix",
+        "Possible directions",
+        "regression_evidence",
+        "criterion #4",
+    ]
+    missing = [p for p in required_phrases if p not in persona]
+    assert not missing, (
+        f"persona.md is missing required no-fix-suggestion language: {missing}. "
+        f"Per Peng directive 2026-05-08T20:23 ET, the persona must explicitly "
+        f"forbid fix-suggestion content. Did someone delete the criterion #4 "
+        f"redefinition section?"
+    )
+
+
+def test_skill_md_documents_no_fix_suggestion_rule():
+    """Same pin for SKILL.md — the user-facing 'What this skill does NOT do'
+    section must include the no-fix-suggestion rule."""
+    skill = (REPO_ROOT / "subagents/file-issue/SKILL.md").read_text()
+    required_phrases = [
+        "What this skill does NOT do",
+        "does NOT propose a fix",
+        "Possible directions",
+        "Alban refuted",  # the cautionary tale
+    ]
+    missing = [p for p in required_phrases if p not in skill]
+    assert not missing, (
+        f"SKILL.md is missing required no-fix-suggestion language: {missing}. "
+        f"This documents the Peng directive 2026-05-08T20:23 ET; deletion "
+        f"would let the anti-pattern silently re-emerge."
+    )
+
+
 def test_pytorch_upstream_posting_disabled_by_default():
     """Per Peng directive 2026-05-08 19:56 ET: pytorch-upstream --post must
     refuse to fire unless PYTORCH_UPSTREAM_POSTING_ENABLED constant in the

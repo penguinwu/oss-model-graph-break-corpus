@@ -384,6 +384,87 @@ def rule_subagent_paths_migrated() -> list[Violation]:
     return violations
 
 
+def rule_no_fix_suggestions_in_templates() -> list[Violation]:
+    """The file-issue persona's Mode B body templates must NOT contain
+    forbidden fix-suggestion section headers as REQUIRED content.
+
+    The persona file naturally MENTIONS these phrases (it's enforcing them as
+    anti-patterns), but it must not INSTRUCT the assembler to PRODUCE them.
+    The distinction: the persona may say "do not write 'Proposed fix' sections"
+    (good — anti-pattern guidance) vs the template saying
+    "## Proposed fix\n<content>" (bad — instructs the assembler to produce it).
+
+    Per criterion #4 redefinition 2026-05-08T20:23 ET (Peng directive). The
+    redefinition followed Mode A's first-invocation lesson: Otter does not have
+    the dynamo-internals expertise to suggest fixes credibly, and Otter-suggested
+    fixes have been refuted by maintainers (Alban refuted one on a pytorch/pytorch
+    issue 2026-05-06).
+    """
+    persona = REPO_ROOT / "subagents/file-issue/persona.md"
+    if not persona.is_file():
+        return []  # subagent not present yet
+    text = persona.read_text()
+
+    # The forbidden patterns that MUST NOT appear as template directives.
+    # We look inside the inline default templates (between code-fence ```markdown
+    # blocks following "**Corpus bug template" or "**Pytorch bug template").
+    # Those code-fence blocks are what Mode B uses verbatim — anything inside
+    # is a literal instruction to produce that section.
+    forbidden_section_headers = (
+        "Proposed fix",
+        "Suggested fix",
+        "Possible directions",
+        "Possible fixes",
+        "Recommendations",
+        "What you should do",
+        "How to fix",
+    )
+
+    # Stateful line-by-line scan: track whether the current line is inside
+    # an outer ```markdown block (any depth). Forbidden headers found inside
+    # such blocks are template directives = violations.
+    #
+    # Nested fences (e.g., ```python inside ```markdown) are tracked separately
+    # so they don't accidentally close the outer markdown block.
+    violations: list[Violation] = []
+    inside_markdown_template = False
+    inside_inner_fence = False
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        stripped = line.strip()
+        if stripped == "```markdown" and not inside_markdown_template:
+            inside_markdown_template = True
+            inside_inner_fence = False
+            continue
+        if inside_markdown_template:
+            if stripped == "```" and not inside_inner_fence:
+                # Outer markdown block closed
+                inside_markdown_template = False
+                continue
+            if stripped.startswith("```") and not inside_inner_fence:
+                # Opened inner nested fence (e.g., ```python)
+                inside_inner_fence = True
+                continue
+            if stripped == "```" and inside_inner_fence:
+                # Closed inner nested fence
+                inside_inner_fence = False
+                continue
+            # Inside outer markdown template (and not inside a nested code
+            # fence), scan for forbidden headers.
+            if not inside_inner_fence:
+                for header in forbidden_section_headers:
+                    if re.match(rf"^#+\s*{re.escape(header)}\b", stripped):
+                        violations.append(
+                            f"subagents/file-issue/persona.md:{lineno}: "
+                            f"inline template contains forbidden section header "
+                            f"`{header}` — this instructs Mode B to produce a "
+                            f"fix-suggestion section. Per criterion #4 "
+                            f"redefinition: the body must not propose a fix. "
+                            f"Remove the section from the template."
+                        )
+                        break
+    return violations
+
+
 RULES: dict[str, RuleFn] = {
     "cohort_codes": rule_cohort_codes,
     "apply_modes": rule_apply_modes,
@@ -392,6 +473,7 @@ RULES: dict[str, RuleFn] = {
     "d1_threshold_notation": rule_d1_threshold_notation,
     "subagent_required_fields": rule_subagent_required_fields,
     "subagent_paths_migrated": rule_subagent_paths_migrated,
+    "no_fix_suggestions_in_templates": rule_no_fix_suggestions_in_templates,
 }
 
 

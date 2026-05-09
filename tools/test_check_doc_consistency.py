@@ -377,6 +377,122 @@ def test_subagent_required_fields_catches_skill_missing_description():
             cdc.REPO_ROOT = orig
 
 
+def test_no_fix_suggestions_passes_on_current_repo():
+    """Criterion #4 redefinition (2026-05-08T20:23 ET): persona templates
+    must not include Proposed fix / Possible directions / etc. as required
+    sections. Current repo has been cleaned."""
+    assert cdc.rule_no_fix_suggestions_in_templates() == [], \
+        "no_fix_suggestions rule should pass on current repo state"
+
+
+def test_no_fix_suggestions_catches_proposed_fix_section_in_template():
+    """Negative case: a template that instructs the assembler to write a
+    'Proposed fix' section must be flagged."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmpdir = Path(tmp)
+        sub = tmpdir / "subagents/file-issue"
+        sub.mkdir(parents=True, exist_ok=True)
+        # Synthetic persona with a template containing a forbidden header.
+        bad_persona = '''# persona
+
+**Corpus bug template:**
+```markdown
+## Symptom
+
+<2-4 sentences>
+
+## Reproduction
+
+```python
+import torch
+```
+
+## Proposed fix
+
+<what we think the fix should be>
+```
+
+The end.
+'''
+        (sub / "persona.md").write_text(bad_persona)
+        orig = cdc.REPO_ROOT
+        try:
+            cdc.REPO_ROOT = tmpdir
+            v = cdc.rule_no_fix_suggestions_in_templates()
+            assert len(v) >= 1, f"expected violation; got: {v}"
+            assert any("Proposed fix" in x for x in v), \
+                f"violation should name `Proposed fix`; got: {v}"
+        finally:
+            cdc.REPO_ROOT = orig
+
+
+def test_no_fix_suggestions_catches_possible_directions():
+    """Negative case: 'Possible directions' header in a template is forbidden."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmpdir = Path(tmp)
+        sub = tmpdir / "subagents/file-issue"
+        sub.mkdir(parents=True, exist_ok=True)
+        bad_persona = '''# persona
+
+```markdown
+## Symptom
+
+x
+
+## Possible directions
+
+- option a
+- option b
+```
+'''
+        (sub / "persona.md").write_text(bad_persona)
+        orig = cdc.REPO_ROOT
+        try:
+            cdc.REPO_ROOT = tmpdir
+            v = cdc.rule_no_fix_suggestions_in_templates()
+            assert any("Possible directions" in x for x in v), \
+                f"violation should name `Possible directions`; got: {v}"
+        finally:
+            cdc.REPO_ROOT = orig
+
+
+def test_no_fix_suggestions_allows_anti_pattern_mentions_outside_templates():
+    """The persona MAY mention forbidden phrases as anti-pattern guidance
+    (necessary to enforce them). Only INSIDE template code-fence blocks
+    should the patterns be banned."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmpdir = Path(tmp)
+        sub = tmpdir / "subagents/file-issue"
+        sub.mkdir(parents=True, exist_ok=True)
+        # Persona with anti-pattern phrases mentioned in PROSE (not in templates)
+        ok_persona = '''# persona
+
+The forbidden section headers are: Proposed fix, Possible directions,
+Suggested fix, Recommendations, How to fix.
+
+The persona must reject any draft containing these.
+
+**Corpus bug template:**
+```markdown
+## Symptom
+
+<x>
+
+## Reproduction
+
+<y>
+```
+'''
+        (sub / "persona.md").write_text(ok_persona)
+        orig = cdc.REPO_ROOT
+        try:
+            cdc.REPO_ROOT = tmpdir
+            assert cdc.rule_no_fix_suggestions_in_templates() == [], \
+                "anti-pattern mentions in PROSE (outside template blocks) should be allowed"
+        finally:
+            cdc.REPO_ROOT = orig
+
+
 def test_subagent_required_fields_baseline_passes_with_all_files():
     """All required pieces present → rule reports no violations."""
     with tempfile.TemporaryDirectory() as tmp:

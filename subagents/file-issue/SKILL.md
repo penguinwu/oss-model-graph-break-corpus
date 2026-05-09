@@ -39,9 +39,23 @@ Tests Otter writes reflect Otter's mental model. Same for issues — Otter natur
 1. **Self-contained** — standalone reproduction instructions, no external artifacts
 2. **Concise** — preserve maintainer attention; PyTorch maintainers read 50 issues a day
 3. **Trustworthy** — validate symptoms LIVE at filing time, not from memory or prior runs
-4. **Actionable** — scoped to a single fix; never lump N distinct fixes into one issue
+4. **Actionable (= reproducible)** — the maintainer can reproduce the symptom in their own environment from the body alone. **The body does NOT propose a fix.** The maintainer decides the fix. (Redefined 2026-05-08T20:23 ET — see "What this skill does NOT do" below.)
 
 The sub-agent enforces all four mechanically. Mode A blocks bad framing; Mode B blocks bad bodies.
+
+## What this skill does NOT do
+
+**This skill does NOT help Otter suggest fixes in issues.** Per Peng directive 2026-05-08T20:23 ET, Otter does not have the dynamo-internals expertise to suggest fixes credibly, and Otter-suggested fixes have been refuted by maintainers in the past (Alban refuted a fix on a pytorch/pytorch issue 2026-05-06; Mode A's first invocation 2026-05-08 reinforced the anti-pattern by recommending an existing-issue rewrite include "Pick ONE direction"). The lesson: Otter's expertise is finding + reproducing breaks; the maintainer decides the fix.
+
+Mechanically, this means:
+
+- **Forbidden section headers in any issue body:** `Proposed fix`, `Suggested fix`, `Possible directions`, `Possible fixes`, `Recommendations`, `What you should do`, `How to fix`, `Triage options` (when those options ARE fix proposals)
+- **Forbidden inline phrases:** `Consider X`, `Maybe try Y`, `We could Z`, `One approach is`, `The dynamo team should`, `A reasonable fix would be`
+- **Mode A** rejects (verdict `reframe`) any draft containing these patterns
+- **Mode B** refuses (returns `VALIDATION_FAILED`) any body containing these patterns
+- **Single carve-out:** if the draft has a `regression_evidence` field with a specific PR + bisect/measurement evidence, the body MAY name the offending PR. Speculation forbidden — proof required.
+
+This is encoded in `subagents/file-issue/persona.md` (criterion #4 + Mode A check #8 + failure-modes table) and pinned by `tools/test_file_issues.py::test_mode_b_refuses_fix_suggestion_content` and `tools/check_doc_consistency.py::rule_no_fix_suggestions_in_templates`.
 
 ## Case ID convention
 
@@ -67,7 +81,8 @@ Write a draft framing to `/tmp/file-issue-<case_id>-draft.md` containing:
 - **symptom_one_liner**: what fails, observed where
 - **evidence_pointers**: paths to results files, sweep dirs, commit shas — anything Mode B will cite
 - **proposed_repro**: pseudo-script or sketch of the MRE (≤30 lines target)
-- **single_fix_claim**: in one sentence, the SPECIFIC code change that would close this issue. If you can't name one, you have N issues, not 1.
+- **repro_strategy**: in one sentence, the CONCRETE command/script the maintainer runs to see the symptom in their own environment. Example: "Run `python repro.py` and observe `RuntimeError: ...`." NOT a fix proposal. (Replaced the prior `single_fix_claim` field 2026-05-08T20:23 ET — see criterion #4 redefinition. If you find yourself typing "fix this by..." or "add support for...", that's a fix-suggestion and Mode A will `reframe`.)
+- **regression_evidence** (optional): IF you have proof that a specific recent PR caused the symptom (commit sha + bisect/measurement), put it here. This is the ONLY path that lets the body name a fix-direction. Without this field, ANY fix-suggestion content in the body is a hard reject.
 - **dup_search**: GitHub search query you ran + result ("searched github.com/<target>/issues?q=<QUERY> — N results, none matching"). Mode A checks the query contains a specific symbol from `proposed_repro` (model class name OR API symbol).
 
 ### Step 2 — Live validation (criterion #3)
