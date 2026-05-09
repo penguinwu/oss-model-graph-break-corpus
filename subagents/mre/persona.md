@@ -120,7 +120,30 @@ ALWAYS run verify_repro on the current torch and check what fragment actually su
 
 **Sub-pattern: mutation-class graph break (observed in #19 dogfood 2026-05-09).** Break message of the form `setattr() on Tensor.<attr>` (e.g., `Tensor.requires_grad`) — the mutation IS the trigger, no call/branch needed. Lift the literal `obj.attr = value` assignment into a trivial `nn.Module.forward` guarded by `self.training` or similar boolean. Hard-error class — use `fullgraph=True` + `backend="eager"`, signal `exit_nonzero+stderr_contains`. No `dynamic=True`, no `TORCH_LOGS`. ~22 lines.
 
-**Sub-pattern: same-file cluster (observed across #11 + #23 dogfoods 2026-05-09).** When two issues cite the same source file with different gaps, they form a cluster — the helper / decorator at that file hits multiple Dynamo gaps. Both #11 (lock CM at output_capturing.py:192) and #23 (ContextVar.get at output_capturing.py:76) originate from transformers' `CompileableContextVar` wrapper. When dogfooding the second issue, surface the relationship in the body's Related Issues section — helps the maintainer batch-fix the helper rather than gap-by-gap.
+**Sub-pattern: same-file cluster (observed across #11 + #23 + #24 + #96 dogfoods 2026-05-09).** When multiple issues cite the same source file with different gaps, they form a cluster — the helper / decorator at that file hits multiple Dynamo gaps. The `transformers/utils/output_capturing.py` cluster has 4 issues (#11 lock CM, #23 ContextVar.get, #24 setattr-on-RemovableHandle via hook-registration, #96 DictIterator/DictItemsIterator) — all from `CompileableContextVar`/`capture_outputs` wrapper. When dogfooding any cluster member, surface the relationship in the body's Related Issues section. Maintainer can batch-fix the helper.
+
+**MANDATORY check: title-vs-actual divergence (observed in #26, #12, #17, #14 dogfoods 2026-05-09).** Before writing the MRE, verify that the issue title matches the actual break_reason at the cited file:line. If they diverge, the cited line is ground truth — the title is the wrong one. Surface the divergence in NOTES so the file-issue subagent can re-title. Concrete cases observed:
+- **#26** title said "RNG seeding (Generator.seed + manual_seed)" but actual gap is `requires_grad_() intermediate leaked as output`.
+- **#12** title said "Observed exception (try/except)" but actual mechanism is `is_torchdynamo_compiling()`-gated auto-construction → unguarded subscript → NoneType TypeError surfaced as "Observed exception". No try/except involved.
+- **#17** title said "Gemma 4" but affected model is Gemma3 (typo); also "2 models" but only 1 in sweep.
+- **#14** title implied `reversed(ModuleList)` was the canonical gap; that gap is fixed in current nightly, the still-firing gap is `Tensor.item()` in a `@torch.jit.script` helper.
+
+The pattern: many original issue titles were auto-filed by `tools/file_issues.py` from sweep gap-class strings, which can be inaccurate, stale (gap was fixed upstream), or misclassified.
+
+**Sub-pattern: `is_torchdynamo_compiling()`-gated auto-construction (observed in #12 dogfood 2026-05-09).** A high-leverage anti-pattern in transformers models. Class signature:
+1. A required tensor argument defaulted to `None`.
+2. An `if x is None and not is_torchdynamo_compiling()` guard that constructs it.
+3. Unconditional downstream use of `x`.
+
+Under `torch.compile`, the guard short-circuits, leaving `x = None`, producing `TypeError: 'NoneType' object is not subscriptable`, which Dynamo surfaces as "Observed exception". MRE: `from torch._dynamo.external_utils import is_compiling`, lift the guard + downstream use into a trivial `nn.Module`. ~22 lines, no transformers dep. Likely present in many models that use this idiom.
+
+**Sub-pattern: gap-may-be-fixed-upstream (observed in #14 + #96 dogfoods 2026-05-09).** When verify_repro on current nightly does NOT reproduce the sweep-era symptom, do NOT ship a hypothesis MRE. Two valid responses:
+- **Pivot** to a still-firing gap from the same model/file (#14 case: pivoted from `reversed(ModuleList)` to still-firing `Tensor.item()`).
+- **Document the absorption** (#96 case: original gb0092 DictIterator gap is absorbed by upstream ContextVar.set break (gb0156); MRE encodes the wrapper-class fragment honestly and notes the maintainer should evaluate whether the issue can be closed in favor of the cluster fix).
+
+Either way, the body's Repro status block must honestly state what the current nightly does, not what the sweep recorded. Symptom-string drift is the lesser case; gap-fully-absorbed is the more serious case worth flagging to the maintainer.
+
+**Sub-pattern: multi-gap issue (observed in #16 dogfood 2026-05-09).** Some issues cover multiple Dynamo gaps in the same model/file (e.g., #16: data-dep branch + `_local_scalar_dense` + `Tensor.item()`). Pick the FIRST/canonical gap (usually the cited file:line's primary symptom) and reproduce it. Note in the body that the MRE covers gap N of K and the others are downstream consequences. Don't try to MRE all gaps in one shot — separate filings would be cleaner.
 
 ### B) Recompile-limit hit
 
