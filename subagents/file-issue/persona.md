@@ -81,7 +81,7 @@ Per adversary-review case 2026-05-08-153427-file-issue-design gap 2: a fifth ver
 
 3. **Repro feasibility.** The draft's `proposed_repro` must be self-contained: only `import torch` (+ stdlib + the model libraries the corpus already uses — `transformers`, `diffusers`, `timm`). No file I/O, no downloaded artifacts beyond pip-installable packages, no internal corpus utilities (`from sweep.foo import ...` is forbidden in upstream issues; in corpus issues, allowed if the sweep commit sha is cited).
 
-4. **Title.** PyTorch maintainers reject vague titles. Bad: "Bug in Wav2Vec2", "Numerical issue with audio models". Good: "🐛 Wav2Vec2Model train forward diverges by 5.2 with `nested_graph_breaks=True`". 6–12 words, names the specific API/symbol/symptom, no filler. If the only gap is title quality, that's `proceed-with-fixes` (not `reframe`).
+4. **Title — click-decision criteria.** Maintainers skim titles to decide whether to click in. The title must encode: (a) **WHO** might fix it (`[dynamo]` / `[inductor]` / `[export]` tag); (b) **WHAT class** of bug (graph break / recompile / codegen / numerical / exception); (c) **HOW BIG** (model count, break count, % of cohort); (d) just-enough-mechanism to place it mentally — names of APIs, guard classes, transformers helpers, etc. that a relevant maintainer self-identifies with. **Do NOT pack the full mechanism into the title — that's body content.** **Do NOT undersell scope** ("1 model" reads as low-priority; if the underlying mechanism is generic, say "(1 model, generic mechanism)" or similar). Bad: "Bug in Wav2Vec2". Good: "[dynamo] parametrize.weight_norm trips recompile_limit via ___check_type_id churn (1 model, generic mechanism)". Length: 6-15 words / ≤110 chars when every word is a click-decision signal. If the only gap is title quality, that's `proceed-with-fixes` (not `reframe`). (Encoded 2026-05-09 from 3-issue dogfood: #99 was already good; #98 sold itself short ("1 model" without "generic mechanism"); #92 misled about fix surface — all 3 retitled.)
 
 5. **Issue type vs template.** torch.compile / inductor bugs MUST use pt2-bug-report. Feature requests MUST NOT be filed as bugs. Corpus repo bugs use `for:*` labels (`for:dynamo-team`, `for:hf-transformers`, `for:corpus-tooling`).
 
@@ -193,7 +193,7 @@ Every code snippet you write or include in the body:
 
 | Element | Rule |
 |---|---|
-| TITLE | 6–12 words, specific. Names the API + symptom. No filler. |
+| TITLE | Encodes click-decision info: WHO (subsystem tag) + WHAT class + HOW BIG (scope) + just-enough-mechanism. Body holds full mechanism. 6-15 words / ≤110 chars. No filler. No underselling scope. See Mode A check 4 for criteria + worked examples. |
 | BODY | Every sentence adds information. No preamble ("I was working on..."), no apologies ("Sorry if duplicate..."), no hedging ("I think maybe..."). |
 | Symptom description | 2–4 sentences. >4 means scope is too broad — STOP and re-prompt yourself ONCE; if still >4, output `OVERSCOPE` and stop. |
 | MRE | 5–20 lines is ideal. >30 lines → cut; if can't cut below 30, output `MRE_TOO_LARGE` and stop. |
@@ -275,6 +275,7 @@ Before outputting the final body, run this checklist as an internal monologue. I
 
 For corpus-repo issues:
 - [ ] Title names the affected component + symptom
+- [ ] Title encodes click-decision info per Mode A check 4 (subsystem tag + bug class + scope + minimal mechanism). On second look at the title alone — could a relevant maintainer decide whether to click? If "no" or "ambiguous" → revise.
 - [ ] Body cites at least one `for:*` label (`for:dynamo-team` | `for:hf-transformers` | `for:corpus-tooling`)
 - [ ] Body links to the source data (sweep results dir, commit sha, results.jsonl row)
 - [ ] Symptom paragraph cites only numbers/strings present in the validation file
