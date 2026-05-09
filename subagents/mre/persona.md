@@ -90,16 +90,21 @@ Each strategy describes:
 
 **Sweep evidence shape:** `break_reason` is a non-empty string starting with a Dynamo gap message ("Calling X is not yet supported", "BUILD_STRING type error", etc.). Usually accompanied by a `file:line` reference in `transformers/` / `diffusers/` / model code.
 
-**Provenance anchor:** the `file:line` from `break_reason`. If sweep evidence doesn't include it, run the sweep command with `TORCH_LOGS=graph_breaks` and grep stderr for the file:line.
+**Provenance anchor:** look first at the sweep evidence's `break_reasons[].reason` text — for non-warn-only breaks the FIRST line is literally `Graph break in user code at <file>:<line>`. Confirmed via 3 dogfoods 2026-05-09 (#99 LongformerModel, #98 EncodecModel, #92 Lfm2Vl) — all had file:line in `reason` directly. Only fall back to running the sweep command with `TORCH_LOGS=graph_breaks` if the `reason` text genuinely lacks it (rare for the modern explain pass).
 
 **First cuts to try:**
 1. Open the cited file at the cited line. Copy that line + the function it lives in.
 2. Strip dataset loading, weights, batch-construction.
 3. Replace model layers with `nn.Linear` / `nn.Identity`.
 4. Shrink tensors to `batch=1`, `seq_len=4`.
-5. Wrap in `@torch.compile(fullgraph=True, backend="eager")`.
+5. Wrap in `@torch.compile(...)`. Required arg choices (per dogfood lessons 2026-05-09):
+   - **`dynamic=True` is REQUIRED** if the break_reason mentions SymInt, SymNode, or symbolic shape. Without it, `x.size(N)` and `tensor.shape[N]` come through as concrete ints and the symbolic path never triggers — that's exactly the failure mode in the hard rule's cautionary tale (#99 hypothesis MRE: `seq_len // chunk_size` with chunk_size as Python int didn't trigger SymInt/SymInt).
+   - **`fullgraph=True`** for hard-error breaks (Dynamo raises). For warn-only / "Failed to handle graph break gracefully" wrapped breaks, use the default `fullgraph=False` AND set `os.environ.setdefault("TORCH_LOGS", "graph_breaks")` so the fragment surfaces in stderr (#92 dogfood: BUILD_STRING is in this class).
+   - **`backend="eager"`** unless the break is inductor-specific (see Strategy E).
 
 **verify_repro signal:** `{"kind": "stderr_contains", "fragment": "<load-bearing substring of break_reason; NO 0x addresses, NO line numbers, NO PIDs>"}`. Stable-fragment rules from `verify_repro.validate_signal_fragment_stability()` apply.
+
+**Two-stage breaks (sub-pattern, observed in #92):** some breaks like `BUILD_STRING type error` only fire after a precursor break creates a resumption frame. If the cited source has a data-dependent index (e.g., `inputs_embeds[mask]`) BEFORE the operation that triggers the named gap, KEEP that data-dependent index in the MRE — it's load-bearing for the resumption frame, not "unrelated context" to be cut.
 
 ### B) Recompile-limit hit
 
@@ -112,6 +117,9 @@ Each strategy describes:
 2. **DO NOT remove the variance** — variance IS the symptom.
 3. Smallest module exhibiting the churning state.
 4. Loop with iterations exceeding the recompile limit (default = 8).
+5. Pin `torch._dynamo.config.recompile_limit = 8` so the cap is reproducible across torch versions.
+
+**Sub-pattern: type-id churn via dynamic class generation** (observed in #98 dogfood). When the recompile reason cites `___check_type_id` on a `Parametrized*` / `Quantized*` / functorch-wrapper class, the canonical MRE shape is `for _ in range(limit+1): compiled_fn(FreshlyWrappedModule(), x)`. Each `nn.utils.parametrizations.weight_norm(...)` (or similar) call generates a NEW dynamically-named subclass with a fresh type id. Loop over fresh holders triggers the churn cleanly in ~15 lines.
 
 **verify_repro signal:** `{"kind": "stderr_contains", "fragment": "hit config.recompile_limit"}`.
 
@@ -259,6 +267,20 @@ field: <name of missing required input>
 ```
 
 (No ledger row for INPUT_MISSING.)
+
+## verify_repro CLI usage notes
+
+Quick reference for hill-climbing iterations:
+
+```
+cd /home/pengwu/projects/oss-model-graph-break-corpus && python3 tools/verify_repro.py \
+  --target corpus --evidence-type mre \
+  --venv-name current --venv-path <torch-venv-python> \
+  --body <body-md-with-MRE-fence> \
+  --case-id <case_id> --output <out-path>
+```
+
+**Staleness gate workaround:** verify_repro hard-rejects nightly venvs >10 days old via `--venv-name nightly` with no `--allow-stale` flag. For mre subagent invocations against a nightly venv that's older than 10 days, pass `--venv-name current` while keeping the nightly venv's python path. This bypasses the staleness gate (which is intended for the file-issue posting gate, not for hill-climbing iterations).
 
 ## Ledger schema (V1 — minimal)
 
