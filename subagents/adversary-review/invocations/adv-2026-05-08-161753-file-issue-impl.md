@@ -31,21 +31,21 @@ output_sha256: pending-recompute
 
 | Gap | Disposition | Where |
 |---|---|---|
-| #1 | ADDRESSED | PREREQ-CHECK.sh — `{ cmd \|\| true; } \| grep -q via-skill` pattern |
-| #2 | ADDRESSED | tools/file_issues.py cmd_pytorch_upstream — case_id marker injected |
-| #3 | ADDRESSED | tools/file_issues.py _validate_via_skill — marker enforcement + test |
-| #4 | ADDRESSED | tools/file_issues.py _update_case_posted_url — atomic frontmatter edit |
-| #5 | ADDRESSED | tools/build_invocations_log.py — warnings + --strict + 8-test file |
-| #6 | ADDRESSED | tools/check_doc_consistency.py rule extended; subagents/file-issue/RETROSPECTIVE.md created; 7 negative-case tests added |
-| #7 | DEFERRED | Phase 2; needs Mode A output parser; logged in subagents/file-issue/RETROSPECTIVE.md with reason "wait for first real invocation to surface parsing shape" |
-| #8 | ADDRESSED (schema only) | SKILL.md schema documents mode_a_fixes_applied; mechanical enforcement deferred with #7 (same parser dependency) |
-| #9 | ADDRESSED | tools/_migrations/2026-05-08-split-reviews-log.py committed with [a-z_]+ vs [a-z0-9_]+ regex-bug lesson preserved |
-| #10 | ADDRESSED | tools/check_doc_consistency.py — exclude list narrowed; each entry annotated with reason |
-| #11 | ADDRESSED | tools/file_issues.py — _validate_via_skill returns body_bytes; cmd_corpus_issue uses those exact bytes |
+| 1 | ADDRESSED | PREREQ-CHECK.sh — `{ cmd \|\| true; } \| grep -q via-skill` pattern |
+| 2 | ADDRESSED | tools/file_issues.py cmd_pytorch_upstream — case_id marker injected |
+| 3 | ADDRESSED | tools/file_issues.py _validate_via_skill — marker enforcement + test |
+| 4 | ADDRESSED | tools/file_issues.py _update_case_posted_url — atomic frontmatter edit |
+| 5 | ADDRESSED | tools/build_invocations_log.py — warnings + --strict + 8-test file |
+| 6 | ADDRESSED | tools/check_doc_consistency.py rule extended; subagents/file-issue/RETROSPECTIVE.md created; 7 negative-case tests added |
+| 7 | DEFERRED | Phase 2; needs Mode A output parser; logged in subagents/file-issue/RETROSPECTIVE.md with reason "wait for first real invocation to surface parsing shape" |
+| 8 | ADDRESSED (schema only) | SKILL.md schema documents mode_a_fixes_applied; mechanical enforcement deferred with 7 (same parser dependency) |
+| 9 | ADDRESSED | tools/_migrations/2026-05-08-split-reviews-log.py committed with [a-z_]+ vs [a-z0-9_]+ regex-bug lesson preserved |
+| 10 | ADDRESSED | tools/check_doc_consistency.py — exclude list narrowed; each entry annotated with reason |
+| 11 | ADDRESSED | tools/file_issues.py — _validate_via_skill returns body_bytes; cmd_corpus_issue uses those exact bytes |
 
 **Test impact:** 113 → 130 testable tests pass (+17 new tests). 7 doc-consistency rules clean. PREREQ-CHECK 8/8 clean.
 
-**META observation acted on:** "Load-bearing claims documented in SKILL.md but NOT mechanically pinned in code or tests" — addressed by making mechanical enforcement the default for #1, #2, #3, #4, #6 (rule extension + negative tests).
+**META observation acted on:** "Load-bearing claims documented in SKILL.md but NOT mechanically pinned in code or tests" — addressed by making mechanical enforcement the default for 1, 2, 3, 4, 6 (rule extension + negative tests).
 
 **Commit:** 0788e39 (this commit)
 
@@ -65,15 +65,15 @@ Reviewer META observations:
 
 1. The implementation is solid on its load-bearing claims that ARE tested: the 9 tests in test_file_issues.py pin the corpus-issue posting gate end-to-end. All 9 pass. All 7 doc-consistency rules pass. The migration's 4 per-case files all have output_sha256 (the regex-bug fix landed correctly).
 
-2. The cluster of gaps above all share one pattern: load-bearing claims that are documented in SKILL.md but NOT mechanically pinned in code or tests. Specifically: PREREQ-CHECK assertion logic (#1), pytorch-upstream audit chain (#2), footer marker enforcement (#3), posted_url auto-update (#4), aggregator robustness (#5), retrospective/log requirements in the rule (#6), proceed-with-fixes cap (#7), and FIXES-list logging (#8). This is the mirror image of the classic "happy-path crispness, failure-path muddiness" pattern Otter's own RETROSPECTIVE.md flags as recurring across reviews #2-#4. The corpus-issue path (Otter's primary use case) is hardened; the pytorch-upstream path (Peng-gated, lower frequency, but higher external-blast-radius) is structurally weaker.
+2. The cluster of gaps above all share one pattern: load-bearing claims that are documented in SKILL.md but NOT mechanically pinned in code or tests. Specifically: PREREQ-CHECK assertion logic (1), pytorch-upstream audit chain (2), footer marker enforcement (3), posted_url auto-update (4), aggregator robustness (5), retrospective/log requirements in the rule (6), proceed-with-fixes cap (7), and FIXES-list logging (8). This is the mirror image of the classic "happy-path crispness, failure-path muddiness" pattern Otter's own RETROSPECTIVE.md flags as recurring across reviews 2-4. The corpus-issue path (Otter's primary use case) is hardened; the pytorch-upstream path (Peng-gated, lower frequency, but higher external-blast-radius) is structurally weaker.
 
-3. The single highest-leverage fix is #2 (pytorch-upstream case_id marker). The single most insidious fix is #1 (PREREQ-CHECK quietly lying — it gives Otter false confidence the gate is verified, and the failure pattern Otter has REPEATEDLY DOCUMENTED is "approval-as-checkmark, not action-trigger." A green PREREQ-CHECK output that's actually broken is exactly that pattern in mechanical form).
+3. The single highest-leverage fix is 2 (pytorch-upstream case_id marker). The single most insidious fix is 1 (PREREQ-CHECK quietly lying — it gives Otter false confidence the gate is verified, and the failure pattern Otter has REPEATEDLY DOCUMENTED is "approval-as-checkmark, not action-trigger." A green PREREQ-CHECK output that's actually broken is exactly that pattern in mechanical form).
 
-4. For Phase 2 planning: gaps #3, #4, #5, #6, #7, #8 all naturally pair with the deferred tools/audit_issue_footers.py work — that scanner needs each of these to be reliable to do its job. Worth bundling them.
+4. For Phase 2 planning: gaps 3, 4, 5, 6, 7, 8 all naturally pair with the deferred tools/audit_issue_footers.py work — that scanner needs each of these to be reliable to do its job. Worth bundling them.
 ```
 
 ## My disposition
 
-See table above. 10 of 11 addressed in commit 0788e39; gap #7 (and the related enforcement half of #8) deferred to Phase 2 with documented reason. The deferral is logged in `subagents/file-issue/RETROSPECTIVE.md` so it's discoverable on next iteration cycle.
+See table above. 10 of 11 addressed in commit 0788e39; gap 7 (and the related enforcement half of 8) deferred to Phase 2 with documented reason. The deferral is logged in `subagents/file-issue/RETROSPECTIVE.md` so it's discoverable on next iteration cycle.
 
 **Lesson learned (Otter's blind spot, surfaced for the THIRD straight review):** "happy-path crispness, failure-path muddiness." Tests for the trust chain need to exercise the FAILURE side, not just the success side. This commit added 17 new tests; 12 of them are NEGATIVE tests (rejection paths). The 5 positive tests primarily exist to confirm the rejections don't false-positive on legitimate inputs.

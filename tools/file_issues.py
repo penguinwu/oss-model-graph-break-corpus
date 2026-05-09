@@ -1605,34 +1605,42 @@ def _validate_via_skill(case_id: str, body_path: str | None) -> tuple[bool, str,
     return True, "", body_bytes
 
 
-def _update_case_posted_url(case_id: str, posted_url: str) -> None:
-    """Atomic-ish update of the `posted_url:` line in a case file's frontmatter
-    after a successful POST. Closes gap #4 (manual update step prone to silent
-    omission). Caller must have already successfully posted.
+def _update_case_posted_issue(case_id: str, posted_issue_num: int) -> None:
+    """Atomic-ish update of the `posted_issue_num:` line in a case file's
+    frontmatter after a successful POST/PATCH. Caller must have already posted.
+
+    Per Peng directive 2026-05-08T21:24 ET: writes a BARE INTEGER (not a URL or
+    `#NNN` form) so GitHub does NOT auto-link this case file's commit to the
+    posted issue's timeline. Issue back-reference pollution is the failure mode
+    this prevents (cf. the issue 77 timeline screenshot).
+
+    Replaces the prior `_update_case_posted_url` which wrote the full URL.
     """
     case_file = REPO_ROOT / f"subagents/file-issue/invocations/{case_id}.md"
     text = case_file.read_text()
     # Only operate on the frontmatter block (between leading --- and next ---)
     if not text.startswith("---\n"):
-        print(f"WARNING: case file lacks frontmatter; cannot update posted_url: {case_file}",
+        print(f"WARNING: case file lacks frontmatter; cannot update posted_issue_num: {case_file}",
               file=sys.stderr)
         return
     end = text.find("\n---\n", 4)
     if end < 0:
-        print(f"WARNING: case file frontmatter not closed; cannot update posted_url: {case_file}",
+        print(f"WARNING: case file frontmatter not closed; cannot update posted_issue_num: {case_file}",
               file=sys.stderr)
         return
     fm = text[4:end]
     body_after = text[end:]
-    # Replace existing `posted_url:` line (handles quoted/unquoted)
+    # Replace existing `posted_issue_num:` line if present
     new_fm, n = re.subn(
-        r"^posted_url:\s*.+$",
-        f"posted_url: {posted_url}",
+        r"^posted_issue_num:\s*.+$",
+        f"posted_issue_num: {posted_issue_num}",
         fm, count=1, flags=re.MULTILINE,
     )
     if n == 0:
         # No existing line — append before the closing ---
-        new_fm = fm.rstrip() + f"\nposted_url: {posted_url}\n"
+        new_fm = fm.rstrip() + f"\nposted_issue_num: {posted_issue_num}\n"
+    # Also clear the legacy `posted_url:` line if present (migration safety)
+    new_fm = re.sub(r"^posted_url:\s*.+$", "", new_fm, flags=re.MULTILINE)
     new_text = "---\n" + new_fm + body_after
     case_file.write_text(new_text)
 
@@ -1693,10 +1701,12 @@ def cmd_corpus_issue(args):
 
     response = _proxy_api(endpoint, method=op, body=payload)
     issue_url = response.get("html_url", "<unknown>")
-    _update_case_posted_url(args.via_skill, issue_url)
+    issue_num = response.get("number")
+    if issue_num is not None:
+        _update_case_posted_issue(args.via_skill, int(issue_num))
     print(f"{op}ed: {issue_url}")
     print(f"  case_id: {args.via_skill}")
-    print(f"  case file's posted_url field updated automatically.")
+    print(f"  case file's posted_issue_num field updated automatically (bare integer; no auto-link).")
     print(f"  Refresh the aggregate index: "
           f"`python3 tools/build_invocations_log.py subagents/file-issue/`")
 

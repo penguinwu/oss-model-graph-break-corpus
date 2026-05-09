@@ -20,7 +20,7 @@ Phase 1 fixes from adversary impl-review (case adv-2026-05-08-161753-file-issue-
 5. Aggregator silent on malformed input → fixed (warnings + `--strict` flag + 8 new tests)
 6. `rule_subagent_required_fields` missing checks → extended (invocations_log.md + RETROSPECTIVE.md required)
 7. proceed-with-fixes cap not enforced → DEFERRED to Phase 2 (deferred reason: needs Mode A output parser; better to wait until first real invocation surfaces the parsing shape)
-8. mode_a_fixes_applied schema field → DOCUMENTED in SKILL.md but enforcement DEFERRED (same reason as #7)
+8. mode_a_fixes_applied schema field → DOCUMENTED in SKILL.md but enforcement DEFERRED (same reason as 7)
 9. Migration script not committed → fixed (added to tools/_migrations/)
 10. Exclude list too broad → narrowed (specific anchored exclusions only)
 11. TOCTOU race in body read → fixed (`_validate_via_skill` returns body bytes)
@@ -41,7 +41,7 @@ Phase 1 fixes from adversary impl-review (case adv-2026-05-08-161753-file-issue-
 
 ## 2026-05-08T20:23 ET — Major persona revision after first invocation
 
-**First invocation (`file-2026-05-08-170223-issue77-review`)** revealed a structural defect in the persona's notion of "actionable." Mode A reviewed corpus issue #77 (layerdrop pattern) and returned `reframe` with 7 gaps. The TOP gap was "no `single_fix_claim` — body lists 3 alternative directions." Mode A's rewrite proposal told Otter to "Pick ONE direction as the primary ask."
+**First invocation (`file-2026-05-08-170223-issue77-review`)** revealed a structural defect in the persona's notion of "actionable." Mode A reviewed corpus issue 77 (layerdrop pattern) and returned `reframe` with 7 gaps. The TOP gap was "no `single_fix_claim` — body lists 3 alternative directions." Mode A's rewrite proposal told Otter to "Pick ONE direction as the primary ask."
 
 **Peng's correction (verbatim, 2026-05-08 20:19 ET):**
 
@@ -53,9 +53,9 @@ Phase 1 fixes from adversary impl-review (case adv-2026-05-08-161753-file-issue-
 
 ### What changed in the persona/skill (5 places)
 
-1. **persona.md criterion #4 redefined** — "Actionable (= reproducible)": maintainer can reproduce the symptom in their own environment from the body alone. The body does NOT propose a fix. Single carve-out: `regression_evidence` field (commit sha + bisect proof) for the only case naming a fix is allowed.
-2. **persona.md Mode A check #1** — `single_fix_claim` field replaced with `repro_strategy` (the concrete command/script the maintainer runs).
-3. **persona.md Mode A check #8 (NEW)** — fix-suggestion anti-pattern detection. Forbidden section headers + inline phrases enumerated. Verdict `reframe`.
+1. **persona.md criterion 4 redefined** — "Actionable (= reproducible)": maintainer can reproduce the symptom in their own environment from the body alone. The body does NOT propose a fix. Single carve-out: `regression_evidence` field (commit sha + bisect proof) for the only case naming a fix is allowed.
+2. **persona.md Mode A check 1** — `single_fix_claim` field replaced with `repro_strategy` (the concrete command/script the maintainer runs).
+3. **persona.md Mode A check 8 (NEW)** — fix-suggestion anti-pattern detection. Forbidden section headers + inline phrases enumerated. Verdict `reframe`.
 4. **persona.md Mode B templates** — "Proposed fix" / "What this issue closes" / "Possible directions" sections REMOVED. Templates end at Environment + Source. Note added: "the maintainer reads the symptom + repro + environment + source and decides the fix."
 5. **SKILL.md** — new "What this skill does NOT do" section explicitly forbids fix-suggestion content. Step 1 triage field requirements updated (`repro_strategy` replaces `single_fix_claim`; `regression_evidence` added as optional).
 
@@ -72,8 +72,8 @@ Mode A's first invocation REINFORCED the anti-pattern it was supposed to prevent
 
 ### Remaining work for the re-invocation
 
-After this commit lands, re-invoke Mode A on issue #77 with the amended persona. Expected: Mode A drops gaps #1 (no single_fix_claim) and #5 (3-direction enumeration dilutes); keeps gaps #2 (no MRE), #3 (stale counts), #4 (no env), #6 (PII forward-looking), #7 (title polish). Verdict probably stays `reframe` (5 substantive gaps still > 3 cap), but the rewrite proposal should NOT include "Pick ONE direction." If it still does, the persona amendment didn't take.
+After this commit lands, re-invoke Mode A on issue 77 with the amended persona. Expected: Mode A drops gaps 1 (no single_fix_claim) and 5 (3-direction enumeration dilutes); keeps gaps 2 (no MRE), 3 (stale counts), 4 (no env), 6 (PII forward-looking), 7 (title polish). Verdict probably stays `reframe` (5 substantive gaps still > 3 cap), but the rewrite proposal should NOT include "Pick ONE direction." If it still does, the persona amendment didn't take.
 
 ---
 
-(Append next retrospective after `file-` invocations #2 + #3 + #4. Original entry date: 2026-05-08; major-revision update: 2026-05-08T20:23 ET.)
+(Append next retrospective after `file-` invocations 2 + 3 + 4. Original entry date: 2026-05-08; major-revision update: 2026-05-08T20:23 ET.)

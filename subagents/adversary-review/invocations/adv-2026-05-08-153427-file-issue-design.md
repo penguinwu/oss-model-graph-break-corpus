@@ -25,7 +25,7 @@ output_sha256: 2dcf34bfe79cb033ffcce0fc14e61bc16c47a3be9f1862900197ac5639de3a0e
 
 **Reviewer raw output:** see `/tmp/adv-output-2026-05-08-153427.txt` (full verbatim copy preserved at invocation time; hash matches above).
 
-**GAPS_FOUND summary:** 12 gaps total — 4 high (#1-#4), 6 medium (#5-#10), 2 low (#11-#12).
+**GAPS_FOUND summary:** 12 gaps total — 4 high (1-4), 6 medium (5-10), 2 low (11-12).
 - HIGH 1: SKILL.md still uses pre-migration `skills/file-issue/...` paths (12+ refs); breaks the activation contract on day one
 - HIGH 2: Mode A 4-verdict label set has no `proceed-with-fixes` mode; dominant case (1 small gap, fix-and-go) has no clean home → predicted criterion erosion within 5 invocations
 - HIGH 3: Mode B failure markers (OVERSCOPE/MRE_TOO_LARGE/VALIDATION_FAILED) have no documented disposition in SKILL.md Step 4; SKILL/persona contract drift on self-revision protocol
@@ -39,13 +39,13 @@ output_sha256: 2dcf34bfe79cb033ffcce0fc14e61bc16c47a3be9f1862900197ac5639de3a0e
 - LOW 11: Mode A duplicate-check accepts Otter's claim without verifying search-query quality
 - LOW 12: SKILL.md → AGENT.md rename may break `myclaw-skills` discovery (walks `**/SKILL.md`)
 
-**SUGGESTED_ADDITIONAL_TESTS:** 7 mechanical contract tests with full SETUP/ACTION/EXPECTED/DETECTS structure. Highest-leverage: #1 (subagent_required_fields rule), #2 (path_audit no stale refs), #4 (via_skill_enforcement at CLI argparse level — pre-merge gate).
+**SUGGESTED_ADDITIONAL_TESTS:** 7 mechanical contract tests with full SETUP/ACTION/EXPECTED/DETECTS structure. Highest-leverage: 1 (subagent_required_fields rule), 2 (path_audit no stale refs), 4 (via_skill_enforcement at CLI argparse level — pre-merge gate).
 
 **Reviewer META observations (3):**
-1. **Ship in TWO phases.** Phase 1 minimal: AGENT.md + persona + log + migration + trigger + doc-consistency rules. Phase 2 (after 1-2 real invocations): templates + recipes + Mode B calibration. Matches Peng req #4 (iterate via use) — don't ship 10 files speculatively.
+1. **Ship in TWO phases.** Phase 1 minimal: AGENT.md + persona + log + migration + trigger + doc-consistency rules. Phase 2 (after 1-2 real invocations): templates + recipes + Mode B calibration. Matches Peng req 4 (iterate via use) — don't ship 10 files speculatively.
 2. **Strong happy-path, weak failure-path.** All 4 high-severity gaps are facets of "happy-path crispness, failure-path muddiness." Walk every blind-spot "what if" before commit; pin OR explicitly defer.
 3. **Missed adjacency:** no `iteration_cadence` for file-issue (existing adversary-review has "every 3 reviews, retrospective" but the corpus's reviews_log has 3 entries + no formal retrospective row — discipline-only forcing function failed).
 
-**My disposition:** PENDING — surface to Peng for direction. All 4 high-severity gaps are real and need fixes before commit. Pre-disposition lean: accept staged-shipping recommendation; address gaps #1, #3, #4 in SKILL.md revision; address #2 in persona.md (add proceed-with-fixes); address #5, #6 in log schema + add MIGRATION.md; add Pre-requisites + concurrency notes; defer #11 (lowering expectations is fine for v1); resolve #12 by checking myclaw-skills discovery first.
+**My disposition:** PENDING — surface to Peng for direction. All 4 high-severity gaps are real and need fixes before commit. Pre-disposition lean: accept staged-shipping recommendation; address gaps 1, 3, 4 in SKILL.md revision; address 2 in persona.md (add proceed-with-fixes); address 5, 6 in log schema + add MIGRATION.md; add Pre-requisites + concurrency notes; defer 11 (lowering expectations is fine for v1); resolve 12 by checking myclaw-skills discovery first.
 
 **Commit:** pending — design revisions land before any new files are created. Will be backfilled.

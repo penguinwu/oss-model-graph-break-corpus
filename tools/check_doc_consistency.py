@@ -465,6 +465,57 @@ def rule_no_fix_suggestions_in_templates() -> list[Violation]:
     return violations
 
 
+def rule_no_github_autolinks_in_subagents() -> list[Violation]:
+    """Committed files under subagents/ MUST NOT contain GitHub auto-link
+    patterns (`#NNN` or full GitHub issue URLs). Both create back-references
+    on the named issue's timeline when the file gets committed, polluting
+    user-facing issue threads with internal infra-PR noise.
+
+    Per Peng directive 2026-05-08T21:24 ET (cf. issue 77 timeline screenshot):
+    "I see multiple of our infra PRs referencing dynamo team issues. They are
+    confusing to compiler developers as any issues for dynamo team are user
+    facing. How can we amend our system to keep user facing issues clean?"
+
+    The fix: use bare integers (`posted_issue_num: 77`) in YAML, plain prose
+    ("issue 77", "gap 1", "criterion 4") in markdown body. Both forms are
+    repo-side audit-readable but not GitHub-indexed.
+
+    Allowed exceptions (commented in exclude list):
+    - `subagents/_common/` — none yet, but reserved for shared fragments
+    - `tools/_migrations/` — migration scripts may name historical patterns
+    """
+    violations: list[Violation] = []
+    subagents_dir = REPO_ROOT / "subagents"
+    if not subagents_dir.is_dir():
+        return []
+    # Pattern 1: `#NNN` preceded by non-word boundary
+    hash_rx = re.compile(r"(?:\W|^)#(\d+)")
+    # Pattern 2: full GitHub issue URLs to corpus or pytorch repos
+    url_rx = re.compile(r"https?://github\.com/(?:penguinwu|pytorch)/[^/\s]+/issues/(\d+)")
+
+    for f in subagents_dir.rglob("*.md"):
+        # Skip the rule's own source (this file mentions the patterns)
+        # — but it's at tools/, not subagents/, so the rglob doesn't catch it.
+        text = f.read_text(errors="ignore")
+        for i, line in enumerate(text.splitlines(), start=1):
+            for m in hash_rx.finditer(line):
+                violations.append(
+                    f"{f.relative_to(REPO_ROOT)}:{i}: contains `#{m.group(1)}` "
+                    f"— GitHub will auto-link this to issue {m.group(1)} when "
+                    f"the file is committed, polluting that issue's timeline. "
+                    f"Use bare number ({m.group(1)} or `gap {m.group(1)}` / "
+                    f"`criterion {m.group(1)}` / `issue {m.group(1)}`) instead."
+                )
+            for m in url_rx.finditer(line):
+                violations.append(
+                    f"{f.relative_to(REPO_ROOT)}:{i}: contains full GitHub "
+                    f"issue URL ({m.group(0)}) — also creates a back-reference. "
+                    f"Use a non-URL form (e.g. `posted_issue_num: {m.group(1)}` "
+                    f"in YAML, or `issue {m.group(1)}` in prose)."
+                )
+    return violations
+
+
 RULES: dict[str, RuleFn] = {
     "cohort_codes": rule_cohort_codes,
     "apply_modes": rule_apply_modes,
@@ -474,6 +525,7 @@ RULES: dict[str, RuleFn] = {
     "subagent_required_fields": rule_subagent_required_fields,
     "subagent_paths_migrated": rule_subagent_paths_migrated,
     "no_fix_suggestions_in_templates": rule_no_fix_suggestions_in_templates,
+    "no_github_autolinks_in_subagents": rule_no_github_autolinks_in_subagents,
 }
 
 

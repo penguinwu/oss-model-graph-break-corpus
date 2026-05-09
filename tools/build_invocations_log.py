@@ -88,8 +88,8 @@ def build_index(subagent_dir: Path, strict: bool = False) -> tuple[str, list[str
         "",
         "## Index",
         "",
-        "| case_id | date_utc | trigger / target | verdict | output_sha256 |",
-        "|---|---|---|---|---|",
+        "| case_id | date_utc | trigger / target | verdict | posted_issue | output_sha256 |",
+        "|---|---|---|---|---|---|",
     ]
 
     # Required fields whose absence is a per-file warning (not a parse error).
@@ -119,9 +119,15 @@ def build_index(subagent_dir: Path, strict: bool = False) -> tuple[str, list[str
         verdicts[verdict] = verdicts.get(verdict, 0) + 1
         sha = fields.get("output_sha256") or fields.get("mode_b_sha256", "")
         sha_short = sha[:12] + "..." if len(sha) > 12 else sha
+        # posted_issue_num is the post-2026-05-08T21:24 schema field;
+        # `posted_url` is legacy and only present in pre-migration files.
+        posted = fields.get("posted_issue_num", "") or fields.get("posted_url", "")
+        # Truncate URL form (legacy) to just the issue path for readability
+        if posted.startswith("https://github.com/"):
+            posted = posted.replace("https://github.com/", "")
         lines.append(
             f"| [{case_id}](invocations/{f.name}) | {date_utc} | "
-            f"{trigger_or_target} | {verdict} | `{sha_short}` |"
+            f"{trigger_or_target} | {verdict} | {posted} | `{sha_short}` |"
         )
 
     lines.append("")

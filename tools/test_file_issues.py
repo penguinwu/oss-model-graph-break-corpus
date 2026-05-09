@@ -231,12 +231,13 @@ def test_persona_documents_no_fix_suggestion_rule():
     """
     persona = (REPO_ROOT / "subagents/file-issue/persona.md").read_text()
     # Three load-bearing claims must appear in the persona text
+    # ("criterion 4" with bare integer per 2026-05-08T21:24 auto-link prevention)
     required_phrases = [
         "Forbidden section headers",
         "Proposed fix",
         "Possible directions",
         "regression_evidence",
-        "criterion #4",
+        "criterion 4",
     ]
     missing = [p for p in required_phrases if p not in persona]
     assert not missing, (

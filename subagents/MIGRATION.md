@@ -1,15 +1,15 @@
 # Subagents Migration Plan
 
-**Phase 1 commit, 2026-05-08.** Migrates the existing `skills/adversary-review/` to `subagents/adversary-review/` and creates `subagents/file-issue/`. Addresses adversary-review case 2026-05-08-153427-file-issue-design gaps #1, #6, #9, #12.
+**Phase 1 commit, 2026-05-08.** Migrates the existing `skills/adversary-review/` to `subagents/adversary-review/` and creates `subagents/file-issue/`. Addresses adversary-review case 2026-05-08-153427-file-issue-design gaps 1, 6, 9, 12.
 
 ## Decisions baked in
 
 | Question | Decision | Rationale |
 |---|---|---|
 | Top-level dir name | `subagents/` | Explicit about what these are (Claude Code sub-agents); distinct from peer agents (Rocky/Beaver) |
-| File name for the activation contract | KEEP `SKILL.md` (not `AGENT.md`) | Harness convention — `~/.claude/plugins/cache/**/SKILL.md` is what discovery walks. Renaming breaks `myclaw-skills` discovery. (Gap #12.) |
-| Log file format | Per-file-per-case + generated aggregator | Eliminates concurrent-append corruption; makes per-case migrations easier (Gap #9.) |
-| Case ID namespace | Sub-agent prefix (`adv-` / `file-`) | Avoids collision when both sub-agents log on the same minute; greppable in footer markers + cross-references (Gap #6.) |
+| File name for the activation contract | KEEP `SKILL.md` (not `AGENT.md`) | Harness convention — `~/.claude/plugins/cache/**/SKILL.md` is what discovery walks. Renaming breaks `myclaw-skills` discovery. (Gap 12.) |
+| Log file format | Per-file-per-case + generated aggregator | Eliminates concurrent-append corruption; makes per-case migrations easier (Gap 9.) |
+| Case ID namespace | Sub-agent prefix (`adv-` / `file-`) | Avoids collision when both sub-agents log on the same minute; greppable in footer markers + cross-references (Gap 6.) |
 
 ## What moves where
 

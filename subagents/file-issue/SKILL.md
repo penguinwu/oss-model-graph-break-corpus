@@ -5,7 +5,7 @@ description: Use BEFORE filing ANY GitHub issue (corpus repo OR pytorch/pytorch 
 
 # file-issue
 
-> **Phase 1 ship (2026-05-08):** This SKILL + persona.md + MIGRATION.md + the adversary-review migration to `subagents/adversary-review/` (KEEPING `SKILL.md` filename for harness compatibility) + the `--via-skill` enforcement at the CLI level + 2 doc-consistency rules. **Phase 2** (templates, validation-recipes, Mode B's full calibration files) ships AFTER 1–2 real invocations have surfaced what the design actually needs. Per adversary-review case adv-2026-05-08-153427-file-issue-design META observation #1. See `subagents/MIGRATION.md` for the migration plan.
+> **Phase 1 ship (2026-05-08):** This SKILL + persona.md + MIGRATION.md + the adversary-review migration to `subagents/adversary-review/` (KEEPING `SKILL.md` filename for harness compatibility) + the `--via-skill` enforcement at the CLI level + 2 doc-consistency rules. **Phase 2** (templates, validation-recipes, Mode B's full calibration files) ships AFTER 1–2 real invocations have surfaced what the design actually needs. Per adversary-review case adv-2026-05-08-153427-file-issue-design META observation 1. See `subagents/MIGRATION.md` for the migration plan.
 
 ## Pre-requisites (verify before first use)
 
@@ -55,7 +55,7 @@ Mechanically, this means:
 - **Mode B** refuses (returns `VALIDATION_FAILED`) any body containing these patterns
 - **Single carve-out:** if the draft has a `regression_evidence` field with a specific PR + bisect/measurement evidence, the body MAY name the offending PR. Speculation forbidden — proof required.
 
-This is encoded in `subagents/file-issue/persona.md` (criterion #4 + Mode A check #8 + failure-modes table) and pinned by `tools/test_file_issues.py::test_mode_b_refuses_fix_suggestion_content` and `tools/check_doc_consistency.py::rule_no_fix_suggestions_in_templates`.
+This is encoded in `subagents/file-issue/persona.md` (criterion 4 + Mode A check 8 + failure-modes table) and pinned by `tools/test_file_issues.py::test_mode_b_refuses_fix_suggestion_content` and `tools/check_doc_consistency.py::rule_no_fix_suggestions_in_templates`.
 
 ## Case ID convention
 
@@ -81,11 +81,11 @@ Write a draft framing to `/tmp/file-issue-<case_id>-draft.md` containing:
 - **symptom_one_liner**: what fails, observed where
 - **evidence_pointers**: paths to results files, sweep dirs, commit shas — anything Mode B will cite
 - **proposed_repro**: pseudo-script or sketch of the MRE (≤30 lines target)
-- **repro_strategy**: in one sentence, the CONCRETE command/script the maintainer runs to see the symptom in their own environment. Example: "Run `python repro.py` and observe `RuntimeError: ...`." NOT a fix proposal. (Replaced the prior `single_fix_claim` field 2026-05-08T20:23 ET — see criterion #4 redefinition. If you find yourself typing "fix this by..." or "add support for...", that's a fix-suggestion and Mode A will `reframe`.)
+- **repro_strategy**: in one sentence, the CONCRETE command/script the maintainer runs to see the symptom in their own environment. Example: "Run `python repro.py` and observe `RuntimeError: ...`." NOT a fix proposal. (Replaced the prior `single_fix_claim` field 2026-05-08T20:23 ET — see criterion 4 redefinition. If you find yourself typing "fix this by..." or "add support for...", that's a fix-suggestion and Mode A will `reframe`.)
 - **regression_evidence** (optional): IF you have proof that a specific recent PR caused the symptom (commit sha + bisect/measurement), put it here. This is the ONLY path that lets the body name a fix-direction. Without this field, ANY fix-suggestion content in the body is a hard reject.
 - **dup_search**: GitHub search query you ran + result ("searched github.com/<target>/issues?q=<QUERY> — N results, none matching"). Mode A checks the query contains a specific symbol from `proposed_repro` (model class name OR API symbol).
 
-### Step 2 — Live validation (criterion #3)
+### Step 2 — Live validation (criterion 3)
 
 Re-execute the repro RIGHT NOW. Capture:
 - Actual stdout / measured numbers
@@ -109,7 +109,7 @@ SPLITS: <only if split — list of N candidate issues with one-line frame each>
 REJECT_REASON: <only if reject — paragraph referencing at least one of the 4 criteria>
 ```
 
-Five verdicts (NOT four — adversary case 2026-05-08-153427 gap #2):
+Five verdicts (NOT four — adversary case 2026-05-08-153427 gap 2):
 
 - **proceed** → all clear; go to Step 4 directly. Should be RARE on first pass.
 - **proceed-with-fixes** → small in-place fixes Otter applies (title rewording, label add, dup-search query refinement) without re-invoking Mode A. Each fix is logged to the case's invocation file before Step 4. **Cap: 3 fixes; if Mode A wants to enumerate >3, that's actually `reframe`.**
@@ -161,11 +161,11 @@ Self-revision protocol (aligned with persona.md): Mode B attempts ONE self-revis
 
 **Code-level guard on pytorch-upstream posting** (per Peng directive 2026-05-08 19:56 ET): the constant `PYTORCH_UPSTREAM_POSTING_ENABLED` in `tools/file_issues.py` defaults to `False`. When `False`, `--post` exits non-zero with an explanation. The ONLY way to actually post is a deliberate source-code edit (constant → `True`) plus the External Engagement Approval token. Test `test_pytorch_upstream_posting_disabled_by_default` asserts the committed default stays `False`. This is mechanical defense-in-depth: a future Otter that forgets the External Engagement rule still cannot post by accident.
 
-**`--via-skill` is REQUIRED on every posting subcommand**, including `corpus-issue` (adversary-review case 2026-05-08-153427 gap #4). Implemented as argparse `required=True` at the CLI level — the tool refuses to even start without it. No tier of light enforcement.
+**`--via-skill` is REQUIRED on every posting subcommand**, including `corpus-issue` (adversary-review case 2026-05-08-153427 gap 4). Implemented as argparse `required=True` at the CLI level — the tool refuses to even start without it. No tier of light enforcement.
 
 ### Step 6 — Log (per-file-per-case schema)
 
-Each invocation writes to its OWN file (eliminates concurrent-append corruption — adversary case 2026-05-08-153427 gap #9):
+Each invocation writes to its OWN file (eliminates concurrent-append corruption — adversary case 2026-05-08-153427 gap 9):
 
 ```
 subagents/file-issue/invocations/file-2026-05-08-191500-wav2vec2-ngb.md
@@ -175,23 +175,23 @@ The file's required schema:
 
 ```markdown
 ---
+# REQUIRED — load-bearing for the trust chain
 case_id: file-2026-05-08-191500-wav2vec2-ngb
-parent_case_id: <if split, the parent's case_id; otherwise null>
+subagent: file-issue
 date_utc: 2026-05-08T23:15:00Z
-target_repo: penguinwu/oss-model-graph-break-corpus
-issue_type: bug
 persona_sha: <git rev of subagents/file-issue/persona.md at invocation>
-draft_path: /tmp/file-issue-<case_id>-draft.md
-draft_sha256: <hash>
-validation_file_path: /tmp/file-issue-<case_id>-validation.md
-validation_sha256: <hash>
+target_repo: penguinwu/oss-model-graph-break-corpus
 mode_a_verdict: proceed | proceed-with-fixes | reframe | split | reject
+mode_b_sha256: <hash of Mode B raw output, or null if Mode A blocked>
+body_sha256: <hash of JUST the BODY: section that gets posted; what --via-skill compares>
+posted_issue_num: <integer, bare — NO leading `#` so GitHub doesn't auto-link. null if not yet posted, blocked, or rejected.>
+
+# OPTIONAL — forensic depth (omit if absent)
+parent_case_id: <if chained from a prior case (split / re-review / rewrite), the parent's case_id>
+target_issue_num: <integer, bare — only when EDITING an existing issue (target). null for NEW issues.>
 mode_a_sha256: <hash of Mode A raw output>
-mode_a_fixes_applied: <if proceed-with-fixes, multi-line list of fixes Otter applied in-place; one per line, prefixed with "- ". Empty for other verdicts. Per adversary impl-review gap #8.>
-mode_b_sha256: <hash of Mode B raw output, blank if Mode A blocked>
-body_sha256: <hash of JUST the BODY: section that gets posted; this is what --via-skill compares>
-footer_marker: null  # DROPPED 2026-05-08T21:13 ET per Peng directive — case-id is internal audit, not user-facing
-posted_url: <github URL | blocked at Mode A | blocked at Mode B (REASON) | rejected by Peng | pending>
+mode_a_fixes_applied: <if proceed-with-fixes, multi-line list. Empty/omitted for other verdicts.>
+disposition: <free-text one-liner: "posted", "blocked at Mode A (reason)", "blocked at Mode B (REASON)", "rejected by Peng", "pending">
 ---
 
 ## Mode A raw output
@@ -213,9 +213,17 @@ posted_url: <github URL | blocked at Mode A | blocked at Mode B (REASON) | rejec
 
 Companion file `subagents/file-issue/invocations_log.md` is a GENERATED index (one row per case file, with the YAML header fields). Built by `tools/build_invocations_log.py subagents/file-issue/` (Phase 1 ships the script). The aggregator runs nightly via cron + on demand. Reading the log is the audit entry point; reading individual case files is the deep-dive.
 
+**Schema trim history (2026-05-08T21:24 ET, per Peng directive):** the schema was trimmed from 18 fields to 9 required + 6 optional after Phase 1.3 retrospective. Dropped: `footer_marker` (always null post-2026-05-08T21:13), `posted_url` (replaced by `posted_issue_num` — a bare integer that GitHub does NOT auto-link, preventing back-reference pollution on the live issue's timeline), `draft_path`/`draft_sha256`/`validation_file_path`/`validation_sha256` (demoted to optional notes; /tmp inputs are session-scoped and rarely useful for forensic replay). All existing case files migrated to new schema in the same commit.
+
+**Auto-link prevention (2026-05-08T21:24 ET, per Peng directive):** committed case files MUST NOT contain GitHub auto-link patterns:
+- NEVER use `#NNN` to reference issues (GitHub creates back-references on the named issue's timeline, polluting it with infra-PR noise)
+- NEVER use full GitHub issue URLs (`https://github.com/.../issues/NNN`) for the same reason
+- INSTEAD: use bare integers in YAML fields (`posted_issue_num: 77`) and plain prose ("issue 77", "gap 1", "criterion 4") in markdown body
+- Pinned mechanically by `tools/check_doc_consistency.py::rule_no_github_autolinks_in_subagents`
+
 `tools/file_issues.py --via-skill <case_id>` reads the matching case file directly (NOT the aggregated log), so no concurrency hazard at posting time.
 
-### Step 7 — Iteration cadence (per Peng req #4)
+### Step 7 — Iteration cadence (per Peng req 4)
 
 After every **3 issues filed** (per sub-agent), spend 5 minutes on a retrospective:
 - Walk the last 3 case files; what gaps did Mode A surface most often?
@@ -224,7 +232,7 @@ After every **3 issues filed** (per sub-agent), spend 5 minutes on a retrospecti
 
 Append a row to `subagents/file-issue/RETROSPECTIVE.md` with date + observations + persona/template revisions proposed. The forcing function: every 4th `Step 6` invocation must include "retrospective check: <date of last entry>" in the disposition-notes — if >3 issues since last retrospective, the next Step 5 (post) is BLOCKED until the retrospective is logged.
 
-(This same cadence retroactively applies to `subagents/adversary-review/` post-migration. Per adversary case 2026-05-08-153427 NOTE #3.)
+(This same cadence retroactively applies to `subagents/adversary-review/` post-migration. Per adversary case 2026-05-08-153427 NOTE 3.)
 
 #### Mid-pipeline retrospective (added 2026-05-08T21:13 ET per Peng directive)
 
@@ -237,7 +245,7 @@ For high-velocity iteration (multiple invocations on the same issue, or multiple
 
 → PAUSE before invoking Mode B. Append a brief mid-pipeline retrospective entry to RETROSPECTIVE.md (1-2 paragraphs, focused on the immediate concern). The retrospective may surface a persona amendment that should land BEFORE Mode B runs — better to amend now than to ship Mode B output that immediately gets re-amended.
 
-The first invocation on issue #77 surfaced the criterion #4 anti-pattern issue. A mid-pipeline retrospective at that moment would have caught the structural defect BEFORE Mode A's rewrite proposal had to be re-issued. The lesson: high-velocity sessions need finer-grained cadence than "every 3 filings."
+The first invocation on issue 77 surfaced the criterion 4 anti-pattern issue. A mid-pipeline retrospective at that moment would have caught the structural defect BEFORE Mode A's rewrite proposal had to be re-issued. The lesson: high-velocity sessions need finer-grained cadence than "every 3 filings."
 
 ## What enforces this
 
@@ -264,7 +272,7 @@ subagents/
 ├── MIGRATION.md                             # Migration plan from prior skills/ location to here
 ├── _common/                                 # Empty (start)
 ├── adversary-review/                        # MIGRATED from prior skills/ location (see MIGRATION.md)
-│   ├── SKILL.md                             # KEEPING SKILL.md filename (harness convention; case 2026-05-08-153427 gap #12)
+│   ├── SKILL.md                             # KEEPING SKILL.md filename (harness convention; case 2026-05-08-153427 gap 12)
 │   ├── persona.md                           # Unchanged from pre-migration content
 │   ├── escalation_template.md
 │   ├── invocations/                         # NEW per-file-per-case dir
@@ -304,4 +312,4 @@ docs/
 - `subagents/file-issue/validation-recipes/` — Phase 1 writes validation files by hand per case.
 - `tools/audit_issue_footers.py` — orphan-marker scanner.
 
-This staged approach matches Peng req #4 (iterate via use), per adversary case 2026-05-08-153427 META observation #1.
+This staged approach matches Peng req 4 (iterate via use), per adversary case 2026-05-08-153427 META observation 1.
