@@ -56,23 +56,24 @@ Output is one of: `SUCCESS`, `VERIFICATION_FAILED`, `PROVENANCE_UNKNOWN`, `TIME_
 ### `INPUT_MISSING`
 - Fix the missing input, re-invoke. Not a real outcome.
 
-## Self-learning (V1: just collect, no analyzer yet)
+## Self-learning
 
-Each invocation appends one row to `subagents/mre/ledger.jsonl`. Schema in `persona.md`. No analyzer is shipped in V1.
+Each invocation appends one row to `subagents/mre/ledger.jsonl`. Schema in `persona.md`.
 
-Once we have ~20+ rows, decide what's worth analyzing based on what patterns emerge. Possibilities (don't pre-build):
-- Per-error-class success rate
-- Median time-spent
-- Common failure_modes
-- Per-strategy effectiveness
+`subagents/mre/analyze_ledger.py` (added 2026-05-09 after 9 dogfoods accumulated) prints per-error-class + per-strategy metrics, surfaces same-file clusters, and flags deep-dive candidates per the persona surfacing rule (≥5 attempts AND <50% success). Run with:
 
-When a pattern is real and the analysis is worth automating, write the analyzer then. Strategy additions to `persona.md` go through adversary-review (per the `subagents/` edit trigger in CLAUDE.md).
+```
+python3 subagents/mre/analyze_ledger.py
+```
+
+V1.0.3 analyzer is intentionally minimal — augment as patterns emerge that warrant new metrics. Strategy additions to `persona.md` go through adversary-review (per the `subagents/` edit trigger in CLAUDE.md).
 
 ## Files
 
 - `persona.md` — system prompt for the spawned Agent
 - `SKILL.md` — this file (caller guide)
 - `ledger.jsonl` — append-only per-invocation log
+- `analyze_ledger.py` — V1 minimal analyzer (added 2026-05-09 after 9 dogfoods)
 
 ## Cautionary tale (2026-05-09)
 
