@@ -206,6 +206,76 @@ def test_classify_stdout_contains_does_not_reproduce_when_value_absent():
     assert verify_repro.classify(0, "Run done. all values match.", "", sig) == "does-not-reproduce"
 
 
+# ── Stable-fragment validation (adversary gap 1, real-data anchor) ────────
+
+def test_unstable_fragment_pointer_address_rejected():
+    """Issue 99's literal bad fragment: '<built-in method div of type object at 0x...'."""
+    ok, reason = verify_repro.validate_signal_fragment_stability(
+        "<built-in method div of type object at 0x7f80abcd1234"
+    )
+    assert not ok
+    assert "pointer address" in reason
+
+
+def test_unstable_fragment_pid_rejected():
+    ok, reason = verify_repro.validate_signal_fragment_stability(
+        "RuntimeError pid 12345 segfault"
+    )
+    assert not ok
+    assert "process ID" in reason
+
+
+def test_unstable_fragment_iso_timestamp_rejected():
+    ok, reason = verify_repro.validate_signal_fragment_stability(
+        "Crashed at 2026-05-09T12:34:56 in foo"
+    )
+    assert not ok
+    assert "ISO timestamp" in reason
+
+
+def test_unstable_fragment_line_number_rejected():
+    ok, reason = verify_repro.validate_signal_fragment_stability(
+        "Failure at line 1234 of modeling_foo.py"
+    )
+    assert not ok
+    assert "line-number anchor" in reason
+
+
+def test_unstable_fragment_home_path_rejected():
+    ok, reason = verify_repro.validate_signal_fragment_stability(
+        "Could not find /home/pengwu/projects/foo"
+    )
+    assert not ok
+    assert "absolute home path" in reason
+
+
+def test_unstable_fragment_uuid_rejected():
+    ok, reason = verify_repro.validate_signal_fragment_stability(
+        "Job abc12345-1234-5678-9abc-def012345678 timed out"
+    )
+    assert not ok
+    assert "UUID" in reason
+
+
+def test_stable_fragment_accepted():
+    """Adversary's recommended replacement for issue 99: stable substring."""
+    ok, reason = verify_repro.validate_signal_fragment_stability(
+        "on only torch.SymInt arguments is not yet supported"
+    )
+    assert ok
+    assert reason == ""
+
+
+def test_stable_fragment_for_build_string_issue_92():
+    ok, _ = verify_repro.validate_signal_fragment_stability("BUILD_STRING type error")
+    assert ok
+
+
+def test_stable_fragment_for_recompile_limit_issue_98():
+    ok, _ = verify_repro.validate_signal_fragment_stability("hit config.recompile_limit")
+    assert ok
+
+
 def test_classify_unknown_kind_raises():
     sig = {"kind": "unknown_signal_type", "fragment": "x"}
     try:

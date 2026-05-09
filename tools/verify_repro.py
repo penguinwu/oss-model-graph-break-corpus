@@ -153,6 +153,41 @@ def extract_expected_signal_from_body(body: str, evidence_type: str) -> dict:
 
 VALID_SIGNAL_KINDS = {"exit_nonzero+stderr_contains", "stderr_contains", "stdout_contains"}
 
+# Per adversary case adv-2026-05-09 (gap 1, real-data validation against 3 dynamo
+# issues): expected_signal.fragment must be substring-matchable across runs.
+# Unstable patterns (run-to-run drift) silently break verification chains —
+# verify_repro classifies as `does-not-reproduce` on the next cycle when the
+# fragment changes. The adversary's canonical bad example: issue 99's
+# "<built-in method div of type object at 0x..." — the 0x address shifts
+# across processes.
+_UNSTABLE_FRAGMENT_PATTERNS = [
+    (re.compile(r"0x[0-9a-fA-F]{4,}"), "pointer address"),
+    (re.compile(r"\bpid\s*[:= ]?\s*\d+", re.IGNORECASE), "process ID"),
+    (re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}"), "ISO timestamp"),
+    (re.compile(r"\bat line \d+", re.IGNORECASE), "line-number anchor"),
+    (re.compile(r"/home/[a-zA-Z0-9_\-]+/"), "absolute home path"),
+    (re.compile(
+        r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    ), "UUID"),
+]
+
+
+def validate_signal_fragment_stability(fragment: str) -> tuple[bool, str]:
+    """Per adversary gap 1 disposition: refuse unstable fragments.
+
+    Returns (ok, reason). ok=True if no unstable pattern matches.
+    """
+    for pattern, label in _UNSTABLE_FRAGMENT_PATTERNS:
+        if pattern.search(fragment):
+            return False, (
+                f"expected_signal.fragment contains unstable pattern "
+                f"({label}): {pattern.pattern!r}. Fragments must be "
+                f"substring-matchable across runs. Pick a stable substring "
+                f"around (not including) the volatile region. See persona.md "
+                f"\"Choosing a STABLE fragment\" guidance."
+            )
+    return True, ""
+
 
 def classify(exit_code: int, stdout: str, stderr: str, expected_signal: dict) -> str:
     """Classify per expected_signal.kind. Per gap 4: NOT exit_code alone."""
@@ -407,6 +442,13 @@ def verify(
             raise ValueError(
                 f"expected_signal missing kind/fragment: {expected_signal!r}"
             )
+
+    # Validate signal fragment stability (adversary gap 1 — refuse fragments
+    # containing pointer addresses, PIDs, timestamps, UUIDs, line-number
+    # anchors, or absolute home paths)
+    ok, reason = validate_signal_fragment_stability(expected_signal.get("fragment", ""))
+    if not ok:
+        raise ValueError(f"unstable expected_signal.fragment: {reason}")
 
     extracted_bytes = canonicalize_extracted(extracted)
     extracted_sha = hashlib.sha256(extracted_bytes).hexdigest()

@@ -1771,6 +1771,19 @@ def _validate_repro_evidence(
                        f"  The body's {expected_evidence_type} bytes have changed since "
                        f"verify_repro ran. Re-run verify_repro after the body change."), ""
 
+    # Defense-in-depth: per adversary gap 1 (real-data validation), the
+    # expected_signal.fragment in the JSON must be stable. verify_repro now
+    # rejects unstable fragments at write-time, but a JSON written by an older
+    # verify_repro could leak through. Re-check at posting time.
+    sig = v.get("expected_signal", {}) or {}
+    frag = sig.get("fragment", "")
+    if frag:
+        sys.path.insert(0, str(REPO_ROOT / "tools"))
+        from verify_repro import validate_signal_fragment_stability  # noqa: E402
+        ok_sig, reason = validate_signal_fragment_stability(frag)
+        if not ok_sig:
+            return False, (f"--repro-verified-*: {reason}"), ""
+
     classification = v.get("classification", "")
     if require_reproduces and classification != "reproduces":
         return False, (f"--repro-verified-*: classification={classification!r} on "

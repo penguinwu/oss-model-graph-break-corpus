@@ -255,6 +255,20 @@ The body MUST contain these elements in this order:
 
 The `expected_signal` JSON inside `<details>` is what `verify_repro` reads to classify the run. `kind` is one of `exit_nonzero+stderr_contains`, `stderr_contains`, `stdout_contains`. `fragment` is the load-bearing string verify_repro greps for. Per Peng 2026-05-09 07:55 ET: visible `<details>` (not invisible HTML comment) — transparency for the maintainer about how we verified.
 
+**Choosing a STABLE fragment** (validated against real dynamo issues 2026-05-09): the fragment must be substring-matchable across runs. Forbidden patterns (run-to-run drift):
+- Pointer addresses (e.g. `at 0x7f...`) — pick a substring AROUND the address, not including it
+- Process IDs, thread IDs, timestamps embedded in messages
+- Absolute file paths (`/home/<user>/...`) — use the leaf filename only
+- Random IDs / UUIDs
+- Line numbers (these can shift across torch versions — prefer the message text, not the location)
+
+Good fragments: stable error class names, function names, the load-bearing word/phrase from the dynamo break_reason text. Examples from real issues:
+- Issue 99 (SymInt/SymInt div): use `"on only torch.SymInt arguments is not yet supported"` — NOT `"<built-in method div of type object at 0x"` (the 0x address shifts).
+- Issue 92 (BUILD_STRING): use `"BUILD_STRING type error"` — NOT a line-number-anchored phrase.
+- Issue 98 (recompile-limit): use `"hit config.recompile_limit"` — NOT the function-name-with-line-number tail.
+
+**Where the Affected Models table goes** (validated against real dynamo issues — all 3 have one): emit as a sub-section of "Original failure report", right after the test command and symptom-captured line, BEFORE the `<details>` signal block. This places the scope information adjacent to the original-failure context and keeps verify_repro's HTML-comment + details-block extraction unaffected.
+
 ### Pre-submission validation gate (PDF Part 8, target-aware, with PII applied to BOTH targets)
 
 Before outputting the final body, run this checklist as an internal monologue. If ANY item fails, attempt ONE self-revision; on second failure, output `VALIDATION_FAILED: <items>` and stop. **Do NOT soften the calibration to bypass — that defeats the gate.**
