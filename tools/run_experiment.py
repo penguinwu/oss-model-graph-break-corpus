@@ -1672,6 +1672,7 @@ def _run_post_sweep(python, script, repo_root, results_dir, label, steps_done):
 
     # Step 5: issue report (sweep-report generates a reviewable plan)
     file_issues = str(tools_dir / "file_issues.py")
+    plan_file = None
     if Path(file_issues).exists():
         explain_file = str(Path(results_dir) / "explain_results.json")
         identify_file = str(Path(results_dir) / "identify_results.json")
@@ -1680,6 +1681,19 @@ def _run_post_sweep(python, script, repo_root, results_dir, label, steps_done):
                   "--explain", explain_file,
                   "--identify", identify_file],
                  "Issue report", allow_fail=True)
+            plan_candidate = Path(results_dir) / "sweep-report.json"
+            if plan_candidate.exists():
+                plan_file = str(plan_candidate)
+
+    # Step 5b: close-stale (auto-close issues whose gap is fixed on current sweep)
+    # Added 2026-05-09 (Peng directive): post-sweep step that walks
+    # close_candidates from the plan and surfaces them. Default is DRY-RUN —
+    # the cron prompt's responsibility is to review the dry-run output and
+    # decide whether to invoke `close-stale --apply` separately. This avoids
+    # accidental mass-close on a regression-mode sweep.
+    if plan_file:
+        _run([python, file_issues, "close-stale", "--plan", plan_file],
+             "Close-stale dry-run", allow_fail=True)
 
     # Step 6: summary
     print(f"\n{'='*70}")

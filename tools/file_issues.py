@@ -918,6 +918,38 @@ def build_sweep_report(explain_path, identify_path):
         for pat, d in sorted(unclassified.items(), key=lambda x: -x[1]["count"])
     ]
 
+    # Cluster issues by source file (V1.0.5 addition, 2026-05-09 per Peng directive):
+    # surface same-file groupings so maintainers can plan batch-fix scope. Reads
+    # the mre subagent ledger for provenance_anchor data — the corpus's most
+    # reliable source-of-truth for "where does this issue's break originate."
+    issue_clusters = []
+    try:
+        ledger_path = Path(__file__).resolve().parent.parent / "subagents" / "mre" / "ledger.jsonl"
+        if ledger_path.exists():
+            from collections import defaultdict as _dd
+            by_file = _dd(list)
+            for line in ledger_path.read_text().splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except Exception:
+                    continue
+                anchor = row.get("provenance_anchor") or ""
+                f = anchor.rsplit(":", 1)[0] if ":" in anchor else anchor
+                if f and row.get("issue_num"):
+                    by_file[f].append(row.get("issue_num"))
+            for f, nums in sorted(by_file.items(), key=lambda x: -len(x[1])):
+                if len(nums) > 1:
+                    issue_clusters.append({
+                        "anchor_file": f,
+                        "issue_numbers": sorted(set(nums)),
+                        "case_count": len(nums),
+                    })
+    except Exception as e:
+        print(f"WARN: failed to compute issue clusters: {e}", file=sys.stderr)
+
     plan = {
         "metadata": metadata,
         "explain_path": str(explain_path),
@@ -926,6 +958,7 @@ def build_sweep_report(explain_path, identify_path):
         "leverage_ranking": leverage_ranking,
         "close_candidates": close_candidates,
         "unclassified_patterns": unclassified_list,
+        "issue_clusters": issue_clusters,  # same-file batch-fix candidates
     }
 
     return plan
@@ -959,6 +992,13 @@ def print_sweep_report(plan):
             print(f"  #{i['number']}: {i['current_title']}")
             print(f"     → {i['proposed_title']}")
             print()
+
+    clusters = plan.get("issue_clusters", [])
+    if clusters:
+        print(f"\n--- ISSUE CLUSTERS ({len(clusters)} same-file batch-fix candidates) ---\n")
+        for c in clusters:
+            ids = ", ".join(f"#{n}" for n in c["issue_numbers"])
+            print(f"  {c['anchor_file']}  ({c['case_count']} cases: {ids})")
 
     close = plan.get("close_candidates", [])
     if close:
@@ -1135,6 +1175,213 @@ def apply_sweep_update(plan):
         time.sleep(0.5)
 
     print(f"\nDone: {success} updated, {failed} failed.")
+
+
+# ── close-stale: auto-close issues whose gap is fixed on current sweep ──
+# Added 2026-05-09 (Peng directive): post-sweep step that walks
+# close_candidates, identifies issues whose gap is fixed (all previously
+# affected models now compile fullgraph), posts an audit-trail comment,
+# and closes the issue.
+#
+# Conservative auto-close criterion: ALL previous_models must be in
+# disposition "fullgraph on current sweep". Any other disposition (still
+# breaking, removed from corpus, reclassified) blocks auto-close —
+# surface for manual review instead.
+
+def classify_close_candidate(candidate):
+    """Decide whether a close_candidate qualifies for auto-close.
+
+    Returns one of: "auto-close", "review-needed:partial-fix",
+    "review-needed:still-breaking", "review-needed:reclassified",
+    "review-needed:cohort-changed", "review-needed:no-models".
+    """
+    disp = candidate.get("model_disposition", {})
+    if not disp:
+        return "review-needed:no-models"
+
+    statuses = list(disp.values())
+    if all(s == "fullgraph on current sweep" for s in statuses):
+        return "auto-close"
+
+    fullgraph = sum(1 for s in statuses if s == "fullgraph on current sweep")
+    still_breaking = sum(1 for s in statuses if s == "still breaking, pattern unclassified")
+    reclassified = sum(1 for s in statuses if s.startswith("reclassified"))
+    removed = sum(1 for s in statuses if s == "removed from corpus")
+
+    if still_breaking > 0:
+        return "review-needed:still-breaking"
+    if reclassified > 0:
+        return "review-needed:reclassified"
+    if fullgraph > 0 and removed > 0:
+        return "review-needed:partial-fix"
+    if removed == len(statuses):
+        return "review-needed:cohort-changed"
+    return "review-needed:partial-fix"
+
+
+def build_close_comment(candidate, sweep_meta):
+    """Build the audit-trail comment posted before closing."""
+    pt_ver = sweep_meta.get("pytorch_version", "unknown")
+    ts = sweep_meta.get("timestamp", "unknown")
+    sweep_label = sweep_meta.get("sweep_label") or sweep_meta.get("label", "nightly sweep")
+    n_models = candidate.get("previous_model_count", 0)
+
+    lines = [
+        f"## Auto-closed by nightly sweep ({ts})",
+        "",
+        f"This issue tracked {n_models} model(s). On the current sweep "
+        f"(`{sweep_label}`, PyTorch {pt_ver}), **all {n_models} models compile fullgraph** "
+        f"— the underlying gap appears to be fixed upstream.",
+        "",
+        "**Per-model status (current sweep):**",
+        "",
+    ]
+    for model, status in sorted(candidate.get("model_disposition", {}).items()):
+        lines.append(f"- `{model}` — {status}")
+    lines.extend([
+        "",
+        "If this is incorrect (e.g., the gap actually moved to a different model class, "
+        "or the auto-detection missed a related symptom), reopen and add a `do-not-auto-close` label.",
+        "",
+        "<!-- closed-by: tools/file_issues.py close-stale -->",
+    ])
+    return "\n".join(lines)
+
+
+def build_review_comment(candidate, sweep_meta, classification):
+    """Build a review-needed comment (does NOT close)."""
+    pt_ver = sweep_meta.get("pytorch_version", "unknown")
+    ts = sweep_meta.get("timestamp", "unknown")
+    sweep_label = sweep_meta.get("sweep_label") or sweep_meta.get("label", "nightly sweep")
+    n_models = candidate.get("previous_model_count", 0)
+
+    fullgraph_count = sum(1 for s in candidate.get("model_disposition", {}).values()
+                          if s == "fullgraph on current sweep")
+
+    lines = [
+        f"## Sweep status update ({ts}) — review needed",
+        "",
+        f"On the current sweep (`{sweep_label}`, PyTorch {pt_ver}), "
+        f"**{fullgraph_count} of {n_models} models** previously tracked here now compile fullgraph. "
+        f"Auto-close skipped: `{classification.split(':', 1)[1] if ':' in classification else classification}`.",
+        "",
+        "**Per-model status (current sweep):**",
+        "",
+    ]
+    for model, status in sorted(candidate.get("model_disposition", {}).items()):
+        marker = "✓" if status == "fullgraph on current sweep" else " "
+        lines.append(f"- {marker} `{model}` — {status}")
+    lines.extend([
+        "",
+        "**Action needed:** human review — partial fix, cohort change, or pattern reclassification.",
+        "",
+        "<!-- review-comment-by: tools/file_issues.py close-stale -->",
+    ])
+    return "\n".join(lines)
+
+
+def apply_close_stale(plan, dry_run=True):
+    """Process close_candidates: comment + close (auto-close) OR comment-only (review)."""
+    sweep_meta = plan.get("metadata", {})
+    candidates = plan.get("close_candidates", [])
+
+    if not candidates:
+        print("\nNo close candidates in plan. Nothing to do.")
+        return
+
+    print(f"\n{'='*70}")
+    print(f"CLOSE-STALE PROCESSING ({len(candidates)} candidates)")
+    print(f"  PyTorch: {sweep_meta.get('pytorch_version', 'unknown')}")
+    print(f"  Sweep:   {sweep_meta.get('timestamp', 'unknown')}")
+    print(f"  Mode:    {'DRY-RUN' if dry_run else 'APPLY'}")
+    print(f"{'='*70}\n")
+
+    auto_close_count = 0
+    review_count = 0
+    skip_no_models = 0
+    success = 0
+    failed = 0
+
+    for c in candidates:
+        num = c["number"]
+        title = c["title"]
+        classification = classify_close_candidate(c)
+
+        if classification == "auto-close":
+            auto_close_count += 1
+            print(f"  [AUTO-CLOSE] #{num}: {title[:70]}")
+            comment = build_close_comment(c, sweep_meta)
+        elif classification == "review-needed:no-models":
+            skip_no_models += 1
+            print(f"  [SKIP-NO-MODELS] #{num}: {title[:70]}")
+            continue
+        else:
+            review_count += 1
+            print(f"  [REVIEW] #{num} ({classification}): {title[:70]}")
+            comment = build_review_comment(c, sweep_meta, classification)
+
+        if dry_run:
+            continue
+
+        # Post the comment
+        result = _proxy_api(
+            f"/repos/{REPO_SLUG}/issues/{num}/comments",
+            method="POST",
+            body={"body": comment},
+        )
+        if not result or "id" not in result:
+            print(f"    FAILED to post comment")
+            failed += 1
+            continue
+
+        # If auto-close, also PATCH state to closed
+        if classification == "auto-close":
+            close_result = _proxy_api(
+                f"/repos/{REPO_SLUG}/issues/{num}",
+                method="PATCH",
+                body={"state": "closed", "state_reason": "completed"},
+            )
+            if close_result and close_result.get("state") == "closed":
+                success += 1
+            else:
+                print(f"    Comment posted but FAILED to close")
+                failed += 1
+        else:
+            success += 1
+
+        time.sleep(0.5)
+
+    print(f"\n{'='*70}")
+    print(f"Summary:")
+    print(f"  Auto-close:        {auto_close_count}")
+    print(f"  Review needed:     {review_count}")
+    print(f"  Skipped (no data): {skip_no_models}")
+    if not dry_run:
+        print(f"  Applied OK:        {success}")
+        print(f"  Failed:            {failed}")
+    print(f"{'='*70}")
+
+
+def cmd_close_stale(args):
+    plan_path = Path(args.plan)
+    if not plan_path.exists():
+        print(f"ERROR: {plan_path} not found", file=sys.stderr)
+        sys.exit(1)
+
+    with open(plan_path) as f:
+        plan = json.load(f)
+
+    plan_meta = plan.get("metadata", {})
+    run_name = plan_meta.get("run_name")
+    if run_name and not getattr(args, "allow_experimental", False):
+        print(f"ERROR: this plan came from an experimental sweep (run_name={run_name!r}).",
+              file=sys.stderr)
+        print("Issue tracker close operations are only fed by official baseline (cron) sweeps.",
+              file=sys.stderr)
+        print("Pass --allow-experimental to override.", file=sys.stderr)
+        sys.exit(2)
+
+    apply_close_stale(plan, dry_run=not args.apply)
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────
@@ -2017,6 +2264,22 @@ def main():
         "--allow-experimental", action="store_true",
         help="Permit applying a plan generated from an experimental sweep.")
 
+    sub_close = subparsers.add_parser(
+        "close-stale",
+        help="Walk close_candidates from a sweep-report plan; comment + close "
+             "(when ALL previously-affected models now compile fullgraph) or "
+             "comment-only (when partial fix / cohort change requires human review). "
+             "Default: dry-run.")
+    sub_close.add_argument(
+        "--plan", required=True, metavar="PLAN_JSON",
+        help="Path to sweep-report.json plan file (output of `sweep-report`)")
+    sub_close.add_argument(
+        "--apply", action="store_true",
+        help="Actually post comments + close issues. Default: dry-run (just print).")
+    sub_close.add_argument(
+        "--allow-experimental", action="store_true",
+        help="Permit running against a plan generated from an experimental sweep.")
+
     sub_corr_report = subparsers.add_parser(
         "correctness-report",
         help="Analyze a correctness sweep and generate an issue plan (read-only)")
@@ -2170,6 +2433,8 @@ def main():
         cmd_sweep_report(args)
     elif args.command == "sweep-update":
         cmd_sweep_update(args)
+    elif args.command == "close-stale":
+        cmd_close_stale(args)
     elif args.command == "correctness-report":
         cmd_correctness_report(args)
     elif args.command == "correctness-apply":
