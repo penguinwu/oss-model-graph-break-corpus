@@ -41,6 +41,7 @@ Usage examples:
     --comment 182116 --summary /tmp/comment_intro.md --output /tmp/body.md --post
 """
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -1715,6 +1716,87 @@ def _update_case_posted_issue(case_id: str, posted_issue_num: int) -> None:
     case_file.write_text(new_text)
 
 
+def _validate_repro_evidence(
+    json_path: str,
+    *,
+    expected_case_id: str,
+    expected_target: str,
+    expected_evidence_type: str,
+    expected_venv_name: str,
+    expected_extracted_sha: str,
+    require_reproduces: bool,
+) -> tuple[bool, str, str]:
+    """Validate a --repro-verified-* JSON.
+
+    Per Peng directives 2026-05-09 + adversary case file adv-2026-05-09-120800.
+
+    Returns (ok, error_message, classification).
+
+    Validations:
+    1. JSON file exists + parses
+    2. target / evidence_type / venv_name match expected (catches "verified
+       MRE but trying to fill the original slot" mistakes)
+    3. case_id matches via-skill case_id
+    4. extracted_bytes_sha256 matches body's MRE/original sha (catches
+       body-edit-after-verify TOCTOU per gap 5)
+    5. classification == "reproduces" if require_reproduces (current cells
+       hard-refuse on != reproduces; nightly cells return classification
+       for caller to decide)
+    """
+    p = Path(json_path)
+    if not p.is_file():
+        return False, f"--repro-verified-* JSON not found: {json_path}", ""
+    try:
+        v = json.loads(p.read_bytes())
+    except json.JSONDecodeError as e:
+        return False, f"--repro-verified-* JSON does not parse: {e}", ""
+
+    if v.get("target") != expected_target:
+        return False, (f"--repro-verified-*: JSON target={v.get('target')!r}, "
+                       f"expected {expected_target!r}"), ""
+    if v.get("evidence_type") != expected_evidence_type:
+        return False, (f"--repro-verified-*: JSON evidence_type="
+                       f"{v.get('evidence_type')!r}, expected {expected_evidence_type!r}"), ""
+    if v.get("venv_name") != expected_venv_name:
+        return False, (f"--repro-verified-*: JSON venv_name={v.get('venv_name')!r}, "
+                       f"expected {expected_venv_name!r}"), ""
+    if v.get("case_id") != expected_case_id:
+        return False, (f"--repro-verified-*: JSON case_id={v.get('case_id')!r}, "
+                       f"expected {expected_case_id!r} (--via-skill)"), ""
+    actual_sha = v.get("extracted_bytes_sha256", "")
+    if actual_sha != expected_extracted_sha:
+        return False, (f"--repro-verified-*: extracted_bytes_sha256 mismatch.\n"
+                       f"  JSON has: {actual_sha[:16]}...\n"
+                       f"  Body has: {expected_extracted_sha[:16]}...\n"
+                       f"  The body's {expected_evidence_type} bytes have changed since "
+                       f"verify_repro ran. Re-run verify_repro after the body change."), ""
+
+    classification = v.get("classification", "")
+    if require_reproduces and classification != "reproduces":
+        return False, (f"--repro-verified-*: classification={classification!r} on "
+                       f"{expected_venv_name} venv for {expected_evidence_type}. "
+                       f"Current venv must show classification=reproduces; revise the "
+                       f"{expected_evidence_type} or the symptom claim."), ""
+
+    return True, "", classification
+
+
+def _extract_body_evidence_shas(body_text: str) -> tuple[str, str]:
+    """Compute sha of body's MRE bytes + original_command bytes.
+
+    Caller passes these to _validate_repro_evidence as expected_extracted_sha.
+    Uses verify_repro's canonicalization (whitespace + LF normalize) so the
+    sha is body-prose-invariant.
+    """
+    sys.path.insert(0, str(REPO_ROOT / "tools"))
+    import verify_repro  # noqa: E402
+    mre = verify_repro.extract_mre_from_body(body_text)
+    orig = verify_repro.extract_original_command_from_body(body_text)
+    mre_sha = hashlib.sha256(verify_repro.canonicalize_extracted(mre)).hexdigest()
+    orig_sha = hashlib.sha256(verify_repro.canonicalize_extracted(orig)).hexdigest()
+    return mre_sha, orig_sha
+
+
 def cmd_corpus_issue(args):
     """Post or edit a single corpus-repo issue, gated by --via-skill validation.
 
@@ -1765,6 +1847,107 @@ def cmd_corpus_issue(args):
         if args.label:
             payload["labels"] = list(args.label)
         target_descr = "NEW issue"
+
+        # ── Phase 3 v1.0 repro-verification gate (NEW issues only) ──
+        # Per Peng directives 2026-05-09 + adversary case file
+        # adv-2026-05-09-120800. EDIT path defers to v1.5.
+        nightly_unavailable = getattr(args, "nightly_unavailable_reason", None)
+        # Required: both current cells (always); both nightly cells unless
+        # --nightly-unavailable-reason is set (gap 6 escape valve).
+        required_flags = ["repro_verified_current_original",
+                          "repro_verified_current_mre"]
+        if not nightly_unavailable:
+            required_flags.extend(["repro_verified_nightly_original",
+                                   "repro_verified_nightly_mre"])
+        missing = [f for f in required_flags
+                   if getattr(args, f, None) is None]
+        if missing:
+            print(
+                f"ERROR: NEW corpus issues require repro verification flags. "
+                f"Missing: {[f.replace('_', '-') for f in missing]}.\n"
+                f"  Run `python3 tools/verify_repro.py` for each cell first; "
+                f"see subagents/file-issue/SKILL.md Step 2.5.\n"
+                f"  For legitimate stale-nightly cases: "
+                f"--nightly-unavailable-reason \"<text>\" makes the two "
+                f"nightly flags optional (and Peng-surfaceable).",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+
+        # Compute body's MRE + original_command shas for the JSON binding
+        try:
+            mre_sha, orig_sha = _extract_body_evidence_shas(body_text)
+        except ValueError as e:
+            print(f"ERROR: body extraction failed: {e}.\n"
+                  f"  NEW corpus body must contain exactly one `python repro=true` "
+                  f"fence + one `<!-- original_command: ... -->` HTML comment. "
+                  f"See subagents/file-issue/persona.md Mode B contract.",
+                  file=sys.stderr)
+            sys.exit(2)
+
+        # Validate each provided JSON. Current cells: hard-refuse on != reproduces.
+        # Nightly cells: collect classifications for the mixed-current + anomaly check.
+        cells = [
+            ("repro_verified_current_original", "current", "original", orig_sha, True),
+            ("repro_verified_current_mre", "current", "mre", mre_sha, True),
+        ]
+        if not nightly_unavailable:
+            cells.extend([
+                ("repro_verified_nightly_original", "nightly", "original", orig_sha, False),
+                ("repro_verified_nightly_mre", "nightly", "mre", mre_sha, False),
+            ])
+        classifications: dict[tuple[str, str], str] = {}
+        for flag_attr, venv, etype, expected_sha, require_repr in cells:
+            jp = getattr(args, flag_attr)
+            ok, err, classification = _validate_repro_evidence(
+                jp,
+                expected_case_id=args.via_skill,
+                expected_target="corpus",
+                expected_evidence_type=etype,
+                expected_venv_name=venv,
+                expected_extracted_sha=expected_sha,
+                require_reproduces=require_repr,
+            )
+            if not ok:
+                print(err, file=sys.stderr)
+                sys.exit(1)
+            classifications[(venv, etype)] = classification
+
+        # Mixed-current hard-refuse (gap 7): both current cells must reproduce
+        # (already enforced by require_reproduces=True above; classifications
+        # confirm).
+        cur_orig = classifications.get(("current", "original"))
+        cur_mre = classifications.get(("current", "mre"))
+        if cur_orig != "reproduces" or cur_mre != "reproduces":
+            # Defensive — should be unreachable due to require_reproduces above
+            print(
+                f"ERROR: mixed-current cells: original={cur_orig!r}, "
+                f"mre={cur_mre!r}. Both must independently reproduce on "
+                f"current venv. (gap 7 disposition)",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        # Anomaly surface: if not nightly_unavailable AND any nightly cell is
+        # not "reproduces", refuse with explicit anomaly message naming the
+        # cell + classification. Peng-decided per surface block (Layer 5).
+        # v1.0 keeps this as a hard-refuse with class diagnostic; the surface-
+        # block emission lives in commit 5 (anomaly_surfaces.py helper).
+        if not nightly_unavailable:
+            night_orig = classifications.get(("nightly", "original"))
+            night_mre = classifications.get(("nightly", "mre"))
+            if night_orig != "reproduces" or night_mre != "reproduces":
+                print(
+                    f"ERROR: NIGHTLY-REPRO ANOMALY (NEW issue). "
+                    f"Nightly classifications: original={night_orig!r}, "
+                    f"mre={night_mre!r}. Surface to Peng for (a) FILE ANYWAY "
+                    f"(chained case file with anomaly-variant Repro status: "
+                    f"line; commit 5 helper), (b) DROP, or (c) INVESTIGATE. "
+                    f"See subagents/file-issue/SKILL.md Layer 5 anomaly "
+                    f"matrix (4 classes).",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
 
     if not args.post:
         print(f"[DRY-RUN] would {op} {target_descr} on penguinwu/oss-model-graph-break-corpus")
@@ -1932,6 +2115,34 @@ def main():
              "`tools/cluster_failures.py single-manual <case_id>` then surface. "
              "Validates: plan exists, sha256 matches, peng_approval.token == "
              "sha256, and case_id appears in plan's affected_cases.")
+    # ── Phase 3 v1.0 repro-verification flags (NEW issues only; --edit defers to v1.5) ──
+    sub_corpus.add_argument(
+        "--repro-verified-current-original", default=None, metavar="JSON_PATH",
+        help="Verification JSON for the body's original_command run on the "
+             "CURRENT venv. Required for NEW issues. Produced by "
+             "`tools/verify_repro.py --target corpus --evidence-type original "
+             "--venv-name current ...`.")
+    sub_corpus.add_argument(
+        "--repro-verified-current-mre", default=None, metavar="JSON_PATH",
+        help="Verification JSON for the body's MRE run on the CURRENT venv. "
+             "Required for NEW issues. Produced by `tools/verify_repro.py "
+             "--target corpus --evidence-type mre --venv-name current ...`.")
+    sub_corpus.add_argument(
+        "--repro-verified-nightly-original", default=None, metavar="JSON_PATH",
+        help="Verification JSON for the body's original_command run on the "
+             "NIGHTLY venv. Required for NEW issues unless "
+             "--nightly-unavailable-reason is set.")
+    sub_corpus.add_argument(
+        "--repro-verified-nightly-mre", default=None, metavar="JSON_PATH",
+        help="Verification JSON for the body's MRE run on the NIGHTLY venv. "
+             "Required for NEW issues unless --nightly-unavailable-reason is set.")
+    sub_corpus.add_argument(
+        "--nightly-unavailable-reason", default=None, metavar="TEXT",
+        help="Escape valve for legitimate cases where the nightly venv cannot "
+             "be verified (e.g., BPF block on pypi.nvidia.com pending venv "
+             "refresh). Makes the two --repro-verified-nightly-* flags optional. "
+             "The reason text is logged and surfaced to Peng for review. Per "
+             "adversary case file adv-2026-05-09-120800 gap 6 disposition.")
     sub_corpus.add_argument(
         "--post", action="store_true",
         help="Actually POST (new) or PATCH (--edit) on GitHub. Default is dry-run.")

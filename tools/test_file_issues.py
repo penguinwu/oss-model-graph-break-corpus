@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -215,7 +216,12 @@ def test_via_skill_rejects_body_sha256_mismatch():
 
 
 def test_via_skill_accepts_matching_body_sha256():
-    """Happy path: matching sha256 + approved cluster plan in dry-run passes."""
+    """Happy path: matching sha256 + approved cluster plan in dry-run passes.
+
+    Uses --edit (EDIT path is exempt from Phase 3 v1.0 repro gate; v1.5 extends).
+    Legacy via-skill + cluster-plan-approved gates are orthogonal to the new
+    gate; this test covers them through the unchanged EDIT branch.
+    """
     case_id = "file-2026-05-08-test-sha-match"
     body_text = "the body Mode B wrote (no case-id marker; dropped per Peng directive)"
     body_sha = hashlib.sha256(body_text.encode()).hexdigest()
@@ -229,8 +235,8 @@ def test_via_skill_accepts_matching_body_sha256():
             body_path = f.name
         rc, out, err = _run("corpus-issue", "--via-skill", case_id,
                             "--cluster-plan-approved", token,
-                            "--body", body_path, "--title", "Test issue")
-        assert rc == 0, f"expected 0 (dry-run); got rc={rc}\n  stdout: {out}\n  stderr: {err}"
+                            "--body", body_path, "--edit", "999")
+        assert rc == 0, f"expected 0 (dry-run EDIT); got rc={rc}\n  stdout: {out}\n  stderr: {err}"
         assert "DRY-RUN" in out, f"should be dry-run by default; got: {out}"
     finally:
         cf.unlink(missing_ok=True)
@@ -239,7 +245,7 @@ def test_via_skill_accepts_matching_body_sha256():
 
 
 def test_via_skill_accepts_proceed_with_fixes_verdict():
-    """Gap #2: proceed-with-fixes is also a posting-allowed verdict."""
+    """proceed-with-fixes is also a posting-allowed verdict (via EDIT path)."""
     case_id = "file-2026-05-08-test-proceed-fixes"
     body_text = "body content (no marker — dropped per Peng directive 2026-05-08T21:13 ET)"
     body_sha = hashlib.sha256(body_text.encode()).hexdigest()
@@ -252,7 +258,7 @@ def test_via_skill_accepts_proceed_with_fixes_verdict():
             body_path = f.name
         rc, out, err = _run("corpus-issue", "--via-skill", case_id,
                             "--cluster-plan-approved", token,
-                            "--body", body_path, "--title", "T")
+                            "--body", body_path, "--edit", "999")
         assert rc == 0, f"proceed-with-fixes should pass; got rc={rc}\n  err: {err}"
     finally:
         cf.unlink(missing_ok=True)
@@ -261,7 +267,7 @@ def test_via_skill_accepts_proceed_with_fixes_verdict():
 
 
 def test_via_skill_does_not_require_footer_marker():
-    """Per Peng directive 2026-05-08T21:13 ET: marker requirement DROPPED."""
+    """Marker requirement DROPPED 2026-05-08T21:13 ET (via EDIT path)."""
     case_id = "file-2026-05-08-test-no-marker-now-ok"
     body_text = "body content with NO footer marker — should pass now"
     body_sha = hashlib.sha256(body_text.encode()).hexdigest()
@@ -274,7 +280,7 @@ def test_via_skill_does_not_require_footer_marker():
             body_path = f.name
         rc, out, err = _run("corpus-issue", "--via-skill", case_id,
                             "--cluster-plan-approved", token,
-                            "--body", body_path, "--title", "T")
+                            "--body", body_path, "--edit", "999")
         assert rc == 0, (f"expected dry-run pass (no marker required); "
                          f"got rc={rc}\n  err: {err}")
     finally:
@@ -358,7 +364,7 @@ def test_cluster_plan_rejects_case_id_not_in_plan():
 
 
 def test_cluster_plan_accepts_multi_case_batch():
-    """Plan covering multiple case_ids accepts each individually (batch approval)."""
+    """Plan covering multiple case_ids accepts each individually (via EDIT path)."""
     case_a = "file-2026-05-09-test-batch-a"
     case_b = "file-2026-05-09-test-batch-b"
     body_text = "shared body"
@@ -375,7 +381,7 @@ def test_cluster_plan_accepts_multi_case_batch():
         for case_id in (case_a, case_b):
             rc, out, err = _run("corpus-issue", "--via-skill", case_id,
                                 "--cluster-plan-approved", token,
-                                "--body", body_path, "--title", "T")
+                                "--body", body_path, "--edit", "999")
             assert rc == 0, (f"batch member {case_id} should pass; "
                              f"got rc={rc}\n  err: {err}")
     finally:
@@ -384,6 +390,265 @@ def test_cluster_plan_accepts_multi_case_batch():
         pp.unlink(missing_ok=True)
         Path(body_path).unlink(missing_ok=True)
 
+
+# ── Phase 3 v1.0 repro-verification gate tests (Peng directives 2026-05-09) ──
+
+def _make_v3_body(*, mre: str = "import torch\nprint('repro')",
+                  original_cmd: str = "python tools/run_experiment.py sweep "
+                                      "--models X --modes train") -> str:
+    """Build a real-shape v3 body with the new fields the repro-gate requires."""
+    return (
+        "**Repro status:** Reproduces on torch X.Y.Z (verified U).\n\n"
+        "## Original failure report\n"
+        f"<!-- original_command: {original_cmd} -->\n\n"
+        "<details><summary>Verification signal (original)</summary>\n\n"
+        "`{\"kind\": \"stdout_contains\", \"fragment\": \"max_diff\"}`\n"
+        "</details>\n\n"
+        "## Minimal reproducer (MRE)\n"
+        f"```python repro=true\n{mre}\n```\n\n"
+        "<details><summary>Verification signal (MRE)</summary>\n\n"
+        "`{\"kind\": \"stderr_contains\", \"fragment\": \"RuntimeError\"}`\n"
+        "</details>\n"
+    )
+
+
+def _make_verification_json(*, case_id: str, target: str = "corpus",
+                            evidence_type: str, venv_name: str,
+                            extracted_sha: str,
+                            classification: str = "reproduces") -> Path:
+    """Write a synthetic verification JSON with the required fields."""
+    j = {
+        "case_id": case_id, "target": target, "evidence_type": evidence_type,
+        "venv_name": venv_name, "venv_path": "/fake/python",
+        "torch_version": "2.13.0.dev20260509", "torch_git_version": "abc123",
+        "venv_install_age_days": 1,
+        "wall_clock_utc": "2026-05-09T12:00:00Z", "elapsed_s": 1.0,
+        "evidence_source": "rerun", "sweep_path": None, "sweep_age_days": None,
+        "extracted_bytes_sha256": extracted_sha,
+        "expected_signal": {"kind": "stderr_contains", "fragment": "x"},
+        "exit_code": 1, "stdout_head_4k": "", "stdout_tail_4k": "",
+        "stderr_head_4k": "RuntimeError ...", "stderr_tail_4k": "",
+        "classification": classification,
+    }
+    f = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+    f.write(json.dumps(j))
+    f.close()
+    return Path(f.name)
+
+
+def _setup_new_path_test(case_id: str, *, classification_override: dict = None):
+    """Bundle: case file + cluster plan + body + 4 verification JSONs.
+    Returns dict of paths + 4 JSON paths + token. Caller cleans up.
+
+    classification_override = {("nightly","mre"): "does-not-reproduce", ...}
+    lets tests override specific classifications (for anomaly + escape-valve tests).
+    """
+    sys.path.insert(0, str(REPO_ROOT / "tools"))
+    import verify_repro
+    body_text = _make_v3_body()
+    body_sha = hashlib.sha256(body_text.encode()).hexdigest()
+    cf = _make_case_file(case_id, mode_a_verdict="proceed",
+                         mode_b_sha256="x", body_sha256=body_sha)
+    pp, token = _make_cluster_plan(case_id, approved=True)
+    body_file = tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False)
+    body_file.write(body_text)
+    body_file.close()
+    body_path = Path(body_file.name)
+
+    mre_text = verify_repro.extract_mre_from_body(body_text)
+    orig_text = verify_repro.extract_original_command_from_body(body_text)
+    mre_sha = hashlib.sha256(verify_repro.canonicalize_extracted(mre_text)).hexdigest()
+    orig_sha = hashlib.sha256(verify_repro.canonicalize_extracted(orig_text)).hexdigest()
+
+    overrides = classification_override or {}
+    json_paths = {}
+    for venv in ("current", "nightly"):
+        for etype in ("original", "mre"):
+            cls = overrides.get((venv, etype), "reproduces")
+            sha = orig_sha if etype == "original" else mre_sha
+            jp = _make_verification_json(
+                case_id=case_id, evidence_type=etype, venv_name=venv,
+                extracted_sha=sha, classification=cls,
+            )
+            json_paths[(venv, etype)] = jp
+
+    return {
+        "case_file": cf, "plan_file": pp, "token": token,
+        "body_path": body_path, "json_paths": json_paths,
+    }
+
+
+def _cleanup_new_path_test(setup: dict):
+    setup["case_file"].unlink(missing_ok=True)
+    setup["plan_file"].unlink(missing_ok=True)
+    setup["body_path"].unlink(missing_ok=True)
+    for p in setup["json_paths"].values():
+        p.unlink(missing_ok=True)
+
+
+def test_corpus_new_rejects_post_without_repro_verified_current_original():
+    case_id = "file-2026-05-09-test-no-cur-orig"
+    s = _setup_new_path_test(case_id)
+    try:
+        rc, out, err = _run(
+            "corpus-issue", "--via-skill", case_id,
+            "--cluster-plan-approved", s["token"],
+            # Provide 3 of 4; omit current-original
+            "--repro-verified-current-mre", str(s["json_paths"][("current", "mre")]),
+            "--repro-verified-nightly-original", str(s["json_paths"][("nightly", "original")]),
+            "--repro-verified-nightly-mre", str(s["json_paths"][("nightly", "mre")]),
+            "--body", str(s["body_path"]), "--title", "T",
+        )
+        assert rc != 0
+        assert "repro-verified-current-original" in err, f"err should name missing flag; got: {err}"
+    finally:
+        _cleanup_new_path_test(s)
+
+
+def test_corpus_new_happy_path_with_all_4_jsons():
+    case_id = "file-2026-05-09-test-happy"
+    s = _setup_new_path_test(case_id)
+    try:
+        rc, out, err = _run(
+            "corpus-issue", "--via-skill", case_id,
+            "--cluster-plan-approved", s["token"],
+            "--repro-verified-current-original", str(s["json_paths"][("current", "original")]),
+            "--repro-verified-current-mre", str(s["json_paths"][("current", "mre")]),
+            "--repro-verified-nightly-original", str(s["json_paths"][("nightly", "original")]),
+            "--repro-verified-nightly-mre", str(s["json_paths"][("nightly", "mre")]),
+            "--body", str(s["body_path"]), "--title", "Test",
+        )
+        assert rc == 0, f"happy path should pass dry-run; got rc={rc}, err={err}"
+        assert "DRY-RUN" in out
+    finally:
+        _cleanup_new_path_test(s)
+
+
+def test_corpus_new_with_nightly_unavailable_reason_proceeds_without_nightly_jsons():
+    """Gap 6 anchor: escape valve for legitimate stale-nightly cases."""
+    case_id = "file-2026-05-09-test-nightly-unavail"
+    s = _setup_new_path_test(case_id)
+    try:
+        rc, out, err = _run(
+            "corpus-issue", "--via-skill", case_id,
+            "--cluster-plan-approved", s["token"],
+            # Only current cells
+            "--repro-verified-current-original", str(s["json_paths"][("current", "original")]),
+            "--repro-verified-current-mre", str(s["json_paths"][("current", "mre")]),
+            "--nightly-unavailable-reason", "BPF block on pypi.nvidia.com pending",
+            "--body", str(s["body_path"]), "--title", "Test",
+        )
+        assert rc == 0, f"nightly-unavailable should bypass nightly flags; got rc={rc}, err={err}"
+    finally:
+        _cleanup_new_path_test(s)
+
+
+def test_corpus_new_rejects_current_does_not_reproduce():
+    """Current cell hard-refuse on classification != reproduces."""
+    case_id = "file-2026-05-09-test-cur-doesnt-repro"
+    s = _setup_new_path_test(case_id, classification_override={
+        ("current", "mre"): "does-not-reproduce",
+    })
+    try:
+        rc, out, err = _run(
+            "corpus-issue", "--via-skill", case_id,
+            "--cluster-plan-approved", s["token"],
+            "--repro-verified-current-original", str(s["json_paths"][("current", "original")]),
+            "--repro-verified-current-mre", str(s["json_paths"][("current", "mre")]),
+            "--repro-verified-nightly-original", str(s["json_paths"][("nightly", "original")]),
+            "--repro-verified-nightly-mre", str(s["json_paths"][("nightly", "mre")]),
+            "--body", str(s["body_path"]), "--title", "T",
+        )
+        assert rc != 0
+        assert "current" in err and ("does-not-reproduce" in err or "reproduces" in err), \
+            f"err should explain current cell mismatch; got: {err}"
+    finally:
+        _cleanup_new_path_test(s)
+
+
+def test_corpus_new_rejects_nightly_anomaly():
+    """Nightly cell != reproduces (without escape valve) → anomaly refusal (gap 5/Layer 5)."""
+    case_id = "file-2026-05-09-test-nightly-anomaly"
+    s = _setup_new_path_test(case_id, classification_override={
+        ("nightly", "original"): "does-not-reproduce",
+    })
+    try:
+        rc, out, err = _run(
+            "corpus-issue", "--via-skill", case_id,
+            "--cluster-plan-approved", s["token"],
+            "--repro-verified-current-original", str(s["json_paths"][("current", "original")]),
+            "--repro-verified-current-mre", str(s["json_paths"][("current", "mre")]),
+            "--repro-verified-nightly-original", str(s["json_paths"][("nightly", "original")]),
+            "--repro-verified-nightly-mre", str(s["json_paths"][("nightly", "mre")]),
+            "--body", str(s["body_path"]), "--title", "T",
+        )
+        assert rc != 0
+        assert "NIGHTLY-REPRO ANOMALY" in err, f"err should announce anomaly; got: {err}"
+    finally:
+        _cleanup_new_path_test(s)
+
+
+def test_corpus_new_rejects_extracted_sha_mismatch():
+    """Gap 5 anchor: body bytes change after verify → refuse."""
+    case_id = "file-2026-05-09-test-sha-mismatch"
+    s = _setup_new_path_test(case_id)
+    try:
+        # Tamper: rewrite the body's MRE inner text after the JSONs were created
+        body_text = s["body_path"].read_text()
+        tampered = body_text.replace("import torch\nprint('repro')",
+                                     "import torch\nprint('TAMPERED')")
+        s["body_path"].write_text(tampered)
+        # Update case_file's body_sha256 so via-skill passes — focus the test on
+        # the repro-evidence sha mismatch (not the via-skill body sha mismatch)
+        new_body_sha = hashlib.sha256(tampered.encode()).hexdigest()
+        old_text = s["case_file"].read_text()
+        s["case_file"].write_text(re.sub(
+            r"^body_sha256:\s*.+$",
+            f"body_sha256: {new_body_sha}",
+            old_text, count=1, flags=re.MULTILINE,
+        ))
+        rc, out, err = _run(
+            "corpus-issue", "--via-skill", case_id,
+            "--cluster-plan-approved", s["token"],
+            "--repro-verified-current-original", str(s["json_paths"][("current", "original")]),
+            "--repro-verified-current-mre", str(s["json_paths"][("current", "mre")]),
+            "--repro-verified-nightly-original", str(s["json_paths"][("nightly", "original")]),
+            "--repro-verified-nightly-mre", str(s["json_paths"][("nightly", "mre")]),
+            "--body", str(s["body_path"]), "--title", "T",
+        )
+        assert rc != 0
+        assert "extracted_bytes_sha256 mismatch" in err, \
+            f"err should explain MRE bytes drift; got: {err}"
+    finally:
+        _cleanup_new_path_test(s)
+
+
+def test_corpus_new_rejects_target_mismatch_in_json():
+    """JSON has target=upstream but tool is filing corpus → refuse."""
+    case_id = "file-2026-05-09-test-target-mismatch"
+    s = _setup_new_path_test(case_id)
+    # Override one JSON's target to "upstream"
+    bad_json = s["json_paths"][("current", "original")]
+    j = json.loads(bad_json.read_bytes())
+    j["target"] = "upstream"
+    bad_json.write_text(json.dumps(j))
+    try:
+        rc, out, err = _run(
+            "corpus-issue", "--via-skill", case_id,
+            "--cluster-plan-approved", s["token"],
+            "--repro-verified-current-original", str(bad_json),
+            "--repro-verified-current-mre", str(s["json_paths"][("current", "mre")]),
+            "--repro-verified-nightly-original", str(s["json_paths"][("nightly", "original")]),
+            "--repro-verified-nightly-mre", str(s["json_paths"][("nightly", "mre")]),
+            "--body", str(s["body_path"]), "--title", "T",
+        )
+        assert rc != 0
+        assert "target" in err, f"err should explain target mismatch; got: {err}"
+    finally:
+        _cleanup_new_path_test(s)
+
+
+# ── Original placement: just before persona-documents-cluster-cohesion test ──
 
 def test_persona_documents_cluster_cohesion_check():
     """Mode A check 10 (cluster cohesion) must be in persona.md after V1 ships.
