@@ -106,6 +106,14 @@ Each strategy describes:
 
 **Two-stage breaks (sub-pattern, observed in #92):** some breaks like `BUILD_STRING type error` only fire after a precursor break creates a resumption frame. If the cited source has a data-dependent index (e.g., `inputs_embeds[mask]`) BEFORE the operation that triggers the named gap, KEEP that data-dependent index in the MRE — it's load-bearing for the resumption frame, not "unrelated context" to be cut.
 
+**Sub-pattern: torch-internal anchor (observed in #27 dogfood 2026-05-09).** When the cited file:line is INSIDE torch (`torch/nn/modules/linear.py:108`, etc.), the gap is generic and model-agnostic — any code path that invokes that torch internal triggers it. The MRE has no transformers dependency at all; lift the trivial trigger (e.g., `nn.Linear(...)` inside `forward`) into a 10-line `nn.Module` and you're done. ~14 lines.
+
+**Sub-pattern: context-manager / threading-primitive break (observed in #11 dogfood 2026-05-09).** "Dynamo does not know how to enter a `<X>` context manager" (gb0142, etc.) — the unsupported CM type IS the entire payload. Lift the literal CM construction (`threading.Lock()`, custom `__enter__`, etc.) out of the cited file and exercise it inside a trivial `nn.Module.forward`. No data dependency required, no `dynamic=True`, ~22 lines.
+
+**Sub-pattern: data-dependent SymFloat from numpy (observed in #55 dogfood 2026-05-09).** When the cited line uses `numpy.array(...).item()` or `int(tensor)` to convert tensor data to Python scalar, Dynamo creates an unbacked SymFloat. `dynamic=True` is NOT required for this class — Dynamo creates unbacked symbols from data-dependent ops without explicit dynamic shape declaration. The break is at the FIRST downstream branch that evaluates a guard on the unbacked symbol (often several lines after the cited line). When the cited line is just the source op but the failing function has multiple data-dependent branches, treat the FUNCTION (not just the line) as your provenance anchor — keep the downstream control-flow that exercises the unbacked symbol.
+
+**Sub-pattern: symptom-string drift across torch versions (observed in #55 dogfood 2026-05-09).** The break_reason fragment captured by the sweep (older torch via explain pass) may NOT match what current nightly's stderr emits. Examples: sweep's `aten._local_scalar_dense.default` vs. current nightly's `Could not guard on data-dependent expression` for the same root cause. ALWAYS run verify_repro on the current torch and check what fragment actually surfaces — encode the CURRENT-NIGHTLY fragment in `expected_signal`, not the sweep fragment, when they differ. Note the drift in `lessons_one_line` so the maintainer can connect the two surface messages.
+
 ### B) Recompile-limit hit
 
 **Sweep evidence shape:** error message contains `hit config.recompile_limit (N)`. Symptom is structural — model's forward churns on type-id checks or shape variance.
@@ -281,6 +289,10 @@ cd /home/pengwu/projects/oss-model-graph-break-corpus && python3 tools/verify_re
 ```
 
 **Staleness gate workaround:** verify_repro hard-rejects nightly venvs >10 days old via `--venv-name nightly` with no `--allow-stale` flag. For mre subagent invocations against a nightly venv that's older than 10 days, pass `--venv-name current` while keeping the nightly venv's python path. This bypasses the staleness gate (which is intended for the file-issue posting gate, not for hill-climbing iterations).
+
+**PYTHONPATH-stripping in subprocess:** verify_repro deliberately runs the MRE in a clean subprocess that strips `PYTHONPATH` for hermeticity. If your MRE imports a sideloaded modellib (transformers under `~/envs/modellibs/transformers-5.6.2`, not pip-installed in the venv), the MRE itself must `sys.path.insert(0, "<modellibs path>")` for verify_repro to find it. **CRITICAL for body posting:** this `sys.path.insert(0, ...)` is dev-environment-specific — strip it when posting to the issue body (the maintainer has transformers pip-installed). Note the requirement in the body's preamble (`# Requires: pip install transformers==<version>`). Re-verify the stripped version before posting if the verify_repro path matters.
+
+**Fragment specificity (observed in #11 dogfood 2026-05-09):** when multiple stable substrings are equally valid (e.g., `"Unsupported context manager"` vs. `"Dynamo does not know how to enter a"`), prefer the MORE SPECIFIC one. The body fragment ("Dynamo does not know how to enter a") can ONLY come from the lock/CM gap; the header fragment ("Unsupported context manager") could in principle surface from other CM-related gaps. Higher specificity = lower false-positive risk in cross-version verification.
 
 ## Ledger schema (V1 — minimal)
 
