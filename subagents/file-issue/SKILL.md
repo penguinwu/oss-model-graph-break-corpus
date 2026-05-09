@@ -154,7 +154,8 @@ Self-revision protocol (aligned with persona.md): Mode B attempts ONE self-revis
 
 | Target | Authority | Posting command |
 |---|---|---|
-| **Corpus repo** (bug or feature) | Otter posts | `python3 tools/file_issues.py corpus-issue --via-skill <case_id> --body /tmp/file-issue-<case_id>-body.md`, then one-line FYI to Peng's space |
+| **Corpus repo — NEW issue** (bug or feature) | Otter posts | `python3 tools/file_issues.py corpus-issue --via-skill <case_id> --body /tmp/file-issue-<case_id>-body.md --title "..."`, then one-line FYI to Peng's space |
+| **Corpus repo — EDIT existing issue** | Otter posts (after explicit Peng approval on the proposed body) | `python3 tools/file_issues.py corpus-issue --via-skill <case_id> --edit <issue#> --body /tmp/file-issue-<case_id>-body.md` (title becomes optional; if omitted the existing title is preserved). Surface the proposed body to Peng's space first; wait for explicit approval; only THEN run the command. |
 | **pytorch/pytorch** (any) | **Peng must approve** | "🚨 EXTERNAL ENGAGEMENT PROPOSED" block in Peng's space with Mode B's verbatim body; wait for token (`approved`/`go`/`(a)`); flip `PYTORCH_UPSTREAM_POSTING_ENABLED = True` in `tools/file_issues.py`; THEN `python3 tools/file_issues.py pytorch-upstream --via-skill <case_id> --post`; flip the constant back to `False` and commit. |
 | **Comment on existing pytorch/pytorch issue** | **Peng must approve** | Same proposal block + same flip-constant flow + `python3 tools/file_issues.py pytorch-upstream --via-skill <case_id> --comment <issue#> --post` |
 
@@ -189,7 +190,7 @@ mode_a_sha256: <hash of Mode A raw output>
 mode_a_fixes_applied: <if proceed-with-fixes, multi-line list of fixes Otter applied in-place; one per line, prefixed with "- ". Empty for other verdicts. Per adversary impl-review gap #8.>
 mode_b_sha256: <hash of Mode B raw output, blank if Mode A blocked>
 body_sha256: <hash of JUST the BODY: section that gets posted; this is what --via-skill compares>
-footer_marker: "<!-- via subagents/file-issue case_id=<case_id> -->"
+footer_marker: null  # DROPPED 2026-05-08T21:13 ET per Peng directive — case-id is internal audit, not user-facing
 posted_url: <github URL | blocked at Mode A | blocked at Mode B (REASON) | rejected by Peng | pending>
 ---
 
@@ -225,20 +226,35 @@ Append a row to `subagents/file-issue/RETROSPECTIVE.md` with date + observations
 
 (This same cadence retroactively applies to `subagents/adversary-review/` post-migration. Per adversary case 2026-05-08-153427 NOTE #3.)
 
+#### Mid-pipeline retrospective (added 2026-05-08T21:13 ET per Peng directive)
+
+For high-velocity iteration (multiple invocations on the same issue, or multiple invocations within a single session), the standard "every 3 issues filed" cadence may be too coarse. The mid-pipeline trigger:
+
+**Between Mode A and Mode B**, if any of these is true:
+- ≥3 invocations have occurred since the last RETROSPECTIVE.md entry, OR
+- This invocation's Mode A surfaced a gap class that has appeared in ≥2 of the last 3 invocations (recurring gap class), OR
+- Peng has surfaced a structural concern in the last invocation that hasn't been retrospect'd yet (e.g. via "scratch your previous design", "I do not trust X", "the Y pattern is a recurring anti-pattern")
+
+→ PAUSE before invoking Mode B. Append a brief mid-pipeline retrospective entry to RETROSPECTIVE.md (1-2 paragraphs, focused on the immediate concern). The retrospective may surface a persona amendment that should land BEFORE Mode B runs — better to amend now than to ship Mode B output that immediately gets re-amended.
+
+The first invocation on issue #77 surfaced the criterion #4 anti-pattern issue. A mid-pipeline retrospective at that moment would have caught the structural defect BEFORE Mode A's rewrite proposal had to be re-issued. The lesson: high-velocity sessions need finer-grained cadence than "every 3 filings."
+
 ## What enforces this
 
-Three layers:
+Three layers (footer-marker layer DROPPED 2026-05-08T21:13 ET per Peng directive — case-id is internal audit, not user-facing):
 
-1. **File artifacts** — `/tmp/file-issue-<case_id>-{draft,validation}.md` + `subagents/file-issue/invocations/<case_id>.md` + posted issue footer marker. Five-hop audit chain.
+1. **File artifacts (repo-side audit chain)** — `/tmp/file-issue-<case_id>-{draft,validation}.md` + `subagents/file-issue/invocations/<case_id>.md` (canonical) + the case file's `posted_url` field linking to the live GitHub issue. Reverse-lookup ("which case file produced this GitHub issue?") is `grep "posted_url: <github URL>" subagents/file-issue/invocations/*.md`. No GitHub-side breadcrumb.
 
-2. **Mechanical refusal at the CLI** — `tools/file_issues.py corpus-issue --via-skill <case_id>` and `pytorch-upstream --via-skill <case_id>` enforce `required=True` at argparse level. The tool exits non-zero before doing anything if `--via-skill` is missing. The check then validates: case file exists, `mode_a_verdict in {proceed, proceed-with-fixes}`, `mode_b_sha256` non-empty, `body_sha256` matches the actual body being posted. **Tested via `tools/test_file_issues.py::test_via_skill_required` and `test_body_sha256_round_trip` (Phase 1 ships both).**
+2. **Mechanical refusal at the CLI** — `tools/file_issues.py corpus-issue --via-skill <case_id>` and `pytorch-upstream --via-skill <case_id>` enforce `required=True` at argparse level. The tool exits non-zero before doing anything if `--via-skill` is missing. The check then validates: case file exists, `mode_a_verdict in {proceed, proceed-with-fixes}`, `mode_b_sha256` non-empty, `body_sha256` matches the actual body being posted (catches body tampering between Mode B output + post). **Tested via `tools/test_file_issues.py` (`test_corpus_issue_rejects_naked_post`, `test_via_skill_rejects_body_sha256_mismatch`, etc.).**
 
-3. **Sampling** — Peng can:
-   - `cat subagents/file-issue/invocations/<case_id>.md` for any case to see verbatim sub-agent output
-   - Hash any posted issue's body and compare against `body_sha256` in the case file
-   - Run a nightly `tools/audit_issue_footers.py` script that scans GitHub for corpus-repo issues lacking the `<!-- via subagents/file-issue case_id=... -->` footer marker and surfaces orphans in the daily brief (Phase 2)
+3. **Sampling (repo-side)** — Peng can:
+   - `cat subagents/file-issue/invocations/<case_id>.md` for any case to see verbatim sub-agent output + verdict + disposition
+   - Hash any posted issue's body and compare against `body_sha256` in the matching case file (`grep -l "posted_url: <URL>" subagents/file-issue/invocations/*.md`)
+   - Run a nightly `tools/audit_repo_side_orphans.py` (Phase 2) that walks open corpus issues and checks each for a matching `posted_url` line in `subagents/file-issue/invocations/`. Issues without a matching case file = filed outside the skill = orphans = bypass.
 
 Plus discipline: local CLAUDE.md trigger (added in Phase 1 commit). "Before filing ANY issue → invoke `subagents/file-issue/SKILL.md`. Skipping requires Peng's written approval."
+
+**Why repo-side instead of GitHub-side audit:** the original Phase 1 design embedded a `<!-- via subagents/file-issue case_id=... -->` footer marker in every posted body, then planned a GitHub-side scanner to detect issues lacking it. Peng pushed back 2026-05-08T21:05 ET: the marker is internal audit; including it in the issue body confuses compiler developers (who don't know what "case_id" means and shouldn't have to). Repo-side audit via `posted_url` cross-reference achieves the same enforcement strength (the case file can't be retroactively faked because it has the persona_sha + sha256 chain) without any leakage onto user-facing surfaces.
 
 ## Phase 1 file inventory (what ships now)
 

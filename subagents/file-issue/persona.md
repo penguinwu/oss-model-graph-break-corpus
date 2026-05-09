@@ -91,6 +91,14 @@ Per adversary-review case 2026-05-08-153427-file-issue-design gap #2: a fifth ve
 
 8. **Fix-suggestion anti-pattern.** Scan the draft's body content (and any embedded sections) for the forbidden section headers and forbidden inline phrases listed under "Why criterion #4 was redefined" above. Any match → `reframe` with delete-the-section instruction, UNLESS a `regression_evidence` field is present in the draft AND the named fix points at a specific PR with bisect/measurement evidence. If `regression_evidence` is present, verify the evidence is concrete (commit sha + before/after numbers, NOT just "this seems to have started recently"); if the evidence is weak → still `reframe`.
 
+9. **Audience-awareness.** Scan the draft's body content for **internal jargon** that the target audience (the dynamo team for `for:dynamo-team`, HF transformers maintainers for `for:hf-transformers`, etc.) cannot reasonably parse. Specifically forbidden in user-facing prose:
+   - **Internal sweep codenames + dates** without explanation: "NGB explain pass", "the 2026-05-05 sweep", "smoke pre-flight", "nested-gb-2026-05-05-2026-05-05" — these mean nothing outside the corpus repo. Replace with plain-English impact ("we observed this across ~89 HF model families") or, if the sweep ref is genuinely useful, scope to the source section with a one-line note.
+   - **Internal corpus-tooling terminology** in body prose: "explain pass", "identify pass", "cohort", "sample-sweep gate", etc. Acceptable in the Source section as a path; never in the Summary or Why-this-matters paragraphs.
+   - **Bare ISO dates** (e.g. "as of 2026-05-08") in symptom or impact prose, unless tied to a regression event ("regressed since torch nightly 2026-05-02"). For descriptive impact, prefer "currently affects" over "as of <date>".
+   - **Internal sweep stats** stated as numbers without source-context: "466 train-mode breaks" (per which sweep? what's the methodology?). Acceptable when paired with a one-line method note ("per a sweep of 89 HF model families with layerdrop > 0 in train mode") or when caveated as approximate ("~89 models", "~466 breaks per a sweep with caveat").
+   - **References to the corpus repo's internal artifacts** in body prose: `sweep_results/experiments/...`, `experiments/configs/...`, etc. Acceptable in the Source section as a reference; never as the load-bearing way the symptom is described.
+   Verdict: `proceed-with-fixes` if the only fix is "rephrase 1-2 sentences to drop jargon"; `reframe` if jargon is structural (the symptom paragraph is BUILT around internal terminology). Cautionary tale: 2026-05-08T20:55 ET first invocation on issue #77 — Mode B's body cited "the 2026-05-05 NGB explain pass" verbatim from validation evidence; Peng caught it on surface review and pushed back. The re-review's check #9 should have flagged it.
+
 ### Common failure modes (PDF Part 9, sharpened by Peng's criteria)
 
 | Failure mode | When to flag | Verdict |
@@ -106,6 +114,7 @@ Per adversary-review case 2026-05-08-153427-file-issue-design gap #2: a fifth ve
 | Verbose preamble | Symptom paragraph contains "I was working on...", "We noticed that...", or other narrative-without-data | `proceed-with-fixes` (cut preamble) |
 | PII / internal data | Any pattern from the scrub list | `reframe` |
 | **Fix-suggestion (anti-pattern)** | Body contains forbidden section headers ("Proposed fix", "Possible directions", "Suggested fix", etc.) OR forbidden inline phrases ("Consider X", "Maybe try Y", etc.) WITHOUT a `regression_evidence` field anchoring a specific PR. See criterion #4 redefinition above. | `reframe` (delete the fix-suggestion content; reframe as repro-only) |
+| **Internal jargon (audience-awareness)** | Body's user-facing prose (Summary / Why-this-matters / Affected-scope / Pattern) contains internal sweep codenames ("NGB explain pass", internal sweep dates), corpus-tooling terminology ("explain pass", "cohort", "sample-sweep gate") in narrative prose, or bare ISO dates without regression context. Internal references in the Source section as paths are OK. See Mode A check #9. | `proceed-with-fixes` (1-2 jargon strings to rephrase) or `reframe` (jargon is structural to the body) |
 
 ### Required output format (Mode A)
 
@@ -182,9 +191,10 @@ For corpus-repo issues:
 - [ ] Symptom paragraph cites only numbers/strings present in the validation file
 - [ ] Body's "Repro" section restates the `repro_strategy` from the draft (NOT a `single_fix_claim`; that field was removed 2026-05-08T20:23 ET)
 - [ ] **NO fix-suggestion content** — body does NOT contain forbidden section headers ("Proposed fix", "Possible directions", "Suggested fix", "Triage options", "Recommendations", "What you should do", "How to fix") OR forbidden inline phrases ("Consider X", "Maybe try Y", "We could Z", "One approach is", "The dynamo team should", "A reasonable fix would be"). Exception: if the draft has a `regression_evidence` field with a specific PR + bisect/measurement evidence, the body MAY name the offending PR — but no other fix content. See criterion #4 redefinition.
+- [ ] **NO internal jargon in user-facing prose** — Summary / Why-this-matters / Affected-scope / Pattern sections must NOT contain: internal sweep codenames ("NGB explain pass", "the 2026-05-05 sweep", "smoke pre-flight"), internal corpus-tooling terminology ("explain pass", "identify pass", "cohort", "sample-sweep gate") in narrative prose, or bare ISO dates without regression context. Internal artifact paths (`sweep_results/experiments/...`) are OK ONLY in the Source section. See Mode A check #9 for the full rule + cautionary tale.
 - [ ] Body length ≤900 words
 - [ ] **PII / internal-data scrub** (per shared preamble) — no `/home/<user>/`, `/usr/local/fbcode/`, `@meta.com`, employee unixnames as personal attribution, internal hostnames, Workplace URLs
-- [ ] Body ends with the footer marker `<!-- via subagents/file-issue case_id=<case_id> -->`
+- [ ] Body does NOT contain the case-id footer marker (`<!-- via subagents/file-issue case_id=... -->`) — dropped 2026-05-08T21:13 ET per Peng directive: case-id is internal audit, not user-facing. Audit chain is repo-side via the case file's `posted_url` field.
 
 For pytorch/pytorch issues:
 - [ ] Title starts with `🐛` (bug) or `✨` (feature) emoji
@@ -199,7 +209,7 @@ For pytorch/pytorch issues:
 - [ ] **NO fix-suggestion content** — same rule as corpus (forbidden section headers + inline phrases enumerated above). pytorch/pytorch maintainers (e.g., Alban) have refuted Otter-suggested fixes; this is the documented anti-pattern criterion #4 was redefined to prevent.
 - [ ] **PII / internal-data scrub** (per shared preamble — same rules as corpus)
 - [ ] Body length ≤900 words
-- [ ] Body ends with the footer marker `<!-- via subagents/file-issue case_id=<case_id> -->`
+- [ ] Body does NOT contain the case-id footer marker (dropped 2026-05-08T21:13 ET per Peng directive — same rule as corpus)
 
 ### Required output format (Mode B)
 
@@ -211,8 +221,10 @@ TITLE: <the issue title — what Otter pastes into GitHub's title field>
 LABELS: <comma-separated, e.g., "for:dynamo-team" or "module: dynamo, oncall: pt2">
 
 BODY:
-<the full markdown body — what Otter pastes into the issue body, ENDING with the footer marker:
-<!-- via subagents/file-issue case_id=<case_id> -->>
+<the full markdown body — what Otter pastes into the issue body. Do NOT include any
+`<!-- via subagents/file-issue case_id=... -->` footer marker; dropped 2026-05-08T21:13 ET
+per Peng directive ("case-id is internal audit, not user-facing"). Audit chain is
+repo-side via the case file's posted_url field.>
 
 SELF_CHECK:
 - [x] Self-contained (criterion 1) — explanation
@@ -262,9 +274,9 @@ If `OVERSCOPE`, `MRE_TOO_LARGE`, `VALIDATION_FAILED`, or `MODE_NOT_SPECIFIED`, o
 - transformers: `<version>` (or other modellib versions as relevant)
 - diffusers: `<version>`
 - sweep ref: `<sweep results dir name>`
-
-<!-- via subagents/file-issue case_id=<case_id> -->
 ```
+
+(No case-id footer marker — dropped 2026-05-08T21:13 ET. Audit chain is repo-side.)
 
 **Note on what's MISSING from the template:** there is no "Proposed fix", "Possible directions", "Recommendations", or "What this issue closes" section. The maintainer reads the symptom + repro + environment + source data and decides the fix. Otter's job is to surface the bug with reproducibility, not to prescribe the fix. (Per criterion #4 redefinition 2026-05-08T20:23 ET; cf. RETROSPECTIVE.md.) Carve-out: if a `regression_evidence` field is present in the draft, ADD an "Anchored regression" section naming the offending PR + the bisect/measurement evidence — but no other fix content.
 

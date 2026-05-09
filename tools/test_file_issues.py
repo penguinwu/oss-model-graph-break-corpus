@@ -152,10 +152,12 @@ def test_via_skill_rejects_body_sha256_mismatch():
 
 
 def test_via_skill_accepts_matching_body_sha256():
-    """Happy path: matching sha256 + footer marker in dry-run mode passes."""
+    """Happy path: matching sha256 in dry-run mode passes.
+    Footer marker requirement removed 2026-05-08T21:13 ET per Peng directive
+    (audit chain is repo-side via posted_url, not GitHub-side via marker).
+    """
     case_id = "file-2026-05-08-test-sha-match"
-    body_text = (f"the body Mode B wrote\n\n"
-                 f"<!-- via subagents/file-issue case_id={case_id} -->")
+    body_text = "the body Mode B wrote (no case-id marker; dropped per Peng directive)"
     body_sha = hashlib.sha256(body_text.encode()).hexdigest()
     cf = _make_case_file(case_id, mode_a_verdict="proceed",
                          mode_b_sha256="mode_b_full_output_sha",
@@ -176,7 +178,7 @@ def test_via_skill_accepts_matching_body_sha256():
 def test_via_skill_accepts_proceed_with_fixes_verdict():
     """Gap #2: proceed-with-fixes is also a posting-allowed verdict."""
     case_id = "file-2026-05-08-test-proceed-fixes"
-    body_text = f"body\n<!-- via subagents/file-issue case_id={case_id} -->"
+    body_text = "body content (no marker — dropped per Peng directive 2026-05-08T21:13 ET)"
     body_sha = hashlib.sha256(body_text.encode()).hexdigest()
     cf = _make_case_file(case_id, mode_a_verdict="proceed-with-fixes",
                          mode_b_sha256="x", body_sha256=body_sha)
@@ -192,10 +194,13 @@ def test_via_skill_accepts_proceed_with_fixes_verdict():
         Path(body_path).unlink(missing_ok=True)
 
 
-def test_via_skill_rejects_body_without_footer_marker():
-    """Adversary impl-review gap #3: tool enforces footer marker presence in body."""
-    case_id = "file-2026-05-08-test-no-marker"
-    body_text = "body content with NO footer marker at all"
+def test_via_skill_does_not_require_footer_marker():
+    """Per Peng directive 2026-05-08T21:13 ET: marker requirement DROPPED.
+    A body without the case-id footer marker now passes (was previously rejected).
+    The audit chain is repo-side via posted_url, not GitHub-side via marker.
+    """
+    case_id = "file-2026-05-08-test-no-marker-now-ok"
+    body_text = "body content with NO footer marker — should pass now"
     body_sha = hashlib.sha256(body_text.encode()).hexdigest()
     cf = _make_case_file(case_id, mode_a_verdict="proceed",
                          mode_b_sha256="x", body_sha256=body_sha)
@@ -205,9 +210,8 @@ def test_via_skill_rejects_body_without_footer_marker():
             body_path = f.name
         rc, out, err = _run("corpus-issue", "--via-skill", case_id,
                             "--body", body_path, "--title", "T")
-        assert rc != 0, f"expected non-zero for missing footer marker; got rc={rc}"
-        assert "footer marker" in err, f"err should explain marker missing; got: {err}"
-        assert case_id in err, f"err should include the expected marker text; got: {err}"
+        assert rc == 0, (f"expected dry-run pass (no marker required); "
+                         f"got rc={rc}\n  err: {err}")
     finally:
         cf.unlink(missing_ok=True)
         Path(body_path).unlink(missing_ok=True)
@@ -259,6 +263,52 @@ def test_skill_md_documents_no_fix_suggestion_rule():
         f"This documents the Peng directive 2026-05-08T20:23 ET; deletion "
         f"would let the anti-pattern silently re-emerge."
     )
+
+
+def test_corpus_issue_edit_dry_run_passes_with_matching_sha():
+    """Per Peng directive 2026-05-08T21:13 ET: corpus-issue gains --edit
+    <issue_num> as a first-class operation. Dry-run with --edit + matching
+    sha256 should pass without --title (existing title preserved).
+    """
+    case_id = "file-2026-05-08-test-edit"
+    body_text = "edited body content (no marker required post-2026-05-08T21:13)"
+    body_sha = hashlib.sha256(body_text.encode()).hexdigest()
+    cf = _make_case_file(case_id, mode_a_verdict="proceed",
+                         mode_b_sha256="x", body_sha256=body_sha)
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+            f.write(body_text)
+            body_path = f.name
+        # No --title (existing title preserved)
+        rc, out, err = _run("corpus-issue", "--via-skill", case_id,
+                            "--body", body_path, "--edit", "77")
+        assert rc == 0, f"expected dry-run pass for --edit; got rc={rc}\n  err: {err}"
+        assert "EDIT issue #77" in out, f"output should describe edit operation; got: {out}"
+        assert "preserved" in out, f"output should note title preservation; got: {out}"
+    finally:
+        cf.unlink(missing_ok=True)
+        Path(body_path).unlink(missing_ok=True)
+
+
+def test_corpus_issue_new_requires_title():
+    """NEW issue (no --edit) requires --title; without it, exit 2 with explanation."""
+    case_id = "file-2026-05-08-test-new-no-title"
+    body_text = "body"
+    body_sha = hashlib.sha256(body_text.encode()).hexdigest()
+    cf = _make_case_file(case_id, mode_a_verdict="proceed",
+                         mode_b_sha256="x", body_sha256=body_sha)
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+            f.write(body_text)
+            body_path = f.name
+        # No --title, no --edit
+        rc, out, err = _run("corpus-issue", "--via-skill", case_id,
+                            "--body", body_path)
+        assert rc != 0, f"expected non-zero; got rc={rc}\n  out: {out}"
+        assert "title" in err.lower(), f"err should explain title required; got: {err}"
+    finally:
+        cf.unlink(missing_ok=True)
+        Path(body_path).unlink(missing_ok=True)
 
 
 def test_pytorch_upstream_posting_disabled_by_default():

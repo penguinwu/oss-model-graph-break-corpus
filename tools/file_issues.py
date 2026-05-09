@@ -1588,16 +1588,19 @@ def _validate_via_skill(case_id: str, body_path: str | None) -> tuple[bool, str,
                            f"  The body file has been modified since Mode B wrote it. "
                            f"Re-run Mode B if the modification was intentional."), None
 
-        # Gap #3: enforce footer marker presence at the tool level
-        # (Mode B is trusted to include it; this is defense-in-depth.)
-        expected_marker = f"<!-- via subagents/file-issue case_id={case_id} -->"
-        if expected_marker.encode() not in body_bytes:
-            return False, (f"--via-skill: body does not contain required footer "
-                           f"marker.\n"
-                           f"  expected: {expected_marker}\n"
-                           f"  in body file: {body_path}\n"
-                           f"  Mode B's persona is supposed to include this marker. "
-                           f"Re-run Mode B; it may have drifted."), None
+        # Footer-marker check REMOVED 2026-05-08T21:13 ET per Peng directive:
+        # "Drop the case-id system from the issue body. The case-id is for my
+        # audit not for compiler developers. Including them in the issue would
+        # cause confusion."
+        #
+        # Audit chain is now repo-side via the case file's `posted_url` field
+        # (the orphan-scanner Phase 2 candidate matches by repo-side cross-ref
+        # instead of GitHub-side grep). Tool enforcement that REMAINS:
+        #   - --via-skill required at argparse level (refused if absent)
+        #   - case file existence + mode_a_verdict + mode_b_sha256 checks above
+        #   - body_sha256 verification above (catches body tampering)
+        # See subagents/file-issue/SKILL.md "What enforces this" for the
+        # full updated audit chain.
 
     return True, "", body_bytes
 
@@ -1635,30 +1638,63 @@ def _update_case_posted_url(case_id: str, posted_url: str) -> None:
 
 
 def cmd_corpus_issue(args):
-    """Post a single corpus-repo issue, gated by --via-skill validation."""
+    """Post or edit a single corpus-repo issue, gated by --via-skill validation.
+
+    Two operations:
+    - NEW issue: --title required, --edit absent → POST /repos/.../issues
+    - EDIT existing issue: --edit <issue_num> required, --title optional → PATCH
+      /repos/.../issues/<issue_num>. If --title is omitted, existing title is preserved.
+
+    Per Peng directive 2026-05-08T21:13 ET:
+    - --edit added as first-class operation (was bypassing the tool via direct API)
+    - footer-marker check removed; audit chain is repo-side (case file's posted_url)
+    """
     ok, err, body_bytes = _validate_via_skill(args.via_skill, args.body)
     if not ok:
         print(err, file=sys.stderr)
         sys.exit(1)
-    # Use the bytes _validate_via_skill already hashed (gap #11 — no TOCTOU).
+    # Use the bytes _validate_via_skill already hashed (no TOCTOU).
     body_text = body_bytes.decode("utf-8")
+
+    is_edit = args.edit is not None
+    if is_edit:
+        op = "PATCH"
+        endpoint = f"/repos/{REPO_SLUG}/issues/{args.edit}"
+        # PATCH: title optional (preserves existing if omitted); body required
+        payload = {"body": body_text}
+        if args.title:
+            payload["title"] = args.title
+        if args.label:
+            payload["labels"] = list(args.label)
+        target_descr = f"EDIT issue #{args.edit}"
+    else:
+        if not args.title:
+            print("ERROR: --title required for NEW issue (omit only when --edit <issue_num> is set)",
+                  file=sys.stderr)
+            sys.exit(2)
+        op = "POST"
+        endpoint = f"/repos/{REPO_SLUG}/issues"
+        payload = {"title": args.title, "body": body_text}
+        if args.label:
+            payload["labels"] = list(args.label)
+        target_descr = "NEW issue"
+
     if not args.post:
-        print("[DRY-RUN] would post to penguinwu/oss-model-graph-break-corpus")
+        print(f"[DRY-RUN] would {op} {target_descr} on penguinwu/oss-model-graph-break-corpus")
         print(f"  case_id: {args.via_skill}")
-        print(f"  title:   {args.title}")
+        if args.title:
+            print(f"  title:   {args.title}")
+        elif is_edit:
+            print(f"  title:   (preserved from existing issue)")
         print(f"  labels:  {args.label}")
-        print(f"  body:    {len(body_text)} chars (sha256 + footer marker verified)")
-        print(f"  Add --post to actually create the issue.")
+        print(f"  body:    {len(body_text)} chars (sha256 verified)")
+        print(f"  Add --post to actually {op}.")
         return
-    # Post via GitHub API
-    payload = {"title": args.title, "body": body_text}
-    if args.label:
-        payload["labels"] = list(args.label)
-    response = _proxy_api(f"/repos/{REPO_SLUG}/issues", method="POST", body=payload)
+
+    response = _proxy_api(endpoint, method=op, body=payload)
     issue_url = response.get("html_url", "<unknown>")
-    # Auto-update posted_url in the case file (gap #4)
     _update_case_posted_url(args.via_skill, issue_url)
-    print(f"Posted: {issue_url}")
+    print(f"{op}ed: {issue_url}")
     print(f"  case_id: {args.via_skill}")
     print(f"  case file's posted_url field updated automatically.")
     print(f"  Refresh the aggregate index: "
@@ -1772,8 +1808,8 @@ def main():
 
     sub_corpus = subparsers.add_parser(
         "corpus-issue",
-        help="Post a single issue to penguinwu/oss-model-graph-break-corpus. "
-             "REQUIRES --via-skill (case_id from subagents/file-issue/).")
+        help="Post a NEW issue OR EDIT an existing issue in "
+             "penguinwu/oss-model-graph-break-corpus. REQUIRES --via-skill.")
     sub_corpus.add_argument(
         "--via-skill", required=True, metavar="CASE_ID",
         help="REQUIRED. Case ID from subagents/file-issue invocation. "
@@ -1785,14 +1821,21 @@ def main():
         help="Path to the markdown body file (typically /tmp/file-issue-<case_id>-body.md). "
              "Content sha256 must match body_sha256 in the case file.")
     sub_corpus.add_argument(
-        "--title", required=True, metavar="STR",
-        help="Issue title (from Mode B's TITLE: line).")
+        "--title", required=False, default=None, metavar="STR",
+        help="Issue title. REQUIRED for new issues; optional for --edit "
+             "(if omitted on --edit, existing title is preserved).")
+    sub_corpus.add_argument(
+        "--edit", type=int, default=None, metavar="ISSUE_NUM",
+        help="If set, EDIT (PATCH) the existing issue # instead of creating a new one. "
+             "Use for issue rewrites surfaced by Mode A reviews on existing issues. "
+             "Per Peng directive 2026-05-08T21:13 ET, edit operations also require "
+             "Peng's explicit approval on the proposed body before --post.")
     sub_corpus.add_argument(
         "--label", action="append", default=None, metavar="LABEL",
-        help="Repeatable. Labels to apply to the issue (typically 'for:dynamo-team' etc.).")
+        help="Repeatable. Labels to apply to the issue.")
     sub_corpus.add_argument(
         "--post", action="store_true",
-        help="Actually post to GitHub. Default is dry-run (validates but does not POST).")
+        help="Actually POST (new) or PATCH (--edit) on GitHub. Default is dry-run.")
 
     args = parser.parse_args()
 
