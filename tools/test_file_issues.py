@@ -650,6 +650,67 @@ def test_corpus_new_rejects_target_mismatch_in_json():
 
 # ── Original placement: just before persona-documents-cluster-cohesion test ──
 
+def test_persona_documents_phase3_v1_0_frozen_mre_rule():
+    """Phase 3 v1.0 (Peng directive 2026-05-09): persona must document the
+    frozen-MRE-and-original_command rule. Pin so a future edit can't drop it."""
+    persona = (REPO_ROOT / "subagents/file-issue/persona.md").read_text()
+    required = [
+        "frozen-MRE rule",
+        "MRE_REVISION_NEEDED",
+        "ORIGINAL_REVISION_NEEDED",
+        "MRE_DRIFT",
+        "ORIGINAL_DRIFT",
+        "Phase 3 v1.0 body shape",
+        "python repro=true",
+        "original_command",
+        "Verification signal (original)",
+        "Verification signal (MRE)",
+    ]
+    missing = [r for r in required if r not in persona]
+    assert not missing, (
+        f"persona.md missing Phase 3 v1.0 required language: {missing}"
+    )
+
+
+def test_persona_documents_mode_a_check_11_metadata_only():
+    """Mode A check 11 must be metadata-only (drop the temporal-impossible
+    cross-check per gap 3 disposition)."""
+    persona = (REPO_ROOT / "subagents/file-issue/persona.md").read_text()
+    # Required language signals
+    assert "Phase 3 v1.0 repro verification metadata" in persona
+    assert "repro_verified_current_original_path" in persona
+    assert "Do NOT cross-check `extracted_bytes_sha256`" in persona, (
+        "Mode A check 11 must explicitly NOT cross-check sha (gap 3 — temporal impossibility)"
+    )
+
+
+def test_skill_md_documents_step_2_5_verify_repro():
+    skill = (REPO_ROOT / "subagents/file-issue/SKILL.md").read_text()
+    required = [
+        "Step 2.5 — Repro verification",
+        "Phase 3 v1.0",
+        "tools/verify_repro.py",
+        "tools/lookup_sweep_evidence.py",
+        "--nightly-unavailable-reason",
+        "NIGHTLY VENV STALE",
+    ]
+    missing = [r for r in required if r not in skill]
+    assert not missing, f"SKILL.md missing Phase 3 v1.0 required language: {missing}"
+
+
+def test_skill_md_documents_4_flag_authority_gate():
+    skill = (REPO_ROOT / "subagents/file-issue/SKILL.md").read_text()
+    required = [
+        "--repro-verified-current-original",
+        "--repro-verified-current-mre",
+        "--repro-verified-nightly-original",
+        "--repro-verified-nightly-mre",
+        "verify_repro × 4 cells",
+    ]
+    missing = [r for r in required if r not in skill]
+    assert not missing, f"SKILL.md authority gate missing flags: {missing}"
+
+
 def test_persona_documents_cluster_cohesion_check():
     """Mode A check 10 (cluster cohesion) must be in persona.md after V1 ships.
     Pins the documentation so a future edit can't silently drop the check."""

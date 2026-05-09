@@ -99,6 +99,17 @@ Per adversary-review case 2026-05-08-153427-file-issue-design gap 2: a fifth ver
    - **References to the corpus repo's internal artifacts** in body prose: `sweep_results/experiments/...`, `experiments/configs/...`, etc. Acceptable in the Source section as a reference; never as the load-bearing way the symptom is described.
    Verdict: `proceed-with-fixes` if the only fix is "rephrase 1-2 sentences to drop jargon"; `reframe` if jargon is structural (the symptom paragraph is BUILT around internal terminology). Cautionary tale: 2026-05-08T20:55 ET first invocation on issue 77 — Mode B's body cited "the 2026-05-05 NGB explain pass" verbatim from validation evidence; Peng caught it on surface review and pushed back. The re-review's check 9 should have flagged it.
 
+11. **Phase 3 v1.0 repro verification metadata (Peng directive 2026-05-09; gap 3 disposition).** For NEW corpus or pytorch-upstream issues, the draft frontmatter MUST include all four paths:
+    - `repro_verified_current_original_path`
+    - `repro_verified_current_mre_path`
+    - `repro_verified_nightly_original_path`
+    - `repro_verified_nightly_mre_path`
+    OR `nightly_unavailable_reason: "<text>"` with the two nightly paths optional (gap 6 escape valve).
+
+    For each provided path, verify the JSON parses and has `case_id == draft.case_id`. **Do NOT cross-check `extracted_bytes_sha256` against the body's MRE/original_command bytes** — Mode B has not written the body yet (gap 3 dropped the impossible temporal check). The body↔JSON sha binding fires at posting-time in `tools/file_issues.py corpus-issue`'s `_validate_repro_evidence`.
+
+    Verdict: `reframe` with "run verify_repro Step 2.5 before Mode A" if any required path is missing OR JSON case_id mismatch. EDIT path is exempt in v1.0 (defers to v1.5).
+
 10. **Cluster cohesion (V1 cluster+dedup, 2026-05-08T22:01 ET).** If the draft's frontmatter includes a `cluster_id` field (i.e., this filing is part of a Peng-approved cluster batch from `subagents/file-issue/cluster-plans/`), verify the representative_case's MRE actually applies to the cluster's claim:
     - The cluster's `root_signal` (architecture_family + mode for numeric clusters; break_reason fingerprint + file_line for graph-break clusters) must be consistent with the symptom the MRE surfaces.
     - At least one OTHER `affected_case` from the cluster must show the same break_reason / divergence pattern in sweep evidence (`sweep_evidence_excerpt` field on each case in the plan). Use sweep data already in the cluster plan — do NOT require re-running.
@@ -188,6 +199,62 @@ Every code snippet you write or include in the body:
 | MRE | 5–20 lines is ideal. >30 lines → cut; if can't cut below 30, output `MRE_TOO_LARGE` and stop. |
 | Total | Bug ≤600 words, feature ≤800 words. Over → cut. Hard ceiling: bug ≤900, feature ≤1100. |
 
+### Phase 3 v1.0 frozen-MRE rule (Peng directive 2026-05-09; gap 3 disposition)
+
+**You MAY NOT alter the draft's `proposed_repro` (MRE) bytes OR `proposed_original_command` bytes.** The draft was verified by `tools/verify_repro.py` at Step 2.5, and the verification JSONs bind to a specific sha256 of those bytes. If you re-minimize, re-format whitespace, or re-order imports, the binding breaks and the post is refused at the gate.
+
+If you determine the MRE genuinely needs revision (the MRE checklist surfaces a real defect — e.g., "the imports include `from sweep.foo import bar` which violates self-containment check 3"), the protocol is:
+
+1. Output failure marker `MRE_REVISION_NEEDED` with a brief paragraph explaining what needs to change.
+2. Otter loops back to Step 1 (revise draft), re-runs Step 2.5 (verify_repro × 2 venvs × 2 evidence types = 4 cells), re-runs Step 3 (Mode A on revised draft), re-invokes Mode B with the new frozen MRE.
+
+Same protocol for original_command revisions: emit `ORIGINAL_REVISION_NEEDED`.
+
+If you accidentally emit a body whose MRE/original_command bytes don't match the verification sha (e.g., your assembler subtly normalized whitespace), the tool's posting-time gate refuses with sha mismatch — you'd see `MRE_DRIFT` or `ORIGINAL_DRIFT` in the next invocation if the draft is unchanged. The fix is to embed the bytes verbatim, not to re-verify (which would just paper over the bug).
+
+### Phase 3 v1.0 body shape (Mode B emits)
+
+The body MUST contain these elements in this order:
+
+1. **First non-blank line — Repro status:**
+   ```
+   **Repro status:** Reproduces on torch <X.Y.Z> (current, verified <UTC>) and torch <X.Y.Z> (nightly, verified <UTC>).
+   ```
+   For nightly-anomaly variant (when --nightly-unavailable-reason is set OR FILE-ANYWAY chained case):
+   ```
+   **Repro status:** Reproduces on torch <X.Y.Z>; did NOT reproduce on torch <X.Y.Z> (latest nightly, verified <UTC>). Filing because <reason>.
+   ```
+   Pre-submission gate regex: `^\*\*Repro status:\*\* (Reproduces|Did NOT reproduce|Reproduces on torch [\w\.\-+]+; did NOT reproduce on torch [\w\.\-+]+) `.
+
+2. **Original failure report section** with model + transformers version + pytorch version + test command + symptom captured. Plus an HTML comment carrying the canonical sweep command:
+   ```
+   <!-- original_command: python tools/run_experiment.py sweep --models <name> --modes <mode> ... -->
+   ```
+   And a `<details>` block with the verification signal:
+   ```
+   <details><summary>Verification signal (original)</summary>
+
+   `{"kind": "stdout_contains", "fragment": "..."}`
+   </details>
+   ```
+
+3. **Minimal reproducer (MRE) section** with exactly ONE fenced block tagged `python repro=true`:
+   ````
+   ```python repro=true
+   import torch
+   ...
+   ```
+   ````
+   Plus a `<details>` block with the verification signal:
+   ```
+   <details><summary>Verification signal (MRE)</summary>
+
+   `{"kind": "stderr_contains", "fragment": "..."}`
+   </details>
+   ```
+
+The `expected_signal` JSON inside `<details>` is what `verify_repro` reads to classify the run. `kind` is one of `exit_nonzero+stderr_contains`, `stderr_contains`, `stdout_contains`. `fragment` is the load-bearing string verify_repro greps for. Per Peng 2026-05-09 07:55 ET: visible `<details>` (not invisible HTML comment) — transparency for the maintainer about how we verified.
+
 ### Pre-submission validation gate (PDF Part 8, target-aware, with PII applied to BOTH targets)
 
 Before outputting the final body, run this checklist as an internal monologue. If ANY item fails, attempt ONE self-revision; on second failure, output `VALIDATION_FAILED: <items>` and stop. **Do NOT soften the calibration to bypass — that defeats the gate.**
@@ -203,6 +270,12 @@ For corpus-repo issues:
 - [ ] Body length ≤900 words
 - [ ] **PII / internal-data scrub** (per shared preamble) — no `/home/<user>/`, `/usr/local/fbcode/`, `@meta.com`, employee unixnames as personal attribution, internal hostnames, Workplace URLs
 - [ ] Body does NOT contain the case-id footer marker (`<!-- via subagents/file-issue case_id=... -->`) — dropped 2026-05-08T21:13 ET per Peng directive: case-id is internal audit, not user-facing. Audit chain is repo-side via the case file's `posted_url` field.
+- [ ] **Phase 3 v1.0 (Peng directive 2026-05-09):** First non-blank line matches `**Repro status:** ...` regex (see Phase 3 v1.0 body shape section above)
+- [ ] **Phase 3 v1.0:** "Original failure report" section present + contains `<!-- original_command: ... -->` HTML comment
+- [ ] **Phase 3 v1.0:** "Minimal reproducer (MRE)" section present + contains exactly ONE ` ```python repro=true ` fence
+- [ ] **Phase 3 v1.0:** Two `<details><summary>Verification signal (...)</summary>` blocks present — one for original, one for MRE — each containing parseable `{"kind": "...", "fragment": "..."}` JSON
+- [ ] **Phase 3 v1.0:** MRE bytes (canonicalized: whitespace-stripped + LF-normalized) match `proposed_repro` from the draft byte-for-byte (frozen-MRE rule). On mismatch → `MRE_DRIFT`.
+- [ ] **Phase 3 v1.0:** `original_command` HTML comment payload (canonicalized) matches `proposed_original_command` from the draft. On mismatch → `ORIGINAL_DRIFT`.
 
 For pytorch/pytorch issues:
 - [ ] Title starts with `🐛` (bug) or `✨` (feature) emoji

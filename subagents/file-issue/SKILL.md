@@ -119,6 +119,30 @@ For each cluster: walk Steps 1–6 with the cluster as the unit (not the per-cas
 
 Run `subagents/file-issue/PREREQ-CHECK.sh` (or the manual checks at the top of this file). If anything fails, STOP and surface the missing prerequisite to Peng.
 
+### Step 2.5 — Repro verification (Phase 3 v1.0; Peng directives 2026-05-09 07:18 / 07:27 / 07:40 / 07:55 / 08:04 ET)
+
+For NEW corpus or pytorch-upstream issues. EDIT/CLOSE/COMMENT paths defer to v1.5.
+
+The body has TWO evidence sections (Original failure report + MRE), and we verify each on TWO venvs (current + nightly) — 4 verification JSONs total per filing.
+
+For each (evidence_type, venv) cell, run:
+```
+python3 tools/verify_repro.py --target {corpus|upstream} --evidence-type {original|mre} \
+  --venv-name {current|nightly} --venv-path <path> --body <draft-body> --case-id <case_id>
+```
+
+For `--evidence-type original`, verify_repro will FIRST try `tools/lookup_sweep_evidence.py` (cached sweep within 10 days). If hit, the verification is essentially free. If miss, verify_repro re-runs the sweep command directly (slow path).
+
+For `--evidence-type mre`, verify_repro always re-runs (the MRE is new content; never cached).
+
+All four JSONs land at `/tmp/file-issue-<case_id>-repro-{current,nightly}-{original,mre}.json`. `tools/file_issues.py corpus-issue --post` refuses without all four flags pointing at valid JSONs (or `--nightly-unavailable-reason "<text>"` for the gap-6 escape valve).
+
+**Anomaly handling (Layer 5 of design v3.1):** if any nightly cell shows classification != `reproduces`, the tool refuses the post and emits a 4-class diagnostic naming the (venv, evidence_type) cells. v1.0 ships the refusal with diagnostic text; the surface-block helper that posts to Peng's space is a follow-up (commit 5+1).
+
+**Stale-venv handling:** if nightly venv's `torch.version.git_version` does not match the current published nightly, verify_repro refuses with "venv is N days old; refresh required." Otter surfaces a 🚨 NIGHTLY VENV STALE block to Peng for (a) wheel-install fresh, (b) build from source (last resort), or (c) skip nightly verification for this filing via `--nightly-unavailable-reason`.
+
+**Filing right after a sweep is the cheap path:** cluster+dedup batches inherit the sweep's `results.jsonl` as ORIGINAL evidence (no re-run); only MRE × 2 runs are paid. Single-manual or stale-cluster filings pay 1 sweep re-run × 2 venvs + 2 MRE runs.
+
 ### Step 1 — Otter triage
 
 Write a draft framing to `/tmp/file-issue-<case_id>-draft.md` containing:
@@ -201,8 +225,9 @@ Self-revision protocol (aligned with persona.md): Mode B attempts ONE self-revis
 
 | Target | Authority | Posting command |
 |---|---|---|
-| **Corpus repo — NEW issue** (bug or feature) | Otter posts (after Step 0 cluster plan approval) | `python3 tools/file_issues.py corpus-issue --via-skill <case_id> --cluster-plan-approved <sha256> --body /tmp/file-issue-<case_id>-body.md --title "..."`, then one-line FYI to Peng's space |
-| **Corpus repo — EDIT existing issue** | Otter posts (after explicit Peng approval on the proposed body AND a Step 0 cluster plan that includes the case_id) | `python3 tools/file_issues.py corpus-issue --via-skill <case_id> --cluster-plan-approved <sha256> --edit <issue#> --body /tmp/file-issue-<case_id>-body.md` (title optional). Surface the proposed body to Peng's space first; wait for explicit approval; only THEN run the command. |
+| **Corpus repo — NEW issue** (bug or feature) | Otter posts (after Step 0 cluster plan + Step 2.5 verify_repro × 4 cells) | `python3 tools/file_issues.py corpus-issue --via-skill <case_id> --cluster-plan-approved <sha256> --repro-verified-current-original <json> --repro-verified-current-mre <json> --repro-verified-nightly-original <json> --repro-verified-nightly-mre <json> --body /tmp/file-issue-<case_id>-body.md --title "..."`, then one-line FYI to Peng's space. For legitimate stale-nightly: add `--nightly-unavailable-reason "<text>"` and omit the two nightly flags. |
+| **Corpus repo — NEW issue with nightly anomaly** (any nightly cell != reproduces) | Peng must approve (a)/(b)/(c); if (a) FILE ANYWAY, chain a fresh case file with `nightly_anomaly_reason: "..."` in frontmatter → re-run pipeline → new body carries anomaly-variant `Repro status:` line | Surface the 4-class diagnostic to Peng; on approval (a), file via standard NEW row (the chained case file's body has the reason baked in; no posting-time override) |
+| **Corpus repo — EDIT existing issue (v1.0)** | Otter posts (after explicit Peng approval on the proposed body AND a Step 0 cluster plan that includes the case_id). v1.0 EDIT path is exempt from the verify_repro × 4 gate; v1.5 will extend it. | `python3 tools/file_issues.py corpus-issue --via-skill <case_id> --cluster-plan-approved <sha256> --edit <issue#> --body /tmp/file-issue-<case_id>-body.md` (title optional). Surface the proposed body to Peng's space first; wait for explicit approval; only THEN run the command. |
 | **pytorch/pytorch** (any) | **Peng must approve** | "🚨 EXTERNAL ENGAGEMENT PROPOSED" block in Peng's space with Mode B's verbatim body; wait for token (`approved`/`go`/`(a)`); flip `PYTORCH_UPSTREAM_POSTING_ENABLED = True` in `tools/file_issues.py`; THEN `python3 tools/file_issues.py pytorch-upstream --via-skill <case_id> --post`; flip the constant back to `False` and commit. |
 | **Comment on existing pytorch/pytorch issue** | **Peng must approve** | Same proposal block + same flip-constant flow + `python3 tools/file_issues.py pytorch-upstream --via-skill <case_id> --comment <issue#> --post` |
 
