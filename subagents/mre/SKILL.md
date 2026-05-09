@@ -1,3 +1,8 @@
+---
+name: mre
+description: Constructs a verified Minimal Reproducer (MRE) for a torch.compile / Dynamo / Inductor bug, given sweep evidence and a target torch venv. Use from file-issue Mode B when assembling an issue body, or from issue-tackling workflows when an existing issue needs a verified repro. Hill-climbs by running candidates against verify_repro and grepping stderr for a stable fragment. Time-budgeted (15 min soft, 25 min hard).
+---
+
 # mre — Subagent for constructing Minimal Reproducers (V1)
 
 This is a STANDALONE subagent. It constructs a verified Minimal Reproducer for a torch.compile / Dynamo / Inductor bug, given sweep evidence and a target torch venv.
