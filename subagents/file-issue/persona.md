@@ -196,7 +196,7 @@ Every code snippet you write or include in the body:
 | TITLE | Encodes click-decision info: WHO (subsystem tag) + WHAT class + HOW BIG (scope) + just-enough-mechanism. Body holds full mechanism. 6-15 words / ≤110 chars. No filler. No underselling scope. See Mode A check 4 for criteria + worked examples. |
 | BODY | Every sentence adds information. No preamble ("I was working on..."), no apologies ("Sorry if duplicate..."), no hedging ("I think maybe..."). |
 | Symptom description | 2–4 sentences. >4 means scope is too broad — STOP and re-prompt yourself ONCE; if still >4, output `OVERSCOPE` and stop. |
-| MRE | 5–20 lines is ideal. >30 lines → cut; if can't cut below 30, output `MRE_TOO_LARGE` and stop. |
+| MRE | 5–20 lines is ideal. >30 lines → cut; if can't cut below 30, output `MRE_TOO_LARGE` and stop, UNLESS the mre subagent's SUCCESS output includes an `mre_size_justification` field naming a structural reason (two-stage break, multi-iteration recompile setup, parametrize state churn requiring N fresh wraps, etc.). With justification → soft cap; hard ceiling at 60 lines. (Encoded 2026-05-09 from #92 dogfood: 35-line MRE was the minimum preserving the BUILD_STRING two-stage symptom; cutting further lost the resumption-frame interaction.) |
 | Total | Bug ≤600 words, feature ≤800 words. Over → cut. Hard ceiling: bug ≤900, feature ≤1100. |
 
 ### Phase 3 v1.0 frozen-MRE rule (Peng directive 2026-05-09; gap 3 disposition)
@@ -224,7 +224,13 @@ The body MUST contain these elements in this order:
    ```
    **Repro status:** Reproduces on torch <X.Y.Z>; did NOT reproduce on torch <X.Y.Z> (latest nightly, verified <UTC>). Filing because <reason>.
    ```
-   Pre-submission gate regex: `^\*\*Repro status:\*\* (Reproduces|Did NOT reproduce|Reproduces on torch [\w\.\-+]+; did NOT reproduce on torch [\w\.\-+]+) `.
+   For **different-failure variant** (when MRE reproduces on one version but triggers a DIFFERENT graph break / failure mode on another — the bug's path is version-specific). Encoded 2026-05-09 from #92 dogfood (BUILD_STRING reproduces on torch 2.12 nightly, triggers gb0059+gb0055 on 2.9 stable):
+   ```
+   **Repro status:** Reproduces on torch <X.Y.Z> (verified <UTC>). On torch <other-X.Y.Z> (verified <UTC>), the same MRE triggers DIFFERENT graph breaks (<list>) — the <named-path> path is specific to torch <range>. Filing because <reason>.
+   ```
+   This signal is high-value for the maintainer: it helps them place WHEN the bug's path appeared and which torch version range to target a fix at. Don't suppress it by collapsing to "did NOT reproduce" — describe the divergence honestly.
+
+   Pre-submission gate regex (extended): `^\*\*Repro status:\*\* (Reproduces|Did NOT reproduce|Reproduces on torch [\w\.\-+]+; did NOT reproduce on torch [\w\.\-+]+|Reproduces on torch [\w\.\-+]+ \(verified [^)]+\)\. On torch [\w\.\-+]+ \(verified [^)]+\), the same MRE triggers DIFFERENT) `.
 
 2. **Original failure report section** with model + transformers version + pytorch version + test command + symptom captured. Plus an HTML comment carrying the canonical sweep command:
    ```
@@ -276,6 +282,7 @@ Before outputting the final body, run this checklist as an internal monologue. I
 For corpus-repo issues:
 - [ ] Title names the affected component + symptom
 - [ ] Title encodes click-decision info per Mode A check 4 (subsystem tag + bug class + scope + minimal mechanism). On second look at the title alone — could a relevant maintainer decide whether to click? If "no" or "ambiguous" → revise.
+- [ ] Source section cites `provenance_anchor: <file:line>` when mre subagent provided one. (Encoded 2026-05-09 from 3-issue dogfood — the anchor is the maintainer's first-jump destination.)
 - [ ] Body cites at least one `for:*` label (`for:dynamo-team` | `for:hf-transformers` | `for:corpus-tooling`)
 - [ ] Body links to the source data (sweep results dir, commit sha, results.jsonl row)
 - [ ] Symptom paragraph cites only numbers/strings present in the validation file
@@ -361,6 +368,7 @@ If `OVERSCOPE`, `MRE_TOO_LARGE`, `VALIDATION_FAILED`, or `MODE_NOT_SPECIFIED`, o
 ## Source
 
 - Sweep results: <path/to/results.jsonl row>
+- **Provenance anchor:** `<file:line>` — REQUIRED when mre subagent SUCCESS provides one. This is the maintainer's first-jump destination; cite verbatim. (Encoded 2026-05-09 from 3-issue dogfood.)
 - Corpus commit: `<sha>`
 - Affected models / configs: <list>
 
