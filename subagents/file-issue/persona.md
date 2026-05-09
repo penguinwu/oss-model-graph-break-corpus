@@ -99,6 +99,13 @@ Per adversary-review case 2026-05-08-153427-file-issue-design gap 2: a fifth ver
    - **References to the corpus repo's internal artifacts** in body prose: `sweep_results/experiments/...`, `experiments/configs/...`, etc. Acceptable in the Source section as a reference; never as the load-bearing way the symptom is described.
    Verdict: `proceed-with-fixes` if the only fix is "rephrase 1-2 sentences to drop jargon"; `reframe` if jargon is structural (the symptom paragraph is BUILT around internal terminology). Cautionary tale: 2026-05-08T20:55 ET first invocation on issue 77 — Mode B's body cited "the 2026-05-05 NGB explain pass" verbatim from validation evidence; Peng caught it on surface review and pushed back. The re-review's check 9 should have flagged it.
 
+10. **Cluster cohesion (V1 cluster+dedup, 2026-05-08T22:01 ET).** If the draft's frontmatter includes a `cluster_id` field (i.e., this filing is part of a Peng-approved cluster batch from `subagents/file-issue/cluster-plans/`), verify the representative_case's MRE actually applies to the cluster's claim:
+    - The cluster's `root_signal` (architecture_family + mode for numeric clusters; break_reason fingerprint + file_line for graph-break clusters) must be consistent with the symptom the MRE surfaces.
+    - At least one OTHER `affected_case` from the cluster must show the same break_reason / divergence pattern in sweep evidence (`sweep_evidence_excerpt` field on each case in the plan). Use sweep data already in the cluster plan — do NOT require re-running.
+    - If the MRE surfaces a DIFFERENT root signal than the cluster claims (e.g., cluster says "audio-encoder layerdrop", MRE shows "data-dependent attention masking") → `reframe` with note "cluster signal mismatch; either re-cluster or pick a different representative_case."
+    - If the cluster has only 1 affected_case (`single_manual` or singleton cluster) → this check passes trivially; no cohesion to verify.
+    Verdict: `reframe` on signal mismatch; `proceed` otherwise. Drafts WITHOUT a `cluster_id` field skip this check (single-case manual filings without Step 0 invocation — pre-V1 behavior, still allowed for forensic case loops).
+
 ### Common failure modes (PDF Part 9, sharpened by Peng's criteria)
 
 | Failure mode | When to flag | Verdict |
@@ -115,6 +122,7 @@ Per adversary-review case 2026-05-08-153427-file-issue-design gap 2: a fifth ver
 | PII / internal data | Any pattern from the scrub list | `reframe` |
 | **Fix-suggestion (anti-pattern)** | Body contains forbidden section headers ("Proposed fix", "Possible directions", "Suggested fix", etc.) OR forbidden inline phrases ("Consider X", "Maybe try Y", etc.) WITHOUT a `regression_evidence` field anchoring a specific PR. See criterion 4 redefinition above. | `reframe` (delete the fix-suggestion content; reframe as repro-only) |
 | **Internal jargon (audience-awareness)** | Body's user-facing prose (Summary / Why-this-matters / Affected-scope / Pattern) contains internal sweep codenames ("NGB explain pass", internal sweep dates), corpus-tooling terminology ("explain pass", "cohort", "sample-sweep gate") in narrative prose, or bare ISO dates without regression context. Internal references in the Source section as paths are OK. See Mode A check 9. | `proceed-with-fixes` (1-2 jargon strings to rephrase) or `reframe` (jargon is structural to the body) |
+| **Cluster signal mismatch** | Draft has `cluster_id` field; representative_case's MRE surfaces a DIFFERENT root signal than the cluster claims, OR no other affected_case in the cluster shows the same pattern in sweep evidence. See Mode A check 10. | `reframe` (re-cluster or pick a different representative_case) |
 
 ### Required output format (Mode A)
 

@@ -68,9 +68,56 @@ Example: `file-2026-05-08-191500-wav2vec2-ngb`. The prefix appears in the case_i
 
 ## The procedure (strict order)
 
-### Step 0 — Pre-requisites check
+### Step 0 — Cluster + dedup gate (Peng directive 2026-05-08T22:01 ET)
 
-Run the prereq script (or manual checks above). If anything fails, STOP and surface the missing prerequisite to Peng.
+**Per Peng directive:** "When we surface problems exposed by a sweep, if we open an issue for each failed case, it will flood the issue queue and makes it hard for compiler developer to pay attention. There could also be duplicates with previous issues."
+
+Step 0 produces a Peng-approved CLUSTER PLAN that is the unit of approval for downstream per-cluster filings. The plan binds: (a) what failures are being filed, (b) what existing-issue dedup candidates were found, (c) Peng's explicit approval signed via the plan's sha256.
+
+**Step 0a — Cluster (the unit of approval is the cluster, not the per-case row).**
+
+For sweep-driven batches:
+```
+python3 tools/cluster_failures.py from-sweep <results.jsonl> --cluster-type {numeric|graph-break|fallback}
+```
+Writes `subagents/file-issue/cluster-plans/<sweep-ref>.yaml`.
+
+For one-off non-sweep filings (single case, no sweep):
+```
+python3 tools/cluster_failures.py single-manual <case_id>
+```
+Emits a 1-row plan with `single_manual: true`. This closes the dead-air window — the gate applies uniformly.
+
+The clusterer enforces: `total_clustered_rows == sum(cluster.case_count)`. Mutually-exclusive cluster membership. Unknown failure types fall through to `unknown_type_fallback` (each row its own cluster, with a warning surface).
+
+**Step 0b — Dedup search (every cluster, no thresholds).**
+
+```
+python3 tools/dedup_search.py --plan <plan.yaml>
+```
+Writes `dup_candidates: [...]` into each cluster, where each candidate has `decision: needs_peng_review`. **Per Peng directive:** the tool DOES NOT auto-decide based on overlap %. ANY candidate triggers human review. We will design auto-thresholds later, after enough real surfaces have given us examples to learn from.
+
+**Step 0c — Surface the cluster plan to Peng for approval.**
+
+Post a "🚨 CLUSTER PLAN PROPOSED" block to Peng's space with:
+- Total failure rows + cluster count + per-cluster `case_count`
+- Per-cluster `dup_candidates` list (any non-empty list → explicit "needs your judgement: file new vs. comment on existing vs. skip")
+- Predicted issue-queue impact (e.g., "would create 3 new issues + 1 comment + 1 skip")
+- Plan path + computed sha256 = the approval token
+- Ask: approve / modify (prune cluster N, re-cluster with different signal, etc.) / reject
+
+When Peng approves, edit the plan to set `peng_approval.token = <sha256>` and `peng_approval.approved_at = <UTC>`. The token (= sha256 of plan content at approval time) flows into every downstream `tools/file_issues.py corpus-issue --cluster-plan-approved <token>` call. Tampering with the plan after approval changes its sha → invalidates the token → tool refuses to post.
+
+**Step 0d — Run the per-cluster pipeline.**
+
+For each cluster: walk Steps 1–6 with the cluster as the unit (not the per-case row). The representative_case provides the MRE; affected_cases is data embedded in the body. Per-cluster `dup_candidates` decision drives:
+- **proceed-as-new** → standard Step 1–6 (post NEW issue)
+- **comment-on-existing: <issue_num>** → standard Step 1–6 (post comment via `--edit` is the wrong tool — `--comment` operation deferred to Phase 3 of the cluster+dedup work; for V1, surface to Peng for manual posting)
+- **skip-as-dup: <issue_num>** → log a stub case file for the audit trail; no further work
+
+### Step 0.5 — Pre-requisites check
+
+Run `subagents/file-issue/PREREQ-CHECK.sh` (or the manual checks at the top of this file). If anything fails, STOP and surface the missing prerequisite to Peng.
 
 ### Step 1 — Otter triage
 
@@ -154,8 +201,8 @@ Self-revision protocol (aligned with persona.md): Mode B attempts ONE self-revis
 
 | Target | Authority | Posting command |
 |---|---|---|
-| **Corpus repo — NEW issue** (bug or feature) | Otter posts | `python3 tools/file_issues.py corpus-issue --via-skill <case_id> --body /tmp/file-issue-<case_id>-body.md --title "..."`, then one-line FYI to Peng's space |
-| **Corpus repo — EDIT existing issue** | Otter posts (after explicit Peng approval on the proposed body) | `python3 tools/file_issues.py corpus-issue --via-skill <case_id> --edit <issue#> --body /tmp/file-issue-<case_id>-body.md` (title becomes optional; if omitted the existing title is preserved). Surface the proposed body to Peng's space first; wait for explicit approval; only THEN run the command. |
+| **Corpus repo — NEW issue** (bug or feature) | Otter posts (after Step 0 cluster plan approval) | `python3 tools/file_issues.py corpus-issue --via-skill <case_id> --cluster-plan-approved <sha256> --body /tmp/file-issue-<case_id>-body.md --title "..."`, then one-line FYI to Peng's space |
+| **Corpus repo — EDIT existing issue** | Otter posts (after explicit Peng approval on the proposed body AND a Step 0 cluster plan that includes the case_id) | `python3 tools/file_issues.py corpus-issue --via-skill <case_id> --cluster-plan-approved <sha256> --edit <issue#> --body /tmp/file-issue-<case_id>-body.md` (title optional). Surface the proposed body to Peng's space first; wait for explicit approval; only THEN run the command. |
 | **pytorch/pytorch** (any) | **Peng must approve** | "🚨 EXTERNAL ENGAGEMENT PROPOSED" block in Peng's space with Mode B's verbatim body; wait for token (`approved`/`go`/`(a)`); flip `PYTORCH_UPSTREAM_POSTING_ENABLED = True` in `tools/file_issues.py`; THEN `python3 tools/file_issues.py pytorch-upstream --via-skill <case_id> --post`; flip the constant back to `False` and commit. |
 | **Comment on existing pytorch/pytorch issue** | **Peng must approve** | Same proposal block + same flip-constant flow + `python3 tools/file_issues.py pytorch-upstream --via-skill <case_id> --comment <issue#> --post` |
 
@@ -191,6 +238,8 @@ parent_case_id: <if chained from a prior case (split / re-review / rewrite), the
 target_issue_num: <integer, bare — only when EDITING an existing issue (target). null for NEW issues.>
 mode_a_sha256: <hash of Mode A raw output>
 mode_a_fixes_applied: <if proceed-with-fixes, multi-line list. Empty/omitted for other verdicts.>
+cluster_id: <if filed under a Step 0 cluster batch, the cluster_id from the cluster plan; activates Mode A check 10>
+cluster_plan_path: <if cluster_id is set, the path to the approved plan in subagents/file-issue/cluster-plans/>
 disposition: <free-text one-liner: "posted", "blocked at Mode A (reason)", "blocked at Mode B (REASON)", "rejected by Peng", "pending">
 ---
 
@@ -249,16 +298,18 @@ The first invocation on issue 77 surfaced the criterion 4 anti-pattern issue. A 
 
 ## What enforces this
 
-Three layers (footer-marker layer DROPPED 2026-05-08T21:13 ET per Peng directive — case-id is internal audit, not user-facing):
+Four layers (footer-marker layer DROPPED 2026-05-08T21:13 ET per Peng directive — case-id is internal audit, not user-facing):
 
-1. **File artifacts (repo-side audit chain)** — `/tmp/file-issue-<case_id>-{draft,validation}.md` + `subagents/file-issue/invocations/<case_id>.md` (canonical) + the case file's `posted_url` field linking to the live GitHub issue. Reverse-lookup ("which case file produced this GitHub issue?") is `grep "posted_url: <github URL>" subagents/file-issue/invocations/*.md`. No GitHub-side breadcrumb.
+1. **File artifacts (repo-side audit chain)** — `/tmp/file-issue-<case_id>-{draft,validation}.md` + `subagents/file-issue/invocations/<case_id>.md` (canonical) + the case file's `posted_issue_num` field (bare integer; no auto-link) referencing the live GitHub issue. Reverse-lookup ("which case file produced GitHub issue N?") is `grep "posted_issue_num: N$" subagents/file-issue/invocations/*.md`. No GitHub-side breadcrumb.
 
-2. **Mechanical refusal at the CLI** — `tools/file_issues.py corpus-issue --via-skill <case_id>` and `pytorch-upstream --via-skill <case_id>` enforce `required=True` at argparse level. The tool exits non-zero before doing anything if `--via-skill` is missing. The check then validates: case file exists, `mode_a_verdict in {proceed, proceed-with-fixes}`, `mode_b_sha256` non-empty, `body_sha256` matches the actual body being posted (catches body tampering between Mode B output + post). **Tested via `tools/test_file_issues.py` (`test_corpus_issue_rejects_naked_post`, `test_via_skill_rejects_body_sha256_mismatch`, etc.).**
+2. **Mechanical refusal at the CLI (per-case gate)** — `tools/file_issues.py corpus-issue --via-skill <case_id>` and `pytorch-upstream --via-skill <case_id>` enforce `required=True` at argparse level. The tool exits non-zero before doing anything if `--via-skill` is missing. The check then validates: case file exists, `mode_a_verdict in {proceed, proceed-with-fixes}`, `mode_b_sha256` non-empty, `body_sha256` matches the actual body being posted (catches body tampering between Mode B output + post). **Tested via `tools/test_file_issues.py`.**
 
-3. **Sampling (repo-side)** — Peng can:
+3. **Mechanical refusal at the CLI (per-batch gate, V1 cluster+dedup, 2026-05-08T22:01 ET)** — `tools/file_issues.py corpus-issue --cluster-plan-approved <sha256>` is also `argparse required=True`. The validator verifies: a plan in `subagents/file-issue/cluster-plans/` matches the sha256 (binds approval to specific plan content), `peng_approval.token == sha256` (Peng explicitly recorded approval, not just computed the hash), and `case_id` appears in one of the plan's `affected_cases` (the filing is part of THIS approved batch — old approvals can't be reused for unrelated work). Tampering with the plan after approval changes its sha → invalidates the token → tool refuses to post. The `single-manual` mode of `tools/cluster_failures.py` ensures the gate applies uniformly even to one-off non-sweep filings (no escape hatch).
+
+4. **Sampling (repo-side)** — Peng can:
    - `cat subagents/file-issue/invocations/<case_id>.md` for any case to see verbatim sub-agent output + verdict + disposition
-   - Hash any posted issue's body and compare against `body_sha256` in the matching case file (`grep -l "posted_url: <URL>" subagents/file-issue/invocations/*.md`)
-   - Run a nightly `tools/audit_repo_side_orphans.py` (Phase 2) that walks open corpus issues and checks each for a matching `posted_url` line in `subagents/file-issue/invocations/`. Issues without a matching case file = filed outside the skill = orphans = bypass.
+   - Hash any posted issue's body and compare against `body_sha256` in the matching case file
+   - Run a nightly `tools/audit_repo_side_orphans.py` (Phase 2) that walks open corpus issues and checks each for a matching `posted_issue_num: N` line in `subagents/file-issue/invocations/`. Issues without a matching case file = filed outside the skill = orphans = bypass.
 
 Plus discipline: local CLAUDE.md trigger (added in Phase 1 commit). "Before filing ANY issue → invoke `subagents/file-issue/SKILL.md`. Skipping requires Peng's written approval."
 

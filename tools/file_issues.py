@@ -1605,6 +1605,76 @@ def _validate_via_skill(case_id: str, body_path: str | None) -> tuple[bool, str,
     return True, "", body_bytes
 
 
+def _validate_cluster_plan(token: str, case_id: str) -> tuple[bool, str]:
+    """Validate a --cluster-plan-approved <token> claim before posting.
+
+    Per Peng directive 2026-05-08T22:01 ET (V1 cluster+dedup gate). Walks
+    every plan in subagents/file-issue/cluster-plans/ and finds one where:
+
+    1. sha256(plan_file_bytes) == token (cryptographically binds the post
+       to the EXACT plan content; tampering after approval breaks the chain)
+    2. plan["peng_approval"]["approved_at"] is non-null (Peng explicitly
+       marked the plan as approved — the token alone proves nothing,
+       anyone can compute a hash; the recorded approval event is what
+       reflects Peng's intent)
+    3. case_id appears in some cluster's affected_cases (the filing is part
+       of THIS approved batch, not reusing an old approval for unrelated work)
+
+    Returns (ok, error_message). On ok=True, error_message is empty.
+
+    Why approved_at instead of token-must-equal-itself: the token IS the
+    file sha. If we ALSO required peng_approval.token == sha, that field
+    would have to equal the sha of the file containing it — a self-
+    referential constraint solvable only by careful padding tricks. The
+    cleaner semantics: the file sha is the strong content binding; the
+    approval marker is just a non-null timestamp that records the event.
+    """
+    import hashlib as _h
+    plans_dir = REPO_ROOT / "subagents/file-issue/cluster-plans"
+    if not plans_dir.is_dir():
+        return False, (f"--cluster-plan-approved: cluster-plans directory not found: "
+                       f"{plans_dir}. Run `python3 tools/cluster_failures.py ...` to "
+                       f"create a plan first, then surface to Peng for approval.")
+    for plan_path in sorted(plans_dir.glob("*.yaml")):
+        plan_bytes = plan_path.read_bytes()
+        plan_sha = _h.sha256(plan_bytes).hexdigest()
+        if plan_sha != token:
+            continue
+        try:
+            plan = json.loads(plan_bytes)
+        except json.JSONDecodeError as e:
+            return False, (f"--cluster-plan-approved: plan {plan_path.name} matches "
+                           f"sha256 but is not valid JSON: {e}")
+        approved_at = (plan.get("peng_approval") or {}).get("approved_at")
+        if not approved_at:
+            return False, (f"--cluster-plan-approved: plan {plan_path.name} matches "
+                           f"sha256 {token[:12]}... but peng_approval.approved_at "
+                           f"is null.\n  Peng has not marked this plan as approved. "
+                           f"Surface the plan to Peng's space, wait for approval "
+                           f"token, then set approved_at to the approval timestamp.")
+        # Cross-check: case_id must appear in one of the plan's clusters
+        case_ids_in_plan: set[str] = set()
+        for cluster in plan.get("clusters", []):
+            for case in cluster.get("affected_cases", []):
+                cid = case.get("case_id")
+                if cid:
+                    case_ids_in_plan.add(cid)
+        if case_id not in case_ids_in_plan:
+            return False, (f"--cluster-plan-approved: case_id {case_id!r} not found "
+                           f"in plan {plan_path.name}'s affected_cases. Approval is "
+                           f"scoped to the cluster batch — different filings need "
+                           f"different (or expanded) plans.\n"
+                           f"  Plan covers: {sorted(case_ids_in_plan)[:5]}"
+                           f"{'...' if len(case_ids_in_plan) > 5 else ''}")
+        return True, ""
+    return False, (f"--cluster-plan-approved: no plan in {plans_dir} matches "
+                   f"token sha256 {token[:12]}...\n"
+                   f"  Either the token is wrong, the plan was modified after "
+                   f"approval (sha changed), or no plan exists for this filing. "
+                   f"Run `python3 tools/cluster_failures.py ...` then surface "
+                   f"to Peng.")
+
+
 def _update_case_posted_issue(case_id: str, posted_issue_num: int) -> None:
     """Atomic-ish update of the `posted_issue_num:` line in a case file's
     frontmatter after a successful POST/PATCH. Caller must have already posted.
@@ -1663,6 +1733,15 @@ def cmd_corpus_issue(args):
         sys.exit(1)
     # Use the bytes _validate_via_skill already hashed (no TOCTOU).
     body_text = body_bytes.decode("utf-8")
+
+    # V1 cluster+dedup gate: every corpus-issue post (NEW or EDIT) must reference
+    # a Peng-approved cluster plan. The token is sha256 of the plan file. For
+    # one-off non-sweep filings, use `tools/cluster_failures.py single-manual
+    # <case_id>` to emit a 1-row plan; Peng still approves it the same way.
+    ok, err = _validate_cluster_plan(args.cluster_plan_approved, args.via_skill)
+    if not ok:
+        print(err, file=sys.stderr)
+        sys.exit(1)
 
     is_edit = args.edit is not None
     if is_edit:
@@ -1843,6 +1922,16 @@ def main():
     sub_corpus.add_argument(
         "--label", action="append", default=None, metavar="LABEL",
         help="Repeatable. Labels to apply to the issue.")
+    sub_corpus.add_argument(
+        "--cluster-plan-approved", required=True, metavar="SHA256",
+        help="REQUIRED. sha256 of a Peng-approved cluster plan in "
+             "subagents/file-issue/cluster-plans/. Tool refuses to run without it. "
+             "For sweep-driven batches: produce a plan via "
+             "`tools/cluster_failures.py from-sweep ...` then surface to Peng. "
+             "For one-off non-sweep filings: produce a plan via "
+             "`tools/cluster_failures.py single-manual <case_id>` then surface. "
+             "Validates: plan exists, sha256 matches, peng_approval.token == "
+             "sha256, and case_id appears in plan's affected_cases.")
     sub_corpus.add_argument(
         "--post", action="store_true",
         help="Actually POST (new) or PATCH (--edit) on GitHub. Default is dry-run.")

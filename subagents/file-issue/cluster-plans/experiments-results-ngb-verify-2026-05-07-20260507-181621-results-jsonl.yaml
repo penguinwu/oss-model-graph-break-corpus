@@ -1,0 +1,132 @@
+{
+  "sweep_ref": "experiments/results/ngb-verify-2026-05-07-20260507-181621/results.jsonl",
+  "generated_at": "2026-05-09T02:08:00Z",
+  "clustering_method": "heuristic_v1_numeric",
+  "total_rows_in_sweep": 380,
+  "total_failure_rows": 14,
+  "total_clustered_rows": 14,
+  "multi_root_cases": [],
+  "single_manual": false,
+  "clusters": [
+    {
+      "cluster_id": "numeric-audio_encoder-train",
+      "cluster_type": "numeric_divergence",
+      "root_signal": {
+        "architecture_family": "audio_encoder",
+        "mode": "train",
+        "magnitude_range": "2.320-5.475"
+      },
+      "affected_cases": [
+        {
+          "case_id": "UniSpeechModel",
+          "role": "primary",
+          "sweep_evidence_excerpt": "max_diff=5.4747"
+        },
+        {
+          "case_id": "Wav2Vec2Model",
+          "role": "primary",
+          "sweep_evidence_excerpt": "max_diff=5.2041"
+        },
+        {
+          "case_id": "WavLMModel",
+          "role": "primary",
+          "sweep_evidence_excerpt": "max_diff=5.1333"
+        },
+        {
+          "case_id": "HubertModel",
+          "role": "primary",
+          "sweep_evidence_excerpt": "max_diff=5.0971"
+        },
+        {
+          "case_id": "UniSpeechSatModel",
+          "role": "primary",
+          "sweep_evidence_excerpt": "max_diff=4.8902"
+        },
+        {
+          "case_id": "SpeechEncoderDecoderModel",
+          "role": "primary",
+          "sweep_evidence_excerpt": "max_diff=4.5203"
+        },
+        {
+          "case_id": "Data2VecAudioModel",
+          "role": "primary",
+          "sweep_evidence_excerpt": "max_diff=4.4462"
+        },
+        {
+          "case_id": "Wav2Vec2ConformerModel",
+          "role": "primary",
+          "sweep_evidence_excerpt": "max_diff=3.0624"
+        },
+        {
+          "case_id": "SEWModel",
+          "role": "primary",
+          "sweep_evidence_excerpt": "max_diff=2.3197"
+        }
+      ],
+      "case_count": 9,
+      "representative_case": "UniSpeechModel train (max_diff 5.475)",
+      "dup_candidates": [],
+      "action": "pending"
+    },
+    {
+      "cluster_id": "numeric-other-train",
+      "cluster_type": "numeric_divergence",
+      "root_signal": {
+        "architecture_family": "other",
+        "mode": "train",
+        "magnitude_range": "4.713-4.713"
+      },
+      "affected_cases": [
+        {
+          "case_id": "ReformerModel",
+          "role": "primary",
+          "sweep_evidence_excerpt": "max_diff=4.7127"
+        }
+      ],
+      "case_count": 1,
+      "representative_case": "ReformerModel train (max_diff 4.713)",
+      "dup_candidates": [],
+      "action": "pending"
+    },
+    {
+      "cluster_id": "numeric-seq2seq-train",
+      "cluster_type": "numeric_divergence",
+      "root_signal": {
+        "architecture_family": "seq2seq",
+        "mode": "train",
+        "magnitude_range": "1.819-3.595"
+      },
+      "affected_cases": [
+        {
+          "case_id": "M2M100Model",
+          "role": "primary",
+          "sweep_evidence_excerpt": "max_diff=3.5945"
+        },
+        {
+          "case_id": "PLBartModel",
+          "role": "primary",
+          "sweep_evidence_excerpt": "max_diff=3.5759"
+        },
+        {
+          "case_id": "M2M100ForConditionalGeneration",
+          "role": "primary",
+          "sweep_evidence_excerpt": "max_diff=2.5408"
+        },
+        {
+          "case_id": "PLBartForConditionalGeneration",
+          "role": "primary",
+          "sweep_evidence_excerpt": "max_diff=1.8191"
+        }
+      ],
+      "case_count": 4,
+      "representative_case": "M2M100Model train (max_diff 3.595)",
+      "dup_candidates": [],
+      "action": "pending"
+    }
+  ],
+  "peng_approval": {
+    "token": null,
+    "approved_at": null,
+    "approval_message_ref": null
+  }
+}

@@ -77,3 +77,37 @@ After this commit lands, re-invoke Mode A on issue 77 with the amended persona. 
 ---
 
 (Append next retrospective after `file-` invocations 2 + 3 + 4. Original entry date: 2026-05-08; major-revision update: 2026-05-08T20:23 ET.)
+
+---
+
+## 2026-05-09 — V1 cluster+dedup gate ship (per Peng directive 2026-05-08T22:01 ET)
+
+**What shipped:**
+1. `tools/cluster_failures.py` — `single-manual <case_id>` mode + `from-sweep` mode (cluster types: `numeric`, `graph-break`, `fallback`). Audit invariant pinned in 5 tests.
+2. `tools/dedup_search.py` — surfaces ANY title/label match with `decision: needs_peng_review`. NO auto-thresholds (per Peng directive). 8 tests.
+3. `tools/file_issues.py` — `--cluster-plan-approved <sha256>` is `argparse required=True` on `corpus-issue`. Validator (3 conditions: token == file sha, peng_approval.approved_at non-null, case_id in plan's affected_cases). 5 new tests + 16 updated existing tests.
+4. `subagents/file-issue/SKILL.md` — Step 0 documented (cluster→dedup→approve→per-cluster pipeline). Authority gate table updated. "What enforces this" section now lists 4 layers (added the per-batch gate).
+5. `subagents/file-issue/persona.md` — Mode A check 10 (cluster cohesion). Activates when draft has `cluster_id` field; verifies the representative_case's MRE applies to the cluster's claim using sweep evidence already in the plan.
+6. `subagents/file-issue/cluster-plans/` — first plan written from real NGB D1 sweep data (worked example).
+
+**Smoke + tests:**
+- 21 file_issues tests pass (16 existing updated + 5 new V1)
+- 5 cluster_failures tests pass (audit invariant; magnitude-bucket fix; D1-row counting fix)
+- 8 dedup_search tests pass (keyword extraction; needs_peng_review marking)
+- 26 doc-consistency tests pass; 9 live rules clean
+- End-to-end smoke: 3 negative-path attempts (tampered body / bad token / case_id-not-in-plan) all refused at the gate as expected
+
+**Two design decisions worth preserving:**
+
+1. **Token semantics simplified mid-build.** First draft of `_validate_cluster_plan` required `peng_approval.token == sha256(plan)`. That's a self-referential constraint (writing the token field changes the file's sha). Fixed by changing the rule to: `cli_token == sha256(plan)` AND `peng_approval.approved_at is non-null`. The cryptographic content-binding is in the sha; the approval marker is just a non-null timestamp recording the event. Cleaner, no convergence dance.
+
+2. **Magnitude bucket dropped from numeric clusterer.** Smoke test on real NGB D1 data revealed (family + mode + magnitude) split the audio-encoder family into 7+2 by magnitude — but the 9 audio models share the SAME root cause (NGB feature × audio encoder forward). Magnitude is now metadata in `root_signal.magnitude_range` (informational); only `(family, mode)` are clustering keys. Pinned in `test_numeric_clusterer_does_not_split_audio_family_by_magnitude`.
+
+**Honest gap (not a defect, just an audit-chain note):** the V1 design went through 2 adversary-review iterations (verbal, in-session) BEFORE landing. The verbatim adversary outputs were not captured to `subagents/adversary-review/invocations/` at write-time, so the cluster+dedup design lacks the standard adversary case files. Future practice: when running adversary review on a multi-round design, write the case file BEFORE iterating, even if the early case files are short — the chain is what matters.
+
+**Open Phase 2 candidates** (not blocking V1 ship):
+- `tools/file_issues.py corpus-issue --comment <issue_num>` (post-comment mode for clusters with `action: comment-on-existing`)
+- Mode A `comment-review` + Mode B `comment-assembler` persona variants (different shape from full-issue review)
+- `tools/check_back_references.py` daily-brief integration (validates auto-link prevention rule is holding on issue 77)
+- `tools/audit_repo_side_orphans.py` (replaces dropped GitHub-side marker scan)
+- Auto-decision thresholds for dedup_search candidates — only design after enough real surfaces give us example data (per Peng "we will figure out a better system by examples")
