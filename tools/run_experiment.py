@@ -882,6 +882,26 @@ def run_experiment(config, args):
     with open(sweep_state_file, "w") as f:
         json.dump(sweep_state, f, indent=2)
 
+    # INDEX.json append — file-issue Phase 3 v1.0 (Peng directive 2026-05-09 07:55 ET).
+    # Records this sweep so verify_repro --use-original can find cached evidence
+    # via tools/lookup_sweep_evidence.py. Idempotent by sweep_id; failure is
+    # swallowed (sweep completion > index bookkeeping). See sweep/sweep_index.py.
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "sweep"))
+        from sweep_index import append_to_index as _append_to_index  # noqa: E402
+        _append_to_index(
+            sweep_id=output_dir.name,
+            results_jsonl=str(results_file),
+            sweep_kind="experiment",
+            python_bin=sys.executable,
+            started_utc=sweep_state.get("started"),
+            cohort=str(args.config) if hasattr(args, "config") else None,
+            args_dict={k: str(v) for k, v in vars(args).items()
+                       if not k.startswith("_")},
+        )
+    except Exception as _e:
+        print(f"[run_experiment] INDEX.json append failed (non-fatal): {_e}")
+
     # Generate summary
     _generate_summary(all_results, config, output_dir, experiment_time)
 

@@ -1257,6 +1257,27 @@ def run_sweep(args):
         except Exception:
             pass
 
+    # INDEX.json append — file-issue Phase 3 v1.0 (Peng directive 2026-05-09 07:55 ET).
+    # Records this sweep for verify_repro --use-original cache lookups.
+    try:
+        from sweep.sweep_index import append_to_index as _append_to_index
+    except ImportError:
+        from sweep_index import append_to_index as _append_to_index  # type: ignore
+    try:
+        identify_file = output_dir / "identify_results.json"
+        if identify_file.exists():
+            _append_to_index(
+                sweep_id=output_dir.name,
+                results_jsonl=str(identify_file),
+                sweep_kind="identify",
+                python_bin=python_bin,
+                cohort=getattr(args, "models", None) or getattr(args, "cohort", None),
+                args_dict={k: str(v) for k, v in vars(args).items()
+                           if not k.startswith("_")},
+            )
+    except Exception as _e:
+        print(f"[run_sweep] INDEX.json append failed (non-fatal): {_e}")
+
 
 def run_explain(args):
     """Run explain pass only, from prior identify results.
@@ -1333,6 +1354,26 @@ def run_explain(args):
         extra_worker_args=_build_extra_worker_args(args),
         run_name=getattr(args, "run_name", None),
     )
+
+    # INDEX.json append — file-issue Phase 3 v1.0 (Peng directive 2026-05-09 07:55 ET).
+    try:
+        from sweep.sweep_index import append_to_index as _append_to_index
+    except ImportError:
+        from sweep_index import append_to_index as _append_to_index  # type: ignore
+    try:
+        explain_file = output_dir / "explain_results.json"
+        if explain_file.exists():
+            _append_to_index(
+                sweep_id=output_dir.name + "-explain",
+                results_jsonl=str(explain_file),
+                sweep_kind="explain",
+                python_bin=python_bin,
+                cohort=getattr(args, "file", None),
+                args_dict={k: str(v) for k, v in vars(args).items()
+                           if not k.startswith("_")},
+            )
+    except Exception as _e:
+        print(f"[run_explain] INDEX.json append failed (non-fatal): {_e}")
 
 
 def _build_corpus(identify_results, explain_results, args):
