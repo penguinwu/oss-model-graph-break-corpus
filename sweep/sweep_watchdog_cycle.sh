@@ -46,6 +46,24 @@ fi
 
 # ── Step 1: completion check ────────────────────────────────────────────
 if [ -f "$RESULTS_DIR/explain_results.json" ] || [ -f "$RESULTS_DIR/results.jsonl" ]; then
+    # Post completion notification BEFORE exiting (silent-completion bug fix
+    # 2026-05-10 13:13 ET — previously the cron disabled itself silently and
+    # the human reviewer got no signal). Use a marker file so we only post
+    # ONCE even if cycle fires again before cron disables.
+    COMPLETION_MARKER="$RESULTS_DIR/.completion_posted"
+    if [ ! -f "$COMPLETION_MARKER" ]; then
+        # Build a small status summary
+        explain_size="(missing)"
+        identify_size="(missing)"
+        [ -f "$RESULTS_DIR/explain_results.json" ] && explain_size="$(stat -c %s "$RESULTS_DIR/explain_results.json" 2>/dev/null | numfmt --to=iec)B"
+        [ -f "$RESULTS_DIR/identify_results.json" ] && identify_size="$(stat -c %s "$RESULTS_DIR/identify_results.json" 2>/dev/null | numfmt --to=iec)B"
+        identify_lines="?"
+        [ -f "$RESULTS_DIR/identify_streaming.jsonl" ] && identify_lines=$(wc -l < "$RESULTS_DIR/identify_streaming.jsonl")
+        gchat send "$GCHAT_SPACE" \
+            "[🦦 watchdog] ✅ Sweep $SWEEP_DATE COMPLETE. identify=$identify_size ($identify_lines rows), explain=$explain_size. Watchdog disabling itself. Results: $RESULTS_DIR" \
+            --as-bot || true
+        touch "$COMPLETION_MARKER"
+    fi
     echo "DISABLE_WATCHDOG: sweep $SWEEP_DATE complete (explain_results.json or results.jsonl present)"
     exit 99
 fi
@@ -120,6 +138,12 @@ EOF
         exit 1
         ;;
     *STALLED*)
+        gchat send "$GCHAT_SPACE" "[🦦 watchdog] $WATCHDOG_OUT" --as-bot || true
+        exit 0
+        ;;
+    *PHASE_TRANSITION*)
+        # Sweep moved to a new phase (identify → auto_retry_timeout → auto_retry_errors → explain).
+        # Post the transition so reviewer has visible signal during long-running sweeps.
         gchat send "$GCHAT_SPACE" "[🦦 watchdog] $WATCHDOG_OUT" --as-bot || true
         exit 0
         ;;

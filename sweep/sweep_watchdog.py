@@ -129,11 +129,13 @@ def main():
     progress_file = sweep_dir / ".watchdog_progress"
     prev_done = 0
     prev_at = 0
+    prev_phase = None
     if progress_file.exists():
         try:
             with progress_file.open() as f:
                 prev_state = json.load(f)
-            if prev_state.get("phase") == phase:  # same-phase comparison only
+            prev_phase = prev_state.get("phase")
+            if prev_phase == phase:  # same-phase comparison only for done-counter
                 prev_done = prev_state.get("done", 0)
                 prev_at = prev_state.get("at", 0)
         except Exception:
@@ -145,8 +147,15 @@ def main():
 
     alive = is_alive(pid)
 
+    # Phase transition takes precedence — emit even if alive/dead determination
+    # would otherwise be silent. Helps caller post a phase-change signal.
+    phase_changed = (prev_phase is not None and prev_phase != phase)
+
     if not alive:
         msg = f"DEAD pid={pid} phase={label} done={done}/{total}"
+    elif phase_changed:
+        msg = (f"PHASE_TRANSITION pid={pid} phase={label} done={done}/{total} "
+               f"(was {prev_phase})")
     elif done > prev_done:
         delta = done - prev_done
         msg = f"ALIVE pid={pid} phase={label} done={done}/{total} +{delta} since last check"
@@ -159,17 +168,20 @@ def main():
 
     print(msg)
 
-    # Update progress state — only when alive AND made progress (resets the no-progress timer).
-    # If alive but no progress, keep prev_at to accumulate the no-progress window.
+    # Update progress state — write whenever phase changes (so phase-transition
+    # is reported once and we move on) OR alive AND made progress (resets
+    # no-progress timer) OR first observation. If alive but no progress in
+    # same phase, keep prev_at to accumulate the no-progress window.
     if not args.no_write_state:
-        if alive and done > prev_done:
+        if phase_changed:
+            with progress_file.open("w") as f:
+                json.dump({"phase": phase, "done": done, "at": now}, f)
+        elif alive and done > prev_done:
             with progress_file.open("w") as f:
                 json.dump({"phase": phase, "done": done, "at": now}, f)
         elif not progress_file.exists():
-            # First observation — establish baseline at current done count.
             with progress_file.open("w") as f:
                 json.dump({"phase": phase, "done": done, "at": now}, f)
-        # If phase changed, reset baseline so we don't carry a stale prev_at.
         elif prev_done == 0 and prev_at == 0:
             with progress_file.open("w") as f:
                 json.dump({"phase": phase, "done": done, "at": now}, f)
