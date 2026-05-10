@@ -1198,6 +1198,46 @@ def _get_last_sweep_git_version():
     return data.get("git_version") or data.get("torch_git")
 
 
+def _find_prior_baseline(current_dir):
+    """Find the dated nightly sweep dir immediately preceding current_dir.
+
+    Walks the parent dir for sibling YYYY-MM-DD subdirs lexicographically
+    LESS than current_dir.name, picks the largest qualifying one. Skips:
+      - current_dir itself
+      - dirs without identify_results.json (incomplete)
+      - dirs whose sweep_state.json shows status != "done"
+
+    Returns None if no qualifier found. Per
+    sweep/SWEEP_COMPARE_WIRING_DESIGN.md.
+    """
+    parent = current_dir.parent
+    if not parent.exists():
+        return None
+    candidates = sorted(
+        (d for d in parent.iterdir()
+         if d.is_dir()
+         and d.name != current_dir.name
+         and len(d.name) == 10  # YYYY-MM-DD
+         and d.name[:4].isdigit()
+         and d.name < current_dir.name),
+        reverse=True,
+    )
+    for d in candidates:
+        if not (d / "identify_results.json").exists():
+            continue
+        state_file = d / "sweep_state.json"
+        if state_file.exists():
+            try:
+                with open(state_file) as f:
+                    state = json.load(f)
+                if state.get("status") != "done":
+                    continue
+            except (OSError, json.JSONDecodeError):
+                continue
+        return d
+    return None
+
+
 def pipeline_preflight(python, device="cuda"):
     """Fast environment validation — catches 80% of failures in <30 seconds."""
     print(f"\n{'=' * 70}")
@@ -1709,6 +1749,30 @@ def _run_post_sweep(python, script, repo_root, results_dir, label, steps_done):
     if plan_file:
         _run([python, file_issues, "close-stale", "--plan", plan_file],
              "Close-stale dry-run", allow_fail=True)
+
+    # Step 5c: sweep_compare vs prior week's baseline
+    # Added 2026-05-10 per sweep/SWEEP_COMPARE_WIRING_DESIGN.md.
+    # Single source of truth for Steps 2a/2b/2d. allow_fail=True so invariant
+    # failures (exit 1) and explain-coverage gaps (exit 2) surface as signal
+    # without aborting the rest of the nightly.
+    sweep_compare = str(tools_dir / "sweep_compare.py")
+    baseline_dir = _find_prior_baseline(Path(results_dir))
+    if baseline_dir is None:
+        print(f"\n{'='*70}")
+        print("NIGHTLY: sweep_compare vs prior baseline — SKIPPED (no baseline found)")
+        print(f"{'='*70}")
+        steps_done.append("sweep_compare skipped (no baseline)")
+    elif Path(sweep_compare).exists():
+        compare_md = str(Path(results_dir) / "compare-vs-baseline.md")
+        compare_json = str(Path(results_dir) / "compare-vs-baseline.json")
+        _run([python, sweep_compare,
+              "--baseline", str(baseline_dir),
+              "--current", str(results_dir),
+              "--out", compare_md,
+              "--json", compare_json,
+              "--verbose"],
+             f"sweep_compare vs {baseline_dir.name}",
+             allow_fail=True)
 
     # Step 6: summary
     print(f"\n{'='*70}")
