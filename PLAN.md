@@ -1,6 +1,6 @@
 # PLAN.md — corpus project working plan
 
-**Last updated:** 2026-05-10 12:00 ET (Otter)
+**Last updated:** 2026-05-10 12:05 ET (Otter)
 **Active workstreams:** 2 (cap). New workstreams go to Backlog until a slot opens.
 
 Read this FIRST when starting a session. State "Plan loaded: <current focus>" in the first message. Update after every completed task, every new task added, every scope change.
@@ -32,6 +32,8 @@ The standard weekly process (per Peng spec 2026-05-10): launch sweep on Saturday
 - [ ] **Build file-issue close-mode workflow** — Step 2c. Extend `subagents/file-issue/persona.md` with Mode A_close (adversary reviews close decision: verifies all-affected-models flipped via sweep evidence + verifies MRE no longer reproduces on current torch via verify_repro re-run = R3 attribution test) and Mode B_close (assembles closing comment with structured audit chain: sweep evidence + MRE re-verification + attribution claim scoped to what's verified). Add `tools/file_issues.py corpus-issue --close <num> --via-skill <case_id>` operation that PATCHes state=closed only after `--via-skill` validates the case file has `mode_a_verdict in {proceed}` and `mode_b_sha256` non-empty. Replaces today's bypass-prone path where close-stale OR a one-off API script can close issues without per-issue rigor. **Design pending.**
 
 - [ ] **Build `tools/compose_brief.py`** — Step 2d. Pre-fills the 8 sections of `~/projects/oss-model-graph-break-corpus/skills/weekly-sweep-brief/template.md` from `tools/sweep_compare.py` output (cat 1/2/3/4/5/6 partition + per-pattern segmentation). Walks the brief methodology rules (R1-R8 + S1-S4 from `methodology.md`) and runs the self-check checklist mechanically. Emits draft brief markdown for Peng review. Currently each brief is hand-composed; this captures the rules into code so the brief can be regenerated reliably. **Design pending.**
+
+- [ ] **Wire `tools/sweep_compare.py` into nightly pipeline** — `tools/sweep_compare.py` is the apple-to-apple comparison tool (R1 single source of truth for the weekly brief). Reads two sweep result dirs (baseline = prior week, current = this week), runs invariant checks (cohort + explain coverage), partitions all `(name, mode)` pairs into 6 categories: cat 1 error→success (improvements), cat 2 success→error (regressions), cat 3 success-in-both (steady-state, may have GB count delta), cat 4 NEW, cat 5 REMOVED, cat 6 stable failures. Today it's invoked manually after each sweep. Wire it into `tools/run_experiment.py nightly` Step 5+ so after explain pass completes, comparison results land at `<sweep_dir>/compare-vs-baseline.json` automatically. Steps 2a / 2b / 2d all consume this output; without it being pre-computed, each Step has to invoke sweep_compare itself or fall back to ad-hoc comparison. **Design pending.**
 
 ## WS2 — Apply WS1 workflow to this week's sweep (2026-05-09)
 
@@ -67,9 +69,9 @@ Execution of WS1's standard workflow on real data — without re-running the swe
 
 These are real proposed work but blocked on the 2-active-workstream cap. Promote one of these only when WS1 or WS2 finishes.
 
-- **Weekly workflow retrospective** — `sweep/WEEKLY_RETROSPECTIVE.md`. Append after every weekly cycle: what mistakes happened, what learning to encode in the workflow tools. Goal: harden the workflow each week so the next week's sweep needs less Peng intervention than the last.
-- **Cluster-plan dashboard** — `subagents/file-issue/cluster-plans/` accumulates plan files over time; need a "what's pending Peng approval" view so plans don't get forgotten between sessions.
-- **Wire `tools/sweep_compare.py` into nightly pipeline** — currently the comparison must be run manually after each sweep. Wiring it into `tools/run_experiment.py nightly` Step 5+ would emit `compare-vs-baseline.json` automatically, ready for `compose_brief.py` to consume.
+- **Cluster-plan dashboard** — small script (~30 lines) that lists `subagents/file-issue/cluster-plans/*.yaml` files and classifies each as approved (has `peng_approval.token`) / pending Peng approval / expired. Currently 0 cluster plans on disk; only matters when cluster-driven issue filing ramps up. Without it, plans I file for Peng's approval can sit forgotten between sessions.
+
+**No "weekly workflow retrospective" task** — per Peng directive 2026-05-10 12:04 ET, when learning is discovered we encode it into the workflow (fix the tool / update the process spec) immediately, not into a reflection log. Reflection logs are pacifier; surface-and-fix is the work.
 
 ---
 
