@@ -1,48 +1,39 @@
 #!/usr/bin/env python3
-"""Sweep watchdog — observe progress, alert on issues. NO auto-restart.
+"""Sweep watchdog — stateless one-shot observer.
 
-Reports the state of a long-running sweep across all phases (identify,
-auto_retry_timeout, auto_retry_errors, explain, report). Posts updates
-to a GChat space when something changes.
+Reads sweep_state.json + per-phase progress files; prints single-line state.
+The cycle-script (sweep_watchdog_cycle.sh) consumes the output and decides
+whether to auto-resume.
 
-Usage:
-    sweep_watchdog.py <sweep_state_dir> [--post-to SPACE_ID] [--interval-min N]
+Stateless: NO `notified` flag, NO `sweep_watchdog.json`. The same input state
+always produces the same output. Caller-side state (`.watchdog_progress`)
+tracks last-observed progress for STALLED detection.
 
-Required:
-    sweep_state_dir       Path to dir containing sweep_state.json + per-phase
-                          streaming/checkpoint files. The caller MUST specify
-                          this — no auto-discovery.
+Usage: sweep_watchdog.py <sweep_state_dir> [--post-to SPACE] [--no-write-state]
 
-Optional:
-    --post-to SPACE_ID    GChat space for alerts (default: spaces/AAQANraxXE4)
-    --interval-min N      How often this watchdog runs in minutes (default: 10).
-                          Used to compute stalled threshold = 3 * interval.
+States printed:
+  ALIVE pid=<P> phase=<PH> done=<X>/<Y> [+N since last check | no progress for Mmin, threshold Tmin]
+  STALLED pid=<P> phase=<PH> done=<X>/<Y> no progress for Mmin (threshold Tmin)
+  DEAD pid=<P> phase=<PH> done=<X>/<Y>
+  COMPLETE pid=<P> phase=<PH> done=<X>/<Y>
+  MISSING_STATE: <reason>
 
-Phase detection:
-    Primary: sweep_state.json's `phase` and `phase_total` fields (written by
-    a patched run_sweep.py).
-    Fallback: filesystem inference for unpatched sweeps already running.
+Exit code is always 0 unless misconfigured. The cycle script dispatches on
+output substring (DEAD/STALLED/ALIVE/COMPLETE).
 
-State files:
-    sweep_state.json     — owned by orchestrator; READ-ONLY.
-    sweep_watchdog.json  — owned by this script; tracks observations + notified.
-
-This is NOT an auto-restart watchdog. If the sweep dies, the watchdog reports it
-once. A human (or separate launcher) decides whether to relaunch.
+Design doc: sweep/WATCHDOG_DESIGN.md (v3, 2026-05-10).
 """
+from __future__ import annotations
+
 import argparse
 import json
 import os
 import subprocess
 import sys
-from datetime import datetime, timezone
+import time
 from pathlib import Path
 
-SPACE_DEFAULT = "spaces/AAQANraxXE4"
-INTERVAL_DEFAULT_MIN = 10
-STALLED_INTERVAL_MULT = 3
-
-# Phase → (streaming/checkpoint file used to count progress, human label)
+# Phase → (progress filename, human label)
 PHASE_FILES = {
     "identify": ("identify_streaming.jsonl", "identify"),
     "auto_retry_timeout": ("auto_retry_timeout_checkpoint.jsonl", "auto-retry (timeouts)"),
@@ -50,6 +41,20 @@ PHASE_FILES = {
     "explain": ("explain_checkpoint.jsonl", "explain"),
     "report": (None, "report-gen"),
     "done": (None, "done"),
+}
+
+# Phase → minutes of zero progress before declaring STALLED.
+# Tuned per adversary review (2026-05-10):
+#   identify: HF models max ~9 min (GroundingDino, EdgeTam, etc.); 30 buffers internal retries.
+#   auto_retry_timeout: very_large tier = 1620s = 27 min per attempt; 90 covers up to ~3 attempts.
+#   auto_retry_errors: serial 1-worker, ~10 min per model max; 30 is generous.
+PHASE_THRESHOLDS_MIN = {
+    "identify": 30,
+    "auto_retry_timeout": 90,
+    "auto_retry_errors": 30,
+    "explain": 30,
+    "report": 5,
+    "done": 0,
 }
 
 
@@ -63,226 +68,116 @@ def is_alive(pid):
         return False
 
 
-def line_count(path):
+def line_count(path: Path) -> int:
     if not path.exists():
         return 0
-    return sum(1 for _ in path.open())
+    with path.open() as f:
+        return sum(1 for _ in f)
 
 
-def infer_phase(sweep_dir, total_work_items):
-    """Filesystem fallback when sweep_state.json lacks `phase` (unpatched
-    sweep). Walks files in reverse-chronological phase order.
-    """
-    if (sweep_dir / "explain_checkpoint.jsonl").exists():
-        return "explain"
-    if (sweep_dir / "auto_retry_errors_checkpoint.jsonl").exists():
-        return "auto_retry_errors"
-    if (sweep_dir / "auto_retry_timeout_checkpoint.jsonl").exists():
-        return "auto_retry_timeout"
-    # Identify done but no auto-retry checkpoint → unpatched sweep in
-    # auto-retry, or never had auto-retry. Report "post-identify" so we
-    # don't falsely claim "stalled".
-    identify_done = line_count(sweep_dir / "identify_streaming.jsonl")
-    if total_work_items and identify_done >= total_work_items - 50:
-        # within ~50 of total → identify essentially done
-        return "auto_retry_or_explain_unpatched"
-    return "identify"
-
-
-def compute_progress(sweep_dir, state):
-    """Return (phase, label, completed, total) for the current sweep state.
-    Falls back to filesystem inference if state lacks phase info.
-    """
-    total_work = state.get("total_work_items", 0)
-    phase = state.get("phase")
-    phase_total = state.get("phase_total")
-
-    if phase and phase in PHASE_FILES:
-        fname, label = PHASE_FILES[phase]
-        if fname is None:
-            return phase, label, 0, 0
-        completed = line_count(sweep_dir / fname)
-        denom = phase_total if phase_total else total_work
-        return phase, label, completed, denom
-
-    # Fallback for unpatched sweeps
-    inferred = infer_phase(sweep_dir, total_work)
-    if inferred == "auto_retry_or_explain_unpatched":
-        # We don't know which phase; report the most informative count we have
-        for fname in ("explain_checkpoint.jsonl",
-                      "auto_retry_errors_checkpoint.jsonl",
-                      "auto_retry_timeout_checkpoint.jsonl"):
-            n = line_count(sweep_dir / fname)
-            if n > 0:
-                return inferred, f"post-identify ({fname})", n, 0
-        # No checkpoint files yet — sweep is in auto-retry but writing only to stdout
-        return inferred, "post-identify (no streaming file yet — sweep predates phase tracking)", 0, 0
-
-    fname, label = PHASE_FILES.get(inferred, ("identify_streaming.jsonl", "identify"))
-    return inferred, label, line_count(sweep_dir / fname), total_work
-
-
-def fmt_elapsed(started_iso):
-    if not started_iso:
-        return "?"
+def post_gchat(space: str, message: str):
     try:
-        ts = started_iso.replace("Z", "+00:00")
-        try:
-            s = datetime.fromisoformat(ts)
-        except ValueError:
-            s = datetime.strptime(started_iso, "%Y-%m-%dT%H:%M:%S")
-        if s.tzinfo is None:
-            # Legacy writer emits naive ISO in LOCAL time (no Z marker).
-            # Treat naive timestamps as local — assigning UTC here would
-            # over-state elapsed by the local-vs-UTC offset on non-UTC boxes
-            # (e.g. +7h on a PDT host). Current writer (post-2026-05-06) emits
-            # UTC with Z, which the fromisoformat path above handles correctly.
-            s = s.astimezone()
-        delta = datetime.now(timezone.utc) - s
-        total = int(delta.total_seconds())
-        h, rem = divmod(total, 3600)
-        m = rem // 60
-        return f"{h}h{m:02d}m" if h else f"{m}m"
+        subprocess.run(
+            ["gchat", "send", space, message, "--as-bot"],
+            capture_output=True, timeout=30,
+        )
     except Exception:
-        return "?"
-
-
-def post_gchat(space, message):
-    subprocess.run(
-        ["gchat", "send", space, message, "--as-bot"],
-        capture_output=True, timeout=30,
-    )
+        pass  # best-effort — don't let gchat failure block watchdog
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    p.add_argument("sweep_state_dir", help="Dir containing sweep_state.json")
-    p.add_argument("--post-to", default=SPACE_DEFAULT,
-                   help=f"GChat space for alerts (default: {SPACE_DEFAULT})")
-    p.add_argument("--interval-min", type=int, default=INTERVAL_DEFAULT_MIN,
-                   help=f"Cron interval in minutes (default: {INTERVAL_DEFAULT_MIN}). "
-                        f"Stalled threshold = {STALLED_INTERVAL_MULT}× this value.")
+    p.add_argument("sweep_state_dir")
+    p.add_argument("--post-to", default=None,
+                   help="GChat space — posts the state line. Default: don't post (cycle script decides).")
+    p.add_argument("--no-write-state", action="store_true",
+                   help="Don't update .watchdog_progress (used by cycle script for diagnostic re-runs).")
     args = p.parse_args()
 
     sweep_dir = Path(args.sweep_state_dir).resolve()
     state_file = sweep_dir / "sweep_state.json"
     if not state_file.exists():
-        print(f"ERROR: {state_file} not found.", file=sys.stderr)
-        sys.exit(2)
+        msg = f"MISSING_STATE: sweep_state.json not found at {state_file}"
+        print(msg)
+        if args.post_to:
+            post_gchat(args.post_to, f"[🦦 watchdog] {msg}")
+        sys.exit(0)
 
     with state_file.open() as f:
         state = json.load(f)
 
-    wd_file = sweep_dir / "sweep_watchdog.json"
-    if wd_file.exists():
-        with wd_file.open() as f:
-            wd = json.load(f)
-    else:
-        wd = {}
-
     pid = state.get("pid")
-    started = state.get("started", "")
-    alive = is_alive(pid)
+    phase = state.get("phase", "unknown")
+    total = state.get("total_work_items", 0)
 
-    # Reset notified flag when the sweep has a new identity (PID changed since
-    # last notification). Covers two cases:
-    #   1. Prior watchdog announced DEAD; sweep was resumed under a new PID.
-    #   2. Same PID, still alive — reset only if it was the same PID we previously
-    #      announced about (prevents spurious re-announcement loops).
-    notified_pid = wd.get("notified_pid")
-    if wd.get("notified") and notified_pid != pid:
-        # Different PID than the one we last notified about → new sweep instance
-        wd["notified"] = False
-        wd.pop("first_observation", None)
-    elif alive and wd.get("notified"):
-        # Alive but notified about THIS pid — must have been a stalled/dead
-        # alert that turned out wrong. Reset and re-evaluate.
-        wd["notified"] = False
-        wd.pop("first_observation", None)
+    fname, label = PHASE_FILES.get(phase, ("identify_streaming.jsonl", phase))
+    if fname is None:  # report/done phase
+        done = 0
+    else:
+        done = line_count(sweep_dir / fname)
 
-    notified = wd.get("notified", False)
-    if notified:
+    # Check for completion BEFORE process aliveness.
+    sweep_status = state.get("status", "")
+    if sweep_status == "done" or phase == "done":
+        msg = f"COMPLETE pid={pid} phase={label} done={done}/{total}"
+        print(msg)
+        if args.post_to:
+            post_gchat(args.post_to, f"[🦦 watchdog] {msg}")
         sys.exit(0)
 
-    phase, label, completed, total = compute_progress(sweep_dir, state)
-    last_obs = wd.get("last_observation", {})
-    last_completed_for_phase = last_obs.get("completed", -1) if last_obs.get("phase") == phase else -1
-    last_at = last_obs.get("at")
-    first_obs = wd.get("first_observation")
-    # Reset first_observation when phase OR pid changes, so progress-this-run
-    # always reflects the CURRENT sweep instance (not a stale baseline carried
-    # across kills+relaunches).
-    if (first_obs is None
-            or first_obs.get("phase") != phase
-            or first_obs.get("pid") != pid):
-        first_obs = {"phase": phase, "completed": completed, "pid": pid,
-                     "at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
-        wd["first_observation"] = first_obs
+    # Read previous progress from cycle-script-side state file.
+    progress_file = sweep_dir / ".watchdog_progress"
+    prev_done = 0
+    prev_at = 0
+    if progress_file.exists():
+        try:
+            with progress_file.open() as f:
+                prev_state = json.load(f)
+            if prev_state.get("phase") == phase:  # same-phase comparison only
+                prev_done = prev_state.get("done", 0)
+                prev_at = prev_state.get("at", 0)
+        except Exception:
+            pass  # corrupt → treat as fresh observation
 
-    elapsed = fmt_elapsed(started)
-    pct = (completed / total * 100) if total else 0
-    msg = None
-    set_notified = False
+    now = int(time.time())
+    progress_age_min = (now - prev_at) / 60 if prev_at else 0
+    threshold_min = PHASE_THRESHOLDS_MIN.get(phase, 30)
 
-    if alive:
-        # Detect phase transition or progress
-        phase_changed = last_obs.get("phase") and last_obs["phase"] != phase
-        if phase_changed:
-            msg = (f"[🦦 sweep watchdog] {sweep_dir.name}: ENTERED {label.upper()} phase | "
-                   f"{completed}/{total} ({pct:.0f}%) | {elapsed} elapsed")
-        elif completed > last_completed_for_phase:
-            delta = completed - last_completed_for_phase if last_completed_for_phase >= 0 else 0
-            tag = f"+{delta} since last check" if last_completed_for_phase >= 0 else "first observation"
-            denom = f"{total}" if total else "?"
-            msg = (f"[🦦 sweep watchdog] {sweep_dir.name} ({label}): "
-                   f"{completed}/{denom} ({pct:.0f}%) | {tag} | {elapsed} elapsed")
-        elif last_at:
-            # No progress — check stalled threshold
-            try:
-                t_iso = last_at.replace("Z", "+00:00") if last_at.endswith("Z") else last_at
-                t = datetime.fromisoformat(t_iso)
-                if t.tzinfo is None:
-                    t = t.replace(tzinfo=timezone.utc)
-                stuck_min = (datetime.now(timezone.utc) - t).total_seconds() / 60
-                threshold_min = STALLED_INTERVAL_MULT * args.interval_min
-                if stuck_min >= threshold_min:
-                    msg = (f"[🦦 sweep watchdog] ⚠️ {sweep_dir.name}: STALLED in {label} — "
-                           f"alive (PID {pid}) but no new progress for {int(stuck_min)} min. "
-                           f"At {completed}/{total or '?'} ({pct:.0f}%).")
-            except Exception:
-                pass
+    alive = is_alive(pid)
+
+    if not alive:
+        msg = f"DEAD pid={pid} phase={label} done={done}/{total}"
+    elif done > prev_done:
+        delta = done - prev_done
+        msg = f"ALIVE pid={pid} phase={label} done={done}/{total} +{delta} since last check"
+    elif progress_age_min >= threshold_min:
+        msg = (f"STALLED pid={pid} phase={label} done={done}/{total} "
+               f"no progress for {progress_age_min:.0f}min (threshold {threshold_min}min)")
     else:
-        # Dead
-        # "Complete" judgment: phase=done OR (identify-done AND no other streaming files growing)
-        sweep_status = state.get("status", "")
-        report_or_done = phase in ("report", "done") or sweep_status == "done"
-        identify_complete = (phase == "identify" and total and completed >= total)
-        if report_or_done or identify_complete:
-            msg = (f"[🦦 sweep watchdog] ✅ {sweep_dir.name}: COMPLETE in {label} | "
-                   f"{completed}/{total or '?'} | {elapsed} total elapsed")
-        else:
-            first_completed = first_obs.get("completed", 0)
-            progress_this_run = completed - first_completed
-            if progress_this_run == 0:
-                tag = "ZERO progress this run — likely env issue, review before relaunch"
-            else:
-                tag = f"+{progress_this_run} items this run"
-            msg = (f"[🦦 sweep watchdog] ⚠️ {sweep_dir.name}: DEAD in {label} at "
-                   f"{completed}/{total or '?'} ({pct:.0f}%) | {tag} | {elapsed} elapsed")
-        set_notified = True
+        msg = (f"ALIVE pid={pid} phase={label} done={done}/{total} "
+               f"(no progress for {progress_age_min:.0f}min, threshold {threshold_min}min)")
 
-    # Persist watchdog state
-    now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    wd["last_observation"] = {"at": now_iso, "phase": phase, "completed": completed}
-    if set_notified:
-        wd["notified"] = True
-        wd["notified_pid"] = pid
-    with wd_file.open("w") as f:
-        json.dump(wd, f, indent=2)
+    print(msg)
 
-    if msg:
-        post_gchat(args.post_to, msg)
-        print(msg)
+    # Update progress state — only when alive AND made progress (resets the no-progress timer).
+    # If alive but no progress, keep prev_at to accumulate the no-progress window.
+    if not args.no_write_state:
+        if alive and done > prev_done:
+            with progress_file.open("w") as f:
+                json.dump({"phase": phase, "done": done, "at": now}, f)
+        elif not progress_file.exists():
+            # First observation — establish baseline at current done count.
+            with progress_file.open("w") as f:
+                json.dump({"phase": phase, "done": done, "at": now}, f)
+        # If phase changed, reset baseline so we don't carry a stale prev_at.
+        elif prev_done == 0 and prev_at == 0:
+            with progress_file.open("w") as f:
+                json.dump({"phase": phase, "done": done, "at": now}, f)
+
+    if args.post_to:
+        post_gchat(args.post_to, f"[🦦 watchdog] {msg}")
+
+    sys.exit(0)
 
 
 if __name__ == "__main__":

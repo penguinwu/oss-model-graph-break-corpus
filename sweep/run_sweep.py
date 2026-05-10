@@ -74,6 +74,53 @@ EXPERIMENTS_OUTPUT_DIR = SWEEP_DIR.parent / "sweep_results" / "experiments"
 LARGE_MODELS_FILE = SWEEP_DIR / "large_models.json"
 
 
+# Auto-retry classification — whitelist of message patterns indicating
+# transient/resource-class failures (worth retrying). Everything else
+# defaults to NO retry. Per Peng directive 2026-05-10 + adversary review;
+# see sweep/AUTO_RETRY_REFINEMENT.md.
+RETRY_ELIGIBLE_PATTERNS = [
+    # OOM family (CUDA + system)
+    "out of memory",
+    "CUDA OOM",
+    "CUDA error: out of memory",
+    "Tried to allocate",      # co-occurs with OOM messages
+    "RuntimeError: CUDA",     # captures various transient CUDA errors
+    # Process-level transients
+    "subprocess died",
+    "killed by signal",
+    "SIGKILL",
+    "BrokenPipeError",
+    # CUDA context pollution — fresh worker often clears
+    "device-side assert",
+]
+
+
+def _is_retry_eligible(result: dict) -> tuple[bool, str]:
+    """Whitelist-based retry classification.
+
+    Returns (retry_eligible, reason). For eager_error: retry only if message
+    matches one of RETRY_ELIGIBLE_PATTERNS. For worker_error: always retry
+    (subprocess crashes are typically resource-class). For all other statuses:
+    no retry.
+    """
+    status = result.get("status", "")
+    err_msg = str(result.get("error", "") or "")
+
+    if status == "worker_error":
+        return True, "worker_error class is always retry-eligible"
+
+    if status == "create_error":
+        return False, "create_error is deterministic (fixture/config bug — fix root cause)"
+
+    if status == "eager_error":
+        for pattern in RETRY_ELIGIBLE_PATTERNS:
+            if pattern in err_msg:
+                return True, f"transient pattern: {pattern!r}"
+        return False, "eager_error not matching any RETRY_ELIGIBLE_PATTERNS — defaulting to no-retry"
+
+    return False, f"status {status!r} not retry-eligible"
+
+
 def _write_identify_jsonl(path: Path, metadata: dict, results: list) -> None:
     """Write identify results in JSONL format.
 
@@ -934,13 +981,25 @@ def run_sweep(args):
 
     _update_phase(state_file, "identify", phase_total=total_work_items)
 
-    # Streaming callback: write each result to checkpoint as it completes
+    # Streaming callback: write each result to checkpoint as it completes.
+    # Also clears the .resume_in_flight marker on first work-item — signals to
+    # the watchdog that the resumed orchestrator is alive and producing
+    # results. See sweep/WATCHDOG_DESIGN.md (v3, 2026-05-10).
     streaming_file = output_dir / "identify_streaming.jsonl"
     streaming_fh = open(streaming_file, "a")
+    resume_marker = output_dir / ".resume_in_flight"
+    _resume_marker_cleared = [False]  # mutable container for closure
 
     def _on_result(result):
         streaming_fh.write(json.dumps(result) + "\n")
         streaming_fh.flush()
+        # Clear the resume marker on first successful work-item (idempotent).
+        if not _resume_marker_cleared[0]:
+            try:
+                resume_marker.unlink(missing_ok=True)
+            except Exception:
+                pass
+            _resume_marker_cleared[0] = True
 
     identify_start = time.perf_counter()
     identify_results = run_pass(
@@ -1122,16 +1181,46 @@ def run_sweep(args):
             print(f"  {status}: {count}")
 
     # ── Auto-retry: re-run error models serially to distinguish real from transient ──
-    # NOTE 2026-05-10 (Peng directive): create_error is EXCLUDED from auto-retry.
-    # create_error means the model failed at __init__ / config-construction time
-    # — it's a deterministic input-fixture or library-config issue, not a transient
-    # GPU-contention problem. Retrying serially produces the same create_error and
-    # wastes auto-retry budget. The right fix is either (a) fix the input fixture /
-    # config in models.py, or (b) add to known_errors.json with explicit reason.
-    # Auto-retry continues to handle eager_error and worker_error which CAN be
-    # transient (CUDA OOM under contention, race conditions, etc.).
-    error_results = [r for r in identify_results
-                     if r.get("status") in ("eager_error", "worker_error")]
+    # 2026-05-10 (Peng directive 10:17 ET, refined per AUTO_RETRY_REFINEMENT.md):
+    # Auto-retry is ONLY for transient/resource-class failures. create_error is
+    # always deterministic (excluded since 217073c). eager_error is now classified
+    # by message — retry only OOM-class, subprocess-crash-class, and CUDA
+    # device-side-assert (CUDA context pollution; fresh worker often clears).
+    # Everything else defaults to NO retry (whitelist policy per adversary review).
+    # See sweep/AUTO_RETRY_REFINEMENT.md.
+    all_error_candidates = [r for r in identify_results
+                            if r.get("status") in ("eager_error", "worker_error")]
+    error_results = []
+    skipped_results = []
+    for r in all_error_candidates:
+        eligible, reason = _is_retry_eligible(r)
+        if eligible:
+            error_results.append(r)
+        else:
+            skipped_results.append((r, reason))
+
+    if skipped_results:
+        print(f"\n  Auto-retry SKIPPED for {len(skipped_results)} non-transient failures:")
+        for r, reason in skipped_results[:10]:
+            print(f"    {r.get('name')}/{r.get('mode')}: {reason}")
+        if len(skipped_results) > 10:
+            print(f"    ... and {len(skipped_results) - 10} more (see retry_classification.jsonl)")
+        # Emit machine-queryable classification log
+        retry_log = output_dir / "retry_classification.jsonl"
+        with open(retry_log, "a") as f:
+            for r, reason in skipped_results:
+                f.write(json.dumps({
+                    "name": r.get("name"), "mode": r.get("mode"),
+                    "status": r.get("status"), "decision": "skip",
+                    "reason": reason, "error_head": str(r.get("error", ""))[:200],
+                }) + "\n")
+            for r in error_results:
+                f.write(json.dumps({
+                    "name": r.get("name"), "mode": r.get("mode"),
+                    "status": r.get("status"), "decision": "retry",
+                    "error_head": str(r.get("error", ""))[:200],
+                }) + "\n")
+
     if error_results and not args.no_auto_retry:
         error_names = {r["name"] for r in error_results}
         retry_error_specs = [s for s in specs if s["name"] in error_names]

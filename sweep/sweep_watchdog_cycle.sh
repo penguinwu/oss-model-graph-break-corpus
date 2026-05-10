@@ -1,30 +1,22 @@
 #!/usr/bin/env bash
-# sweep_watchdog_cycle.sh — one watchdog cycle (intended to be invoked by a recurring cron)
+# sweep_watchdog_cycle.sh — one watchdog cycle (cron-callable)
 #
-# Behavior:
-#   1. If sweep is COMPLETE (explain_results.json or results.jsonl present) → print
-#      DISABLE_WATCHDOG and exit 99. The caller (the recurring cron's prompt)
-#      should disable the cron when it sees exit code 99.
-#   2. Run sweep_watchdog.py one-shot (observer).
-#   3. If output contains "DEAD" → auto-resume via `tools/run_experiment.py nightly --resume`.
-#      Guard against double-launch with pgrep.
-#   4. If output contains "STALL" or "stalled" → emit alert (no action; cron caller posts).
-#   5. Healthy → silent, exit 0.
+# v3 design (2026-05-10): simple dispatch on observer's single-line output.
+# See sweep/WATCHDOG_DESIGN.md.
 #
-# Usage: sweep_watchdog_cycle.sh <SWEEP_DATE> [--gchat-space SPACE]
-#
-# Where:
-#   <SWEEP_DATE> — e.g. 2026-05-09 (used to find the sweep dir + name resume logs)
-#   --gchat-space — optional GChat space for alerts (default: spaces/AAQANraxXE4)
+# Mechanism:
+#   1. Completion check (results.jsonl or explain_results.json present) → exit 99.
+#   2. Resume-in-flight grace check (.resume_in_flight marker fresh < 20 min) → silent exit.
+#   3. Run observer, dispatch on output:
+#        DEAD → check death-spiral, write marker, launch resume.
+#        STALLED → post observer message, no auto-action.
+#        ALIVE / COMPLETE / "" → silent.
+#        anything else → page Peng "watchdog returned unexpected output" — no auto-action.
 #
 # Exit codes:
-#   0  — healthy or alerted, no action needed
+#   0  — silent / alerted (no resume launched)
 #   1  — auto-resume launched
-#   99 — sweep complete, caller should disable itself
-#
-# Added 2026-05-09 (Peng directive): replaces the inline bash logic that lived
-# in the cron prompt body. Centralizing here keeps the watchdog code in the
-# project repo (versioned) instead of in agent state dirs (not versioned).
+#   99 — sweep complete (caller disables cron)
 
 set -euo pipefail
 
@@ -44,6 +36,9 @@ RESULTS_DIR="$REPO_ROOT/sweep_results/nightly/$SWEEP_DATE"
 NIGHTLY_PYTHON="${NIGHTLY_PYTHON:-/home/pengwu/envs/torch-nightly-cu126/bin/python}"
 TORCH211_PYTHON="${TORCH211_PYTHON:-/home/pengwu/envs/torch211/bin/python}"
 
+MARKER="$RESULTS_DIR/.resume_in_flight"
+MARKER_GRACE_MIN=20   # how long after auto-resume to defer DEAD declaration
+
 if [ ! -d "$RESULTS_DIR" ]; then
     echo "ERROR: sweep dir not found: $RESULTS_DIR" >&2
     exit 2
@@ -55,120 +50,97 @@ if [ -f "$RESULTS_DIR/explain_results.json" ] || [ -f "$RESULTS_DIR/results.json
     exit 99
 fi
 
-# ── Step 2: run watchdog observer ───────────────────────────────────────
+# ── Step 2: resume-in-flight grace check ────────────────────────────────
+if [ -f "$MARKER" ]; then
+    age_sec=$(( $(date +%s) - $(stat -c %Y "$MARKER") ))
+    age_min=$(( age_sec / 60 ))
+    if [ "$age_min" -lt "$MARKER_GRACE_MIN" ]; then
+        echo "SETUP_IN_PROGRESS: $SWEEP_DATE resume marker age=${age_min}min (< ${MARKER_GRACE_MIN}min grace)"
+        exit 0
+    fi
+    # Marker stale — orchestrator never wrote first work-item or died during setup.
+    # Remove marker so Step 4's DEAD path can fire (and the death-spiral guard counts it).
+    rm -f "$MARKER"
+    echo "STALE_MARKER: removed .resume_in_flight (age=${age_min}min, grace=${MARKER_GRACE_MIN}min)"
+fi
+
+# ── Step 3: invoke observer ─────────────────────────────────────────────
 WATCHDOG_OUT="$($TORCH211_PYTHON "$REPO_ROOT/sweep/sweep_watchdog.py" "$RESULTS_DIR" 2>&1 || true)"
 echo "$WATCHDOG_OUT"
 
-# ── Step 2.5: setup-in-progress guard ──────────────────────────────────
-# If watchdog says DEAD but a resume launcher OR refresh-nightly subprocess
-# is alive, the orchestrator is not really dead — its PID just hasn't been
-# updated in sweep_state.json yet (setup phase in progress). Treat as
-# silent + don't auto-resume. The next watchdog cycle will see the new PID.
-#
-# Process-match patterns are narrow enough to exclude the watchdog cycle
-# script itself (which would otherwise self-match its own shell command):
-#   refresh-nightly subprocess: must include "--venv" arg
-#   nightly launcher: must end with output-dir arg matching this sweep
-SETUP_IN_PROGRESS=0
-# Filter to actual python subprocesses (process name = python). Shell wrappers
-# whose cmdline happens to mention these patterns won't match because their
-# process name is "bash". This avoids the watchdog cycle script self-matching.
-if pgrep -af "^python.*run_experiment\.py refresh-nightly" > /dev/null \
-   || pgrep -af "^python.*tools/run_experiment\.py refresh-nightly" > /dev/null \
-   || pgrep -af "envs/.*python.*run_experiment\.py refresh-nightly" > /dev/null; then
-    SETUP_IN_PROGRESS=1
-elif pgrep -af "envs/.*python.*run_experiment\.py nightly .* --resume .* $RESULTS_DIR" > /dev/null; then
-    # Launcher cmd uses "nightly --resume ... <results_dir>".
-    # Orchestrator uses "sweep ..." (different subcommand) — won't match.
-    SETUP_IN_PROGRESS=1
-fi
-
-if echo "$WATCHDOG_OUT" | grep -q "DEAD" && [ "$SETUP_IN_PROGRESS" = "1" ]; then
-    echo "SETUP_IN_PROGRESS: watchdog reported DEAD but a resume launcher is in setup phase — staying silent"
-    exit 0
-fi
-
-# ── Step 3: auto-resume on DEAD (with progress + max-attempts guard) ────
-# Track resume attempts in a state file in the sweep dir. If N attempts pass
-# WITHOUT advancing past the last-known-dead item count, stop auto-resuming
-# and escalate to Peng. Prevents death-spirals on a deterministically-killer
-# model (e.g., BltForCausalLM at item 127 — needs very_large timeout but
-# regular sweep uses --timeout 180).
+# ── Step 4: dispatch on observer's verdict ──────────────────────────────
 RESUME_STATE="$RESULTS_DIR/.watchdog_resume_state"
 MAX_RESUME_NO_PROGRESS=3
 
-if echo "$WATCHDOG_OUT" | grep -q "DEAD"; then
-    if pgrep -af "run_experiment.*nightly.*--resume.*$SWEEP_DATE" > /dev/null; then
-        gchat send "$GCHAT_SPACE" \
-            "[🦦 Otter watchdog]: Sweep $SWEEP_DATE watchdog says DEAD but a resume process is already running — taking no action." \
-            --as-bot || true
-        exit 0
-    fi
-    # Compute current done-count from streaming jsonl (heartbeat-of-record).
-    DONE_NOW=0
-    if [ -f "$RESULTS_DIR/identify_streaming.jsonl" ]; then
-        DONE_NOW=$(wc -l < "$RESULTS_DIR/identify_streaming.jsonl")
-    fi
-    LAST_DONE=0
-    NO_PROGRESS_COUNT=0
-    if [ -f "$RESUME_STATE" ]; then
-        LAST_DONE=$(awk -F= '/^last_done=/{print $2}' "$RESUME_STATE" 2>/dev/null || echo 0)
-        NO_PROGRESS_COUNT=$(awk -F= '/^no_progress_count=/{print $2}' "$RESUME_STATE" 2>/dev/null || echo 0)
-    fi
-    if [ "$DONE_NOW" -gt "$LAST_DONE" ]; then
-        # Made progress since last resume → reset counter
+case "$WATCHDOG_OUT" in
+    *DEAD*)
+        # Compute current done-count from streaming jsonl for death-spiral check.
+        DONE_NOW=0
+        if [ -f "$RESULTS_DIR/identify_streaming.jsonl" ]; then
+            DONE_NOW=$(wc -l < "$RESULTS_DIR/identify_streaming.jsonl")
+        fi
+        LAST_DONE=0
         NO_PROGRESS_COUNT=0
-    else
-        NO_PROGRESS_COUNT=$((NO_PROGRESS_COUNT + 1))
-    fi
-    if [ "$NO_PROGRESS_COUNT" -ge "$MAX_RESUME_NO_PROGRESS" ]; then
-        gchat send "$GCHAT_SPACE" \
-            "[🦦 Otter watchdog]: 🛑 Sweep $SWEEP_DATE death-spiral detected — $NO_PROGRESS_COUNT consecutive resumes without progress past item $DONE_NOW. Stopping auto-resume; needs human triage. Likely a deterministically-killer model at item $((DONE_NOW + 1)). Watchdog cron remains active (will keep observing) but will NOT auto-resume until done-count advances or watchdog is manually disabled." \
-            --as-bot || true
-        # Persist updated state but don't resume
-        cat > "$RESUME_STATE" <<EOF
+        if [ -f "$RESUME_STATE" ]; then
+            LAST_DONE=$(awk -F= '/^last_done=/{print $2}' "$RESUME_STATE" 2>/dev/null || echo 0)
+            NO_PROGRESS_COUNT=$(awk -F= '/^no_progress_count=/{print $2}' "$RESUME_STATE" 2>/dev/null || echo 0)
+        fi
+        if [ "$DONE_NOW" -gt "$LAST_DONE" ]; then
+            NO_PROGRESS_COUNT=0
+        else
+            NO_PROGRESS_COUNT=$((NO_PROGRESS_COUNT + 1))
+        fi
+        if [ "$NO_PROGRESS_COUNT" -ge "$MAX_RESUME_NO_PROGRESS" ]; then
+            gchat send "$GCHAT_SPACE" \
+                "[🦦 watchdog] 🛑 Sweep $SWEEP_DATE death-spiral: $NO_PROGRESS_COUNT consecutive failed resumes at item $DONE_NOW. Stopping auto-resume." \
+                --as-bot || true
+            cat > "$RESUME_STATE" <<EOF
 last_done=$DONE_NOW
 no_progress_count=$NO_PROGRESS_COUNT
 last_check_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 escalated=true
 EOF
-        exit 0
-    fi
-    # Persist progress + bump counter, then resume
-    cat > "$RESUME_STATE" <<EOF
+            exit 0
+        fi
+        # Persist counter, write marker, launch resume.
+        cat > "$RESUME_STATE" <<EOF
 last_done=$DONE_NOW
 no_progress_count=$NO_PROGRESS_COUNT
 last_check_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 EOF
-    RESUME_LOG="/tmp/nightly-sweep-resume-$(date +%Y%m%d-%H%M%S).log"
-    setsid nohup "$NIGHTLY_PYTHON" "$REPO_ROOT/tools/run_experiment.py" nightly \
-        --force --resume --output-dir "$RESULTS_DIR" \
-        > "$RESUME_LOG" 2>&1 < /dev/null &
-    disown
-    sleep 5
-    RESUME_PID="$(pgrep -f "run_experiment.*nightly.*--resume.*$SWEEP_DATE" | head -1 || echo unknown)"
-    gchat send "$GCHAT_SPACE" \
-        "[🦦 Otter watchdog]: Sweep $SWEEP_DATE was DEAD — auto-resumed (PID $RESUME_PID, log $RESUME_LOG, attempt $((NO_PROGRESS_COUNT + 1))/$MAX_RESUME_NO_PROGRESS at item $DONE_NOW)." \
-        --as-bot || true
-    exit 1
-fi
-
-# Healthy → reset no-progress counter (don't carry stale state forward)
-if [ -f "$RESUME_STATE" ]; then
-    DONE_NOW=$(wc -l < "$RESULTS_DIR/identify_streaming.jsonl" 2>/dev/null || echo 0)
-    cat > "$RESUME_STATE" <<EOF
-last_done=$DONE_NOW
-no_progress_count=0
-last_check_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-EOF
-fi
-
-# ── Step 4: alert on STALL ──────────────────────────────────────────────
-if echo "$WATCHDOG_OUT" | grep -qiE "stall"; then
-    gchat send "$GCHAT_SPACE" \
-        "[🦦 Otter watchdog]: $WATCHDOG_OUT" \
-        --as-bot || true
-fi
-
-# ── Step 5: healthy / alerted, no action ────────────────────────────────
-exit 0
+        touch "$MARKER"
+        RESUME_LOG="/tmp/nightly-sweep-resume-$(date +%Y%m%d-%H%M%S).log"
+        setsid nohup "$NIGHTLY_PYTHON" "$REPO_ROOT/tools/run_experiment.py" nightly \
+            --force --resume --output-dir "$RESULTS_DIR" \
+            > "$RESUME_LOG" 2>&1 < /dev/null &
+        disown
+        gchat send "$GCHAT_SPACE" \
+            "[🦦 watchdog] Sweep $SWEEP_DATE was DEAD — auto-resumed. log=$RESUME_LOG marker=$MARKER (grace ${MARKER_GRACE_MIN}min). attempt $((NO_PROGRESS_COUNT + 1))/$MAX_RESUME_NO_PROGRESS at item $DONE_NOW." \
+            --as-bot || true
+        exit 1
+        ;;
+    *STALLED*)
+        gchat send "$GCHAT_SPACE" "[🦦 watchdog] $WATCHDOG_OUT" --as-bot || true
+        exit 0
+        ;;
+    *COMPLETE*)
+        # Observer reported COMPLETE but the file-based completion check (Step 1)
+        # didn't catch it. Edge case — might be `phase=done` but results.jsonl
+        # not yet written. Disable cron preemptively.
+        sqlite3 /home/pengwu/.myclaw/spaces/AAQANraxXE4/myclaw.db \
+            "UPDATE jobs SET enabled=0 WHERE id='sweep-watchdog-$SWEEP_DATE';" 2>&1 || true
+        gchat send "$GCHAT_SPACE" "[🦦 watchdog] Sweep $SWEEP_DATE COMPLETE; cron disabled." --as-bot || true
+        exit 99
+        ;;
+    *ALIVE*|*MISSING_STATE*|"")
+        # Healthy or sweep-not-yet-started. Silent.
+        exit 0
+        ;;
+    *)
+        # Unknown output — observer may have crashed. Page Peng, NO auto-action.
+        gchat send "$GCHAT_SPACE" \
+            "[🦦 watchdog] Sweep $SWEEP_DATE: observer returned unexpected output, taking no action: ${WATCHDOG_OUT:0:200}" \
+            --as-bot || true
+        exit 0
+        ;;
+esac
