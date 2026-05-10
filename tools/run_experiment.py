@@ -2237,9 +2237,11 @@ def main():
     sub_nightly.add_argument("--label", metavar="NAME",
                              help="Run label (default: nightly-YYYYMMDD)")
     sub_nightly.add_argument("--source", nargs="+",
-                             default=["hf", "diffusers", "custom"],
+                             default=["hf"],
                              choices=["timm", "hf", "diffusers", "custom", "all"],
-                             help="Model sources (default: hf diffusers custom)")
+                             help="Model sources (default: hf only). Diffusers + custom "
+                                  "are opt-in since 2026-05-10 — they were producing "
+                                  "high-error-rate noise and dominating the auto-retry tail.")
     sub_nightly.add_argument("--modes", nargs="+", default=["eval", "train"],
                              choices=["eval", "train"])
     sub_nightly.add_argument("--workers", type=int, default=4)
