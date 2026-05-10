@@ -1,4 +1,6 @@
 [
+  "BltForCausalLM",
+  "BltModel",
   "ConditionalDetrModel",
   "DabDetrModel",
   "DeformableDetrModel",
