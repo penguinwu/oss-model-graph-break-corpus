@@ -2062,9 +2062,13 @@ def main():
     )
     sweep_input = sub_sweep.add_mutually_exclusive_group()
     sweep_input.add_argument("--source", nargs="+",
-                             default=["hf", "diffusers", "custom"],
+                             default=["hf"],
                              choices=["timm", "hf", "diffusers", "custom", "all"],
-                             help="Model libraries to enumerate (default: hf diffusers custom)")
+                             help="Model libraries to enumerate (default: hf only). "
+                                  "Diffusers and custom are opt-in (--source hf diffusers custom) "
+                                  "since 2026-05-10 — they were producing high error-rate noise "
+                                  "(only ~21%% full_graph in diffusers vs ~75%% in hf) and dominating "
+                                  "the auto-retry tail. timm requires explicit opt-in too.")
     sweep_input.add_argument("--models",
                              help="JSON file with explicit model list (flat shape: "
                                   "[{name,source}, ...]). Has no provenance — "

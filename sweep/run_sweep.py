@@ -1122,15 +1122,24 @@ def run_sweep(args):
             print(f"  {status}: {count}")
 
     # ── Auto-retry: re-run error models serially to distinguish real from transient ──
+    # NOTE 2026-05-10 (Peng directive): create_error is EXCLUDED from auto-retry.
+    # create_error means the model failed at __init__ / config-construction time
+    # — it's a deterministic input-fixture or library-config issue, not a transient
+    # GPU-contention problem. Retrying serially produces the same create_error and
+    # wastes auto-retry budget. The right fix is either (a) fix the input fixture /
+    # config in models.py, or (b) add to known_errors.json with explicit reason.
+    # Auto-retry continues to handle eager_error and worker_error which CAN be
+    # transient (CUDA OOM under contention, race conditions, etc.).
     error_results = [r for r in identify_results
-                     if r.get("status") in ("eager_error", "create_error", "worker_error")]
+                     if r.get("status") in ("eager_error", "worker_error")]
     if error_results and not args.no_auto_retry:
         error_names = {r["name"] for r in error_results}
         retry_error_specs = [s for s in specs if s["name"] in error_names]
 
         print(f"\n{'─' * 70}")
-        print(f"AUTO-RETRY ERRORS: {len(retry_error_specs)} error models, "
-              f"serial (1 worker) to rule out GPU contention")
+        print(f"AUTO-RETRY ERRORS: {len(retry_error_specs)} error models "
+              f"(eager_error + worker_error only; create_error excluded — "
+              f"deterministic, not transient), serial (1 worker) to rule out GPU contention")
         print(f"  Total work items in this phase: {len(retry_error_specs) * len(modes)}")
         print(f"{'─' * 70}")
 
