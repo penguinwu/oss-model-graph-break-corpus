@@ -129,12 +129,25 @@ def test_corpus_issue_rejects_naked_post():
 
 
 def test_corpus_issue_rejects_naked_post_no_cluster_plan_approved():
-    """V1 cluster+dedup: --cluster-plan-approved is also REQUIRED at argparse."""
-    rc, out, err = _run("corpus-issue", "--via-skill", "x",
-                        "--body", "/tmp/foo.md", "--title", "T")
-    assert rc != 0, f"expected non-zero; got rc={rc}"
-    assert "cluster-plan-approved" in err, \
-        f"error should name --cluster-plan-approved; got: {err}"
+    """V1 cluster+dedup: --cluster-plan-approved is REQUIRED at runtime for NEW + EDIT
+    (argparse-optional since 2026-05-10 to permit CLOSE op which uses --plan)."""
+    case_id = "file-2026-05-10-cluster-plan-test"
+    body_text = "body"
+    body_sha = hashlib.sha256(body_text.encode()).hexdigest()
+    case_path = _make_case_file(case_id, mode_a_verdict="proceed",
+                                 mode_b_sha256="abc", body_sha256=body_sha)
+    body_path = Path(tempfile.mktemp(suffix=".md"))
+    body_path.write_text(body_text)
+    try:
+        # NEW op without --cluster-plan-approved → runtime refusal
+        rc, out, err = _run("corpus-issue", "--via-skill", case_id,
+                            "--body", str(body_path), "--title", "T")
+        assert rc != 0, f"expected non-zero; got rc={rc}"
+        assert "cluster-plan-approved" in err, \
+            f"error should name --cluster-plan-approved; got: {err}"
+    finally:
+        case_path.unlink(missing_ok=True)
+        body_path.unlink(missing_ok=True)
 
 
 def test_pytorch_upstream_rejects_naked_post():
@@ -860,6 +873,263 @@ def test_correctness_apply_is_deprecated():
 
 
 # Runner ─────────────────────────────────────────────────────────────────────
+
+# ─────────────────────────────────────────────────────────────────────────────
+# close-mode tests (per CLOSE_MODE_DESIGN rev 3 + adversary case adv-2026-05-10-152000)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _make_close_sweep(tmp: Path, *, days_old: float = 1.0,
+                      affected_pairs: list[tuple[str, str, str, int]] | None = None,
+                      with_marker: bool = False) -> Path:
+    """Build a synthetic sweep dir suitable for close-mode tests.
+
+    affected_pairs: list of (model, mode, identify_status, explain_gb_count)
+    """
+    from datetime import datetime, timedelta, timezone
+    sweep = tmp / "2026-05-09"
+    sweep.mkdir(parents=True, exist_ok=True)
+    finished = (datetime.now(timezone.utc) - timedelta(days=days_old)).isoformat().replace("+00:00", "Z")
+    (sweep / "sweep_state.json").write_text(json.dumps({
+        "status": "done",
+        "finished": finished,
+        "started": finished,
+        "versions": {"torch": "2.13.0.dev20260507+cu126"},
+    }))
+    # Build identify_results.json (jsonl with metadata + rows)
+    affected = affected_pairs or []
+    id_lines = [json.dumps({"_record_type": "metadata", "pass": "identify"})]
+    for name, mode, status, _gb in affected:
+        id_lines.append(json.dumps({
+            "_record_type": "row", "name": name, "mode": mode,
+            "source": "hf", "status": status, "wall_time_s": 10,
+        }))
+    (sweep / "identify_results.json").write_text("\n".join(id_lines) + "\n")
+    # Build explain_results.json
+    ex_lines = [json.dumps({"_record_type": "metadata", "pass": "explain"})]
+    for name, mode, _status, gb_count in affected:
+        ex_lines.append(json.dumps({
+            "_record_type": "row", "name": name, "mode": mode,
+            "graph_break_count": gb_count,
+        }))
+    (sweep / "explain_results.json").write_text("\n".join(ex_lines) + "\n")
+    if with_marker:
+        (sweep / ".audit-rerun-required").write_text(
+            "# marker for test\nFooModel|eval\n"
+        )
+    return sweep
+
+
+def _make_close_plan(tmp: Path, issue_num: int, *,
+                     model_disposition: dict | None = None,
+                     model_count: int | None = None) -> Path:
+    """Write a sweep-report.json plan with one close_candidate."""
+    if model_disposition is None:
+        model_disposition = {"FooModel": "fullgraph on current sweep"}
+    if model_count is None:
+        model_count = len(model_disposition)
+    plan = {
+        "metadata": {"timestamp": "2026-05-10T11:00:00Z"},
+        "close_candidates": [{
+            "number": issue_num,
+            "title": "test issue",
+            "previous_model_count": model_count,
+            "model_disposition": model_disposition,
+        }],
+    }
+    p = tmp / "sweep-report.json"
+    p.write_text(json.dumps(plan))
+    return p
+
+
+def _close_args(*, case_id: str, issue: int, plan: Path, sweep: Path,
+                body: Path, reason: str = "completed") -> list[str]:
+    return [
+        "corpus-issue",
+        "--via-skill", case_id,
+        "--close", str(issue),
+        "--plan", str(plan),
+        "--sweep-dir", str(sweep),
+        "--body", str(body),
+        "--close-reason", reason,
+    ]
+
+
+def test_close_requires_plan_sweep_dir_close_reason():
+    """Required-arg validation: --close without --plan / --sweep-dir / --close-reason exits non-zero."""
+    case_id = "file-2026-05-10-close-test-1"
+    body_text = "body"
+    body_sha = hashlib.sha256(body_text.encode()).hexdigest()
+    case_path = _make_case_file(case_id, mode_a_verdict="close",
+                                 mode_b_sha256="abc", body_sha256=body_sha)
+    body_path = Path(tempfile.mktemp(suffix=".md"))
+    body_path.write_text(body_text)
+    try:
+        # Missing --plan (have --sweep-dir + --close-reason)
+        rc, out, err = _run("corpus-issue", "--via-skill", case_id,
+                            "--close", "999", "--body", str(body_path),
+                            "--close-reason", "completed",
+                            "--sweep-dir", "/tmp/foo")
+        assert rc != 0, f"missing --plan should refuse; got rc={rc}"
+        assert "--plan" in (out + err), f"error should name --plan; got: {err}"
+    finally:
+        case_path.unlink(missing_ok=True)
+        body_path.unlink(missing_ok=True)
+
+
+def test_close_refuses_non_close_verdict():
+    """case file with mode_a_verdict='reframe' → close op refuses."""
+    case_id = "file-2026-05-10-close-test-2"
+    body_text = "body content"
+    body_sha = hashlib.sha256(body_text.encode()).hexdigest()
+    case_path = _make_case_file(case_id, mode_a_verdict="reframe",
+                                 mode_b_sha256="abc", body_sha256=body_sha)
+    body_path = Path(tempfile.mktemp(suffix=".md"))
+    body_path.write_text(body_text)
+    with tempfile.TemporaryDirectory() as tmp:
+        plan = _make_close_plan(Path(tmp), 999)
+        rc, out, err = _run(*_close_args(case_id=case_id, issue=999, plan=plan,
+                                          sweep=Path(tmp), body=body_path))
+        # _validate_via_skill rejects reframe early (before close-mode-specific check)
+        assert rc != 0
+    case_path.unlink(missing_ok=True)
+    body_path.unlink(missing_ok=True)
+
+
+def test_close_refuses_when_not_a_candidate():
+    """Plan's close_candidates does NOT include issue → refuse."""
+    case_id = "file-2026-05-10-close-test-3"
+    body_text = "body"
+    body_sha = hashlib.sha256(body_text.encode()).hexdigest()
+    case_path = _make_case_file(case_id, mode_a_verdict="close",
+                                 mode_b_sha256="abc", body_sha256=body_sha)
+    body_path = Path(tempfile.mktemp(suffix=".md"))
+    body_path.write_text(body_text)
+    with tempfile.TemporaryDirectory() as tmp:
+        # Plan has issue 999 but we ask to close 12345
+        plan = _make_close_plan(Path(tmp), 999)
+        sweep = _make_close_sweep(Path(tmp))
+        rc, out, err = _run(*_close_args(case_id=case_id, issue=12345, plan=plan,
+                                          sweep=sweep, body=body_path))
+        assert rc != 0
+        assert "not-a-candidate" in (out + err) or "not in the plan" in (out + err).lower(), \
+            f"error should say not-a-candidate; got: {err}"
+    case_path.unlink(missing_ok=True)
+    body_path.unlink(missing_ok=True)
+
+
+def test_close_refuses_partial_flip():
+    """Candidate exists but classify_close_candidate returns review-needed → refuse."""
+    case_id = "file-2026-05-10-close-test-4"
+    body_text = "body"
+    body_sha = hashlib.sha256(body_text.encode()).hexdigest()
+    case_path = _make_case_file(case_id, mode_a_verdict="close",
+                                 mode_b_sha256="abc", body_sha256=body_sha)
+    body_path = Path(tempfile.mktemp(suffix=".md"))
+    body_path.write_text(body_text)
+    with tempfile.TemporaryDirectory() as tmp:
+        # Disposition with one model still breaking → classify returns review-needed
+        plan = _make_close_plan(Path(tmp), 999, model_disposition={
+            "FooModel": "fullgraph on current sweep",
+            "BarModel": "still breaking, pattern unclassified",
+        })
+        sweep = _make_close_sweep(Path(tmp))
+        rc, out, err = _run(*_close_args(case_id=case_id, issue=999, plan=plan,
+                                          sweep=sweep, body=body_path))
+        assert rc != 0
+        assert "reject-keep-open" in (out + err), f"got: {err}"
+    case_path.unlink(missing_ok=True)
+    body_path.unlink(missing_ok=True)
+
+
+def test_close_refuses_stale_sweep():
+    """Sweep age > 10 days → reframe (refuse)."""
+    case_id = "file-2026-05-10-close-test-5"
+    body_text = "body"
+    body_sha = hashlib.sha256(body_text.encode()).hexdigest()
+    case_path = _make_case_file(case_id, mode_a_verdict="close",
+                                 mode_b_sha256="abc", body_sha256=body_sha)
+    body_path = Path(tempfile.mktemp(suffix=".md"))
+    body_path.write_text(body_text)
+    with tempfile.TemporaryDirectory() as tmp:
+        plan = _make_close_plan(Path(tmp), 999)
+        sweep = _make_close_sweep(Path(tmp), days_old=15.0)  # stale
+        rc, out, err = _run(*_close_args(case_id=case_id, issue=999, plan=plan,
+                                          sweep=sweep, body=body_path))
+        assert rc != 0
+        assert "reframe" in (out + err) or "stale" in (out + err).lower(), \
+            f"got: {err}"
+    case_path.unlink(missing_ok=True)
+    body_path.unlink(missing_ok=True)
+
+
+def test_close_refuses_when_marker_present():
+    """`.audit-rerun-required` marker exists → block-stale-rerun (refuse)."""
+    case_id = "file-2026-05-10-close-test-6"
+    body_text = "body"
+    body_sha = hashlib.sha256(body_text.encode()).hexdigest()
+    case_path = _make_case_file(case_id, mode_a_verdict="close",
+                                 mode_b_sha256="abc", body_sha256=body_sha)
+    body_path = Path(tempfile.mktemp(suffix=".md"))
+    body_path.write_text(body_text)
+    with tempfile.TemporaryDirectory() as tmp:
+        plan = _make_close_plan(Path(tmp), 999)
+        sweep = _make_close_sweep(Path(tmp), with_marker=True)
+        rc, out, err = _run(*_close_args(case_id=case_id, issue=999, plan=plan,
+                                          sweep=sweep, body=body_path))
+        assert rc != 0
+        assert "block-stale-rerun" in (out + err) or "marker" in (out + err).lower(), \
+            f"got: {err}"
+    case_path.unlink(missing_ok=True)
+    body_path.unlink(missing_ok=True)
+
+
+def test_close_reason_validation_argparse():
+    """Invalid --close-reason value rejected at argparse."""
+    rc, out, err = _run("corpus-issue", "--via-skill", "x",
+                        "--close", "999", "--plan", "/tmp/x", "--sweep-dir", "/tmp",
+                        "--body", "/tmp/b", "--close-reason", "invalid")
+    assert rc != 0
+
+
+def test_close_stale_apply_refused_outside_cron():
+    """Gap #5: close-stale --apply requires CORPUS_CLOSE_STALE_FROM_CRON=1."""
+    import os as _os
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        json.dump({"close_candidates": [], "metadata": {}}, f)
+        plan_path = Path(f.name)
+    try:
+        # No env var → refuse
+        env = _os.environ.copy()
+        env.pop("CORPUS_CLOSE_STALE_FROM_CRON", None)
+        r = subprocess.run(
+            [PYTHON, str(TOOL), "close-stale", "--plan", str(plan_path), "--apply"],
+            capture_output=True, text=True, env=env,
+        )
+        assert r.returncode != 0
+        assert "CORPUS_CLOSE_STALE_FROM_CRON" in r.stderr or "cron" in r.stderr.lower()
+        # With env var → allowed (will succeed because plan is empty)
+        env["CORPUS_CLOSE_STALE_FROM_CRON"] = "1"
+        r = subprocess.run(
+            [PYTHON, str(TOOL), "close-stale", "--plan", str(plan_path), "--apply"],
+            capture_output=True, text=True, env=env,
+        )
+        assert r.returncode == 0, f"with env var should pass; got {r.returncode}\n{r.stderr}"
+    finally:
+        plan_path.unlink(missing_ok=True)
+
+
+def test_close_stale_dry_run_does_not_require_env_var():
+    """close-stale without --apply (dry-run) bypasses the env-var check."""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        json.dump({"close_candidates": [], "metadata": {}}, f)
+        plan_path = Path(f.name)
+    try:
+        rc, out, err = _run("close-stale", "--plan", str(plan_path))
+        assert rc == 0, f"dry-run should not require env var; got rc={rc}\n{err}"
+    finally:
+        plan_path.unlink(missing_ok=True)
+
 
 def main() -> int:
     tests = [(name, fn) for name, fn in globals().items()

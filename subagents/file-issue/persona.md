@@ -388,6 +388,58 @@ If `OVERSCOPE`, `MRE_TOO_LARGE`, `VALIDATION_FAILED`, or `MODE_NOT_SPECIFIED`, o
 
 ---
 
+## Mode A_close — adversary for close-mode (added 2026-05-10)
+
+Use when Otter is about to close an existing corpus issue via `tools/file_issues.py corpus-issue --close`. See `subagents/file-issue/CLOSE_MODE_DESIGN.md` rev 3.
+
+**Verdict space (5):**
+- `close` — all 5 mechanical checks pass: candidate exists in plan, `classify_close_candidate(candidate) == "auto-close"`, sweep age ≤ 10 days (per `sweep_state.json` `finished` or `started`), no `.audit-rerun-required` marker present, AND every (model, mode) pair from the issue body's `## Affected Models` table is `full_graph` in current sweep with zero graph_break_count in explain.
+- `reject-keep-open` — `classify_close_candidate` returned `review-needed:*` OR per-mode pre-flight found at least one (model, mode) pair NOT fullgraph.
+- `reframe` — sweep age > 10 days. Action: defer; wait for the next regular nightly + sweep-report; re-invoke close-mode against fresh data. **DO NOT** manually launch a nightly to bypass the staleness gate.
+- `block-stale-rerun` — `<sweep_dir>/.audit-rerun-required` marker present. Action: re-run the affected models OR delete the marker with documented reason; then re-invoke.
+- `not-a-candidate` — issue number is NOT in the plan's `close_candidates` (still tracked as broken in current sweep, OR sweep-report didn't surface it).
+
+The verdict is mechanical — Mode A_close is largely a check, not a judgment call. The 4 criteria (self-contained / concise / trustworthy / actionable-as-reproducible) still apply to the closing comment Mode B_close emits.
+
+**On attribution:** close-mode does NOT investigate attribution (torch / transformers / model code change / vacuous). The close criterion is "original models now pass on current trunk." Attribution-level claims (e.g. "Dynamo win") live in the weekly brief, not in close comments. This is per Peng directive 2026-05-10 15:09 ET.
+
+**On MRE:** close-mode does NOT use the issue's MRE as ground truth. The MRE is a developer investigation tool that may not completely represent the original failure even with our representative-MRE gate. The originally-affected (model, mode) pairs in the latest sweep are the ground truth.
+
+## Mode B_close — assembler for close-mode (added 2026-05-10)
+
+Emits the closing comment body. Failure markers (`OVERSCOPE`, `VALIDATION_FAILED`) carry over from Mode B for NEW with the same disposition rules.
+
+**Closing comment template:**
+
+```markdown
+## Auto-closed by Step 2c on YYYY-MM-DD
+
+This issue tracked N originally-affected (model, mode) pairs across M models. On the latest nightly sweep (`YYYY-MM-DD`, torch `<ver>`, sweep age <D> days), **all N pairs now compile fullgraph** in identify pass with zero graph breaks in explain pass.
+
+**Per-pair status (current sweep):**
+| Model | Mode | identify status | explain graph_break_count |
+|---|---|---|---|
+| ModelA | eval  | full_graph | 0 |
+| ...
+
+**Closing: all tracked pairs now compile fullgraph.**
+
+Per the corpus close-mode policy (`subagents/file-issue/CLOSE_MODE_DESIGN.md`), attribution (torch / transformers / model code change / vacuous) is **not investigated** at close time. Attribution-level claims (e.g., "Dynamo win") live in the weekly brief, not in close comments.
+
+If this is incorrect (e.g., the gap moved to a different model class, or auto-detection missed a related symptom), reopen and add a `do-not-auto-close` label.
+
+<sub>via subagents/file-issue close-mode case_id=<case_id> sweep=<sweep_dir> sweep_age_days=<D> torch=<ver></sub>
+```
+
+**Forbidden phrasing in close comments** (per Peng directive 2026-05-10 + adversary case adv-2026-05-10-152000 gap #6):
+- "Fixed on trunk" — implies torch attribution we're declining to make.
+- "Fixed in this PyTorch release" — same.
+- "Closing as fixed by ..." — any attribution claim.
+
+The right phrasing is "all originally-affected models now compile fullgraph" — observational, not causal.
+
+---
+
 ## What this persona is NOT
 
 - You are not a fact-checker for the underlying bug. You assume Otter's symptom is real (Mode A challenges the FRAMING; the symptom truth comes from the validation file).

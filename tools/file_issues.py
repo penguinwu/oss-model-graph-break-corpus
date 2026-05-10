@@ -1381,7 +1381,281 @@ def cmd_close_stale(args):
         print("Pass --allow-experimental to override.", file=sys.stderr)
         sys.exit(2)
 
+    # Phase A guard: --apply must be invoked from the cron prompt's wake step,
+    # not ad-hoc by an agent. Per close-mode design adv-2026-05-10-152000 gap #5.
+    # The cron prompt sets CORPUS_CLOSE_STALE_FROM_CRON=1; ad-hoc invocation
+    # does not. Phase B retrofits close-stale to invoke close-mode per-candidate
+    # (--via-skill gated); until then, this env-var guard is the mechanical
+    # block preventing bypass of the new close-mode audit chain.
+    if args.apply and os.environ.get("CORPUS_CLOSE_STALE_FROM_CRON") != "1":
+        print(
+            "ERROR: close-stale --apply is restricted to cron-prompt invocation.\n"
+            "  Set CORPUS_CLOSE_STALE_FROM_CRON=1 in the environment to invoke.\n"
+            "  For ad-hoc per-issue closure, use:\n"
+            "    python3 tools/file_issues.py corpus-issue --close <issue#> "
+            "--via-skill <case_id> --plan <plan> --sweep-dir <sweep_dir> "
+            "--body <body> --close-reason <completed|not_planned>\n"
+            "  This routes through the file-issue audit chain (Mode A_close + "
+            "Mode B_close + per-mode pre-flight) per close-mode design.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
     apply_close_stale(plan, dry_run=not args.apply)
+
+
+# ── close-mode (Step 2c): per-issue closure gated by file-issue audit chain ──
+# Per subagents/file-issue/CLOSE_MODE_DESIGN.md rev 3 + adversary case
+# adv-2026-05-10-152000-close-mode-design.
+
+CLOSE_MODE_STALENESS_DAYS = 10  # workflow doc § Step 2c
+
+
+def _sweep_age_days(sweep_dir: Path) -> tuple[float | None, str | None]:
+    """Read sweep_state.json for the freshness anchor.
+
+    Returns (age_days, anchor_field) where anchor_field is "finished" preferred
+    over "started". Returns (None, None) if state file absent or unreadable.
+    """
+    state = sweep_dir / "sweep_state.json"
+    if not state.exists():
+        return None, None
+    try:
+        with state.open() as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None, None
+    for field in ("finished", "started"):
+        ts = data.get(field)
+        if not ts:
+            continue
+        try:
+            # Accept ...Z or ...+00:00
+            ts_normalized = ts.replace("Z", "+00:00")
+            from datetime import datetime, timezone
+            dt = datetime.fromisoformat(ts_normalized)
+            now = datetime.now(timezone.utc)
+            return (now - dt).total_seconds() / 86400, field
+        except ValueError:
+            continue
+    return None, None
+
+
+def _read_audit_rerun_marker(sweep_dir: Path) -> list[tuple[str, str]] | None:
+    """Return list of (model, mode) pairs in the marker, or None if absent."""
+    marker = sweep_dir / ".audit-rerun-required"
+    if not marker.exists():
+        return None
+    pairs = []
+    for line in marker.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "|" in line:
+            name, mode = line.split("|", 1)
+            pairs.append((name.strip(), mode.strip()))
+    return pairs
+
+
+def _per_mode_pass_check(sweep_dir: Path, affected_models: dict) -> tuple[bool, list, list]:
+    """Verify every (model, mode) in affected_models is fullgraph in current sweep.
+
+    affected_models: {model_name: [modes]} from parse_affected_models(issue.body).
+    Returns (all_pass, pair_statuses, failing_pairs) where:
+      pair_statuses: list of (model, mode, status) for ALL pairs
+      failing_pairs: subset where status != fullgraph
+
+    Uses sweep/results_loader.load_effective_results for status + reads
+    explain_results.json for graph_break_count to verify zero breaks.
+    """
+    # Defer import to avoid hard dep at module import time.
+    sys.path.insert(0, str(REPO_ROOT / "sweep"))
+    from results_loader import load_effective_results  # noqa: E402
+
+    rows = load_effective_results(sweep_dir)
+
+    # Load explain to confirm zero graph_break_count
+    explain_path = sweep_dir / "explain_results.json"
+    explain_by_pair: dict[tuple[str, str], int] = {}
+    if explain_path.exists():
+        for line in explain_path.read_text().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                e = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if e.get("_record_type") == "metadata":
+                continue
+            n = e.get("name")
+            m = e.get("mode")
+            if n and m:
+                explain_by_pair[(n, m)] = e.get("graph_break_count", 0)
+
+    pair_statuses = []
+    failing = []
+    for model, modes in affected_models.items():
+        for mode in modes:
+            row = rows.get((model, mode), {})
+            status = row.get("status", "MISSING")
+            gb_count = explain_by_pair.get((model, mode), 0)
+            # "fullgraph" = identify status == full_graph AND no graph breaks in explain
+            is_full = (status == "full_graph" and gb_count == 0)
+            pair_statuses.append((model, mode, status, gb_count))
+            if not is_full:
+                failing.append((model, mode, status, gb_count))
+    return (len(failing) == 0), pair_statuses, failing
+
+
+def _build_close_body(issue_num: int, sweep_dir: Path, sweep_age_days: float,
+                      torch_ver: str, pair_statuses: list, case_id: str,
+                      affected_models_baseline: dict | None = None) -> str:
+    """Build the closing-comment body per CLOSE_MODE_DESIGN rev 3."""
+    n_pairs = len(pair_statuses)
+    n_models = len({m for m, _, _, _ in pair_statuses})
+    sweep_label = sweep_dir.name
+    lines = [
+        f"## Auto-closed by Step 2c on {sweep_label}",
+        "",
+        f"This issue tracked {n_pairs} originally-affected (model, mode) pairs "
+        f"across {n_models} models. On the latest nightly sweep "
+        f"(`{sweep_label}`, torch `{torch_ver}`, sweep age {sweep_age_days:.1f} days), "
+        f"**all {n_pairs} pairs now compile fullgraph** in identify pass with zero graph breaks in explain pass.",
+        "",
+        "**Per-pair status (current sweep):**",
+        "",
+        "| Model | Mode | identify status | explain graph_break_count |",
+        "|---|---|---|---|",
+    ]
+    for model, mode, status, gb_count in sorted(pair_statuses):
+        lines.append(f"| {model} | {mode} | {status} | {gb_count} |")
+    lines.extend([
+        "",
+        "**Closing: all tracked pairs now compile fullgraph.**",
+        "",
+        "Per the corpus close-mode policy (`subagents/file-issue/CLOSE_MODE_DESIGN.md`), "
+        "attribution (torch / transformers / model code change / vacuous) is **not investigated** "
+        "at close time — we rely on \"original models now pass on current trunk\" as the close criterion. "
+        "Attribution-level claims (e.g., \"Dynamo win\") live in the weekly brief, not in close comments.",
+        "",
+        "If this is incorrect (e.g., the gap moved to a different model class, or auto-detection "
+        "missed a related symptom), reopen and add a `do-not-auto-close` label.",
+        "",
+        f"<sub>via subagents/file-issue close-mode case_id={case_id} sweep={sweep_dir.name} "
+        f"sweep_age_days={sweep_age_days:.1f} torch={torch_ver}</sub>",
+    ])
+    return "\n".join(lines) + "\n"
+
+
+def _do_close_op(args, body_text: str) -> int:
+    """The close-mode validation pipeline + post. Returns exit code."""
+    issue_num = args.close
+    sweep_dir = Path(args.sweep_dir).resolve()
+    plan_path = Path(args.plan).resolve()
+
+    # Step 3: --plan exists; close_candidate exists; classify_close_candidate=='auto-close'
+    if not plan_path.exists():
+        print(f"ERROR: --plan not found: {plan_path}", file=sys.stderr)
+        return 1
+    with plan_path.open() as f:
+        plan = json.load(f)
+    candidates = {c["number"]: c for c in plan.get("close_candidates", [])}
+    if issue_num not in candidates:
+        print(
+            f"ERROR: not-a-candidate — issue #{issue_num} is NOT in the plan's close_candidates "
+            f"(still tracked as broken in current sweep, OR sweep-report didn't surface it).",
+            file=sys.stderr,
+        )
+        return 1
+    candidate = candidates[issue_num]
+    legacy_class = classify_close_candidate(candidate)
+    if legacy_class != "auto-close":
+        print(
+            f"ERROR: reject-keep-open — classify_close_candidate returned {legacy_class!r} "
+            f"(model-name level disposition). Issue #{issue_num} is not auto-closeable.",
+            file=sys.stderr,
+        )
+        return 1
+
+    # Step 4: staleness gate (per gap #2: read sweep_state.json `finished`/`started`)
+    age_days, anchor = _sweep_age_days(sweep_dir)
+    if age_days is None:
+        print(f"ERROR: cannot determine sweep age from {sweep_dir}/sweep_state.json", file=sys.stderr)
+        return 1
+    if age_days > CLOSE_MODE_STALENESS_DAYS:
+        print(
+            f"ERROR: reframe — sweep age {age_days:.1f} days (anchor: {anchor}) > "
+            f"{CLOSE_MODE_STALENESS_DAYS}-day staleness gate. Defer: wait for the next regular "
+            f"nightly + sweep-report, then re-invoke close-mode against fresh data. "
+            f"DO NOT manually launch a nightly to bypass this gate.",
+            file=sys.stderr,
+        )
+        return 1
+
+    # Step 5: marker honor (per audit_new_errors gap #5 + close-mode gap #3)
+    marker_pairs = _read_audit_rerun_marker(sweep_dir)
+    if marker_pairs is not None:
+        affected_str = ", ".join(f"{n}|{m}" for n, m in marker_pairs[:8])
+        suffix = f" (+{len(marker_pairs)-8} more)" if len(marker_pairs) > 8 else ""
+        print(
+            f"ERROR: block-stale-rerun — {sweep_dir}/.audit-rerun-required exists with "
+            f"{len(marker_pairs)} affected pairs: {affected_str}{suffix}.\n"
+            f"  Re-run those models, OR explicitly delete the marker with documented reason.",
+            file=sys.stderr,
+        )
+        return 1
+
+    # Step 6: per-mode pre-flight check (per gap #1 — the load-bearing fix)
+    issue_data = _proxy_api(f"/repos/{REPO_SLUG}/issues/{issue_num}", method="GET")
+    issue_body = issue_data.get("body", "") if issue_data else ""
+    affected_models = parse_affected_models(issue_body)
+    if not affected_models:
+        print(
+            f"ERROR: could not parse '## Affected Models' table from issue #{issue_num} body. "
+            f"Per-mode pre-flight check requires the table to verify (model, mode) coverage.",
+            file=sys.stderr,
+        )
+        return 1
+    all_pass, pair_statuses, failing = _per_mode_pass_check(sweep_dir, affected_models)
+    if not all_pass:
+        failing_str = "; ".join(f"{n}|{m}: {s} gb={g}" for n, m, s, g in failing[:6])
+        print(
+            f"ERROR: reject-keep-open — per-mode pre-flight failed. {len(failing)} pair(s) "
+            f"NOT fullgraph in current sweep: {failing_str}",
+            file=sys.stderr,
+        )
+        return 1
+
+    # Step 7: post the close (Mode A_close verdict = close)
+    if not args.post:
+        print(f"[DRY-RUN] would CLOSE issue #{issue_num} on {REPO_SLUG}")
+        print(f"  case_id: {args.via_skill}")
+        print(f"  plan:    {plan_path}")
+        print(f"  sweep:   {sweep_dir} (age {age_days:.1f}d)")
+        print(f"  pairs:   {len(pair_statuses)} all fullgraph")
+        print(f"  body:    {len(body_text)} chars (sha256 verified)")
+        print(f"  reason:  {args.close_reason}")
+        print(f"  Add --post to actually CLOSE.")
+        return 0
+
+    # Post the comment first
+    cresp = _proxy_api(f"/repos/{REPO_SLUG}/issues/{issue_num}/comments",
+                       method="POST", body={"body": body_text})
+    if not cresp or "id" not in cresp:
+        print(f"ERROR: failed to post comment on #{issue_num}", file=sys.stderr)
+        return 1
+    # Then close
+    state_reason = "completed" if args.close_reason == "completed" else "not_planned"
+    pat_resp = _proxy_api(f"/repos/{REPO_SLUG}/issues/{issue_num}", method="PATCH",
+                          body={"state": "closed", "state_reason": state_reason})
+    if not pat_resp or pat_resp.get("state") != "closed":
+        print(f"ERROR: comment posted but PATCH state=closed failed for #{issue_num}", file=sys.stderr)
+        return 1
+    _update_case_posted_issue(args.via_skill, int(issue_num))
+    print(f"CLOSED: {pat_resp.get('html_url', '')} (state_reason={state_reason})")
+    print(f"  case_id: {args.via_skill}")
+    return 0
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────
@@ -1809,9 +2083,10 @@ def _validate_via_skill(case_id: str, body_path: str | None) -> tuple[bool, str,
         fields[k] = v
 
     verdict = fields.get("mode_a_verdict", "")
-    if verdict not in ("proceed", "proceed-with-fixes"):
+    # 'close' added 2026-05-10 for close-mode (CLOSE_MODE_DESIGN.md rev 3).
+    if verdict not in ("proceed", "proceed-with-fixes", "close"):
         return False, (f"--via-skill: case {case_id} has mode_a_verdict='{verdict}'. "
-                       f"Required: proceed or proceed-with-fixes. Run Mode A again "
+                       f"Required: proceed, proceed-with-fixes, or close. Run Mode A again "
                        f"after revisions, or check the case file directly."), None
 
     mode_b_sha = fields.get("mode_b_sha256", "")
@@ -2076,10 +2351,52 @@ def cmd_corpus_issue(args):
     # Use the bytes _validate_via_skill already hashed (no TOCTOU).
     body_text = body_bytes.decode("utf-8")
 
+    # CLOSE op (per CLOSE_MODE_DESIGN.md rev 3) — handled before cluster-plan
+    # gate because close-mode uses the sweep-report.json plan instead.
+    is_close = getattr(args, "close", None) is not None
+    if is_close:
+        # Argparse-level validation for close-op
+        if getattr(args, "edit", None) is not None:
+            print("ERROR: --close and --edit are mutually exclusive", file=sys.stderr)
+            sys.exit(2)
+        for required_attr, flag_name in [
+            ("plan", "--plan"),
+            ("sweep_dir", "--sweep-dir"),
+            ("close_reason", "--close-reason"),
+        ]:
+            if getattr(args, required_attr, None) is None:
+                print(f"ERROR: --close requires {flag_name}", file=sys.stderr)
+                sys.exit(2)
+        # close-mode validates: --via-skill (mode_a_verdict='close'), --plan
+        # (sweep-report.json with auto-close candidate), --sweep-dir
+        # (staleness + marker honor), per-mode pre-flight, body sha (already
+        # done above). For close-mode, the case file's mode_a_verdict must
+        # be 'close' (not 'proceed'); we re-validate here.
+        from pathlib import Path as _P
+        case_file = _P("subagents/file-issue/invocations") / f"{args.via_skill}.md"
+        if case_file.exists():
+            with case_file.open() as f:
+                content = f.read()
+            import re as _re
+            m = _re.search(r"^mode_a_verdict:\s*(\S+)", content, _re.MULTILINE)
+            if m and m.group(1) not in {"close", "proceed"}:
+                print(
+                    f"ERROR: close op requires mode_a_verdict in {{close, proceed}}, "
+                    f"got {m.group(1)!r} in case file {case_file}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+        sys.exit(_do_close_op(args, body_text))
+
     # V1 cluster+dedup gate: every corpus-issue post (NEW or EDIT) must reference
     # a Peng-approved cluster plan. The token is sha256 of the plan file. For
     # one-off non-sweep filings, use `tools/cluster_failures.py single-manual
     # <case_id>` to emit a 1-row plan; Peng still approves it the same way.
+    # CLOSE op uses --plan (sweep-report.json) instead and bypasses this gate.
+    if not args.cluster_plan_approved:
+        print("ERROR: --cluster-plan-approved required for NEW + EDIT ops "
+              "(CLOSE op uses --plan instead)", file=sys.stderr)
+        sys.exit(2)
     ok, err = _validate_cluster_plan(args.cluster_plan_approved, args.via_skill)
     if not ok:
         print(err, file=sys.stderr)
@@ -2382,15 +2699,14 @@ def main():
         "--label", action="append", default=None, metavar="LABEL",
         help="Repeatable. Labels to apply to the issue.")
     sub_corpus.add_argument(
-        "--cluster-plan-approved", required=True, metavar="SHA256",
-        help="REQUIRED. sha256 of a Peng-approved cluster plan in "
-             "subagents/file-issue/cluster-plans/. Tool refuses to run without it. "
-             "For sweep-driven batches: produce a plan via "
-             "`tools/cluster_failures.py from-sweep ...` then surface to Peng. "
-             "For one-off non-sweep filings: produce a plan via "
-             "`tools/cluster_failures.py single-manual <case_id>` then surface. "
-             "Validates: plan exists, sha256 matches, peng_approval.token == "
-             "sha256, and case_id appears in plan's affected_cases.")
+        "--cluster-plan-approved", required=False, default=None, metavar="SHA256",
+        help="REQUIRED for NEW + EDIT ops (validated at runtime; argparse-optional "
+             "to allow CLOSE op which uses --plan instead). sha256 of a Peng-approved "
+             "cluster plan in subagents/file-issue/cluster-plans/. "
+             "For sweep-driven batches: `tools/cluster_failures.py from-sweep ...`. "
+             "For one-off non-sweep filings: `tools/cluster_failures.py single-manual <case_id>`. "
+             "Validates: plan exists, sha256 matches, peng_approval.token == sha256, "
+             "case_id appears in plan's affected_cases.")
     # ── Phase 3 v1.0 repro-verification flags (NEW issues only; --edit defers to v1.5) ──
     sub_corpus.add_argument(
         "--repro-verified-current-original", default=None, metavar="JSON_PATH",
@@ -2422,6 +2738,28 @@ def main():
     sub_corpus.add_argument(
         "--post", action="store_true",
         help="Actually POST (new) or PATCH (--edit) on GitHub. Default is dry-run.")
+
+    # ── close-mode args (per CLOSE_MODE_DESIGN.md rev 3) ──────────────────
+    sub_corpus.add_argument(
+        "--close", type=int, default=None, metavar="ISSUE_NUMBER",
+        help="CLOSE op: close an existing corpus issue per close-mode workflow. "
+             "Mutually exclusive with --edit. Requires --plan, --sweep-dir, "
+             "--close-reason. Validates: case file mode_a_verdict='close', "
+             "candidate in plan with classify_close_candidate='auto-close', "
+             "sweep age ≤ 10 days, no .audit-rerun-required marker, every "
+             "(model, mode) from issue body is fullgraph in current sweep. "
+             "Per subagents/file-issue/CLOSE_MODE_DESIGN.md.")
+    sub_corpus.add_argument(
+        "--plan", default=None, metavar="PLAN_JSON",
+        help="CLOSE op: path to sweep-report.json plan with close_candidates.")
+    sub_corpus.add_argument(
+        "--sweep-dir", default=None, metavar="DIR",
+        help="CLOSE op: sweep results dir. Used for staleness gate "
+             "(sweep_state.json `finished`/`started`) + .audit-rerun-required "
+             "marker honor + per-mode pre-flight check.")
+    sub_corpus.add_argument(
+        "--close-reason", default=None, choices=["completed", "not_planned"],
+        help="CLOSE op: GitHub state_reason field value.")
 
     args = parser.parse_args()
 

@@ -121,13 +121,15 @@ PLAN.md tracks which tools are built; this doc describes what each step DOES.
    - Some flipped, some still failing: invoke file-issue **edit-mode** (body update reflects new statuses).
    - None flipped: NO-ACTION.
 
-**Close-mode attribution tests (the routing layer's check before file-issue close-mode runs):**
-A sweep-data flip alone is insufficient evidence for a close. The router runs three tests; close-mode receives the verdict + framing:
-- **Test A:** re-run issue's MRE on CURRENT torch. If MRE still reproduces → NOT a close candidate (the gap is real; sweep flip is misleading).
-- **Test B:** re-run MRE on PRIOR torch + CURRENT transformers. If MRE no longer reproduces here either → root cause is transformers code drift. Close framing: `closed-as-not-applicable`.
-- **Test C:** re-run MRE on PRIOR torch + PRIOR transformers (original repro env). If still reproduces → torch attribution confirmed; close framing: `closed-as-completed (torch fixed)`. If no longer reproduces → model removed/rewritten; close framing: `closed-as-vacuous`.
+**Close criterion (corrected per Peng directive 2026-05-10 15:09 ET):**
+An issue is closeable when the ORIGINAL FAILED MODELS no longer reproduce on the latest nightly (or weekly sweep within a 7-10 day window). The semantics is "fixed on trunk" because we rarely fix issues on previous releases.
 
-Only Test C confirming "still reproduces in original env, no longer reproduces on current torch" justifies attribution to a torch fix. Other outcomes use different framings.
+- **Ground truth = original failed models in latest sweep**, NOT the MRE. The MRE is a developer investigation tool that may not completely represent the original failure even with our representative-MRE gate; relying on MRE for close decisions is a known failure mode.
+- **Strict criterion (v1):** ALL originally-affected (model, mode) pairs must be `fullgraph` in the latest sweep. Partial flip (some still breaking, or reclassified to a different non-fullgraph status) blocks auto-close — surface for human review.
+- **Staleness gate:** the sweep used to compute the close decision must be ≤ 10 days old. Older = re-run nightly + sweep_compare first.
+- The existing `tools/file_issues.py::classify_close_candidate` already implements the strict criterion; close-mode wraps it behind the file-issue audit chain (Mode A_close + Mode B_close + `--via-skill` gate).
+
+**Note on attribution:** the prior workflow doc described 3 attribution tests (current torch / prior torch + current transformers / prior torch + prior transformers) intended to distinguish torch-fix vs transformers-drift vs vacuous. That was incorrect for close-mode — it conflated brief-composition R3 (Dynamo-win attribution) with issue-close evidence. Closing only requires "original models pass on current trunk." Attribution semantics belong to brief composition, not closure.
 
 **For NEW patterns** (not tracked by any open issue): invoke file-issue Step 0 (cluster + dedup). All ceremony — cluster plan content, human approval mechanism, case-file schema, posting commands — lives in `subagents/file-issue/SKILL.md`.
 

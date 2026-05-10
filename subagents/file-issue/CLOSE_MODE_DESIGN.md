@@ -1,185 +1,160 @@
-# file-issue close-mode — design
+# file-issue close-mode — design (rev 2)
 
 **Author:** Otter
-**Date:** 2026-05-10
-**Status:** DRAFT — awaiting Peng review
+**Date:** 2026-05-10 (rev 2: 15:15 ET — simplified per Peng directives 15:09 ET)
+**Status:** Implementation in flight
 **WS1 task:** "Build file-issue close-mode workflow"
-**Related spec:** `sweep/WEEKLY_SWEEP_WORKFLOW.md` Step 2c (close-mode attribution tests A/B/C)
-**Related skill:** `subagents/file-issue/SKILL.md` (Mode A / Mode B for NEW + EDIT; close-mode extends both)
 
 ---
 
+## What changed from rev 1
+
+Rev 1 designed close-mode around 3 attribution tests via `tools/verify_repro.py` (current torch / prior torch + current transformers / prior torch + prior transformers), modeled on `methodology.md` R3 brief-composition rule. **Rev 2 corrects two errors in rev 1:**
+
+1. **Wrong evidence basis.** Rev 1 used MRE re-runs as ground truth. Per Peng directive 15:09 ET, the MRE is a developer investigation tool — it may not completely represent the original failure, and relying on it for close decisions is a known failure mode. The ORIGINAL FAILED MODELS in the latest sweep are the ground truth.
+2. **Wrong evidence depth.** Rev 1 demanded attribution (torch vs transformers vs vacuous). Per Peng directive 15:09 ET, the close semantics is "fixed on trunk" — we rarely fix on prior releases. Attribution semantics belong to brief composition (R3 / Section 2 "Pure Dynamo wins"), NOT to issue closure.
+
+Net: close-mode shrinks from ~600 LOC to ~150 LOC. No verify_repro. No prior-torch venvs needed. Most of the check ALREADY exists as `tools/file_issues.py::classify_close_candidate`.
+
 ## What it does
 
-Adds **close-mode** to the file-issue subagent so closing an issue goes through the same per-case rigor as filing one: Mode A_close (adversary reviews the close decision) + Mode B_close (assembles the closing comment with structured audit chain) + `tools/file_issues.py corpus-issue --close <num> --via-skill <case_id>` enforcement.
+Wraps the EXISTING close-stale check (`classify_close_candidate` ⇒ `auto-close` requires ALL originally-affected models to be `fullgraph` in current sweep) behind the file-issue audit chain:
 
-This **replaces** today's bypass-prone paths:
-- `tools/file_issues.py close-stale --apply` (no `--via-skill` gate; can close in bulk without per-issue evidence)
-- One-off `urllib` / `gh` / Python scripts (the path that produced the 2026-05-10 morning incident — closed #21, #26, #27 without surfacing evidence to Peng)
+- Mode A_close (adversary) verifies the disposition + staleness; emits one of 4 verdicts
+- Mode B_close (assembler) writes the closing comment with per-model evidence table
+- `tools/file_issues.py corpus-issue --close --via-skill <case_id>` enforces case-file presence + verdict + body sha
+- `<sweep_dir>/.audit-rerun-required` marker is honored (refuses if present, per audit_new_errors gap #5 deferred)
 
-Both bypass paths are the failure mode this design exists to mechanically prevent.
+## Inputs
 
-## The 3 attribution tests (workflow doc § Step 2c)
+1. `<sweep_dir>/sweep-report.json` — the close_candidates plan (already produced by `tools/file_issues.py sweep-report`)
+2. `<sweep_dir>/sweep_state.json` → `versions.torch` + `started` (for staleness gate)
+3. `<sweep_dir>/.audit-rerun-required` (optional) — marker honored
+4. The case file at `subagents/file-issue/invocations/<case_id>.md`
 
-A sweep-data flip alone is NOT sufficient evidence. Mode A_close runs three tests against the candidate issue's MRE. The verdict drives the close framing:
-
-| Test | What it runs | Outcome → Framing |
-|---|---|---|
-| **A** | MRE on CURRENT torch | Still reproduces → NOT a close candidate (sweep flip is misleading; the gap is real). Verdict: `reframe-or-reject`. |
-| **B** | MRE on PRIOR torch + CURRENT transformers | No longer reproduces here either → root cause is transformers code drift. Framing: `closed-as-not-applicable`. |
-| **C** | MRE on PRIOR torch + PRIOR transformers (original repro env) | Still reproduces → torch attribution confirmed; framing: `closed-as-completed (torch fixed)`. No longer reproduces → model removed/rewritten; framing: `closed-as-vacuous`. |
-
-**Only Test C confirming "still reproduces in original env, no longer reproduces on current torch" justifies attribution to a torch fix.**
-
-The tool reuses `tools/verify_repro.py` (already exists — used by NEW path Step 2.5) for each test cell. Three test cells per close-candidate × 1 venv each = 3 verify_repro JSON files per case, written to `/tmp/file-issue-<case_id>-close-test-{a,b,c}.json`.
+No verify_repro. No model re-runs. No GitHub API beyond the close+comment posts.
 
 ## Mode A_close (adversary)
 
-Runs in the same shape as Mode A for NEW (Step 3 in `subagents/file-issue/SKILL.md`), but the verdict space is different:
+Verdict space (4):
+- **`close`** — `classify_close_candidate(candidate) == "auto-close"` AND sweep age ≤ 10 days AND no `.audit-rerun-required` marker
+- **`reject-keep-open`** — `classify_close_candidate` returned `review-needed:*` (partial flip, still breaking, reclassified, etc.). Surface to human; do not close.
+- **`reframe`** — sweep age > 10 days. Action: re-run nightly + sweep_compare; re-invoke close-mode against fresh data.
+- **`block-stale-rerun`** — `.audit-rerun-required` marker present. Action: re-run affected models OR delete the marker with documented reason (`--ack-stale-rows-noop`); then re-invoke.
 
-```
-VERDICT: close-completed | close-not-applicable | close-vacuous | reject-keep-open | reframe
-GAPS_FOUND: <list>
-ATTRIBUTION_TEST_RESULTS:
-  test_a (current torch):       reproduces | does-not-reproduce
-  test_b (prior torch + cur tx): reproduces | does-not-reproduce
-  test_c (prior torch + prior tx): reproduces | does-not-reproduce
-  attribution: torch | transformers | vacuous | unknown
-REJECT_REASON: <only if reject-keep-open — paragraph>
-```
-
-Verdict mapping:
-- All 3 tests run + Test A does-not-reproduce + Test C reproduces → `close-completed` (torch attribution confirmed)
-- Test A does-not-reproduce + Test B does-not-reproduce → `close-not-applicable` (transformers drift)
-- Test A does-not-reproduce + Test C does-not-reproduce → `close-vacuous` (model removed/rewritten)
-- Test A reproduces → `reject-keep-open` (gap is real; sweep flip is misleading)
-- Tests can't be run (MRE corrupted, prior venvs unavailable) → `reframe`
-
-The persona update is anchored on the same 4 criteria as NEW + EDIT — closing is a body-emitting operation, so calibration applies. Closing comment must:
-1. Self-contained (audit chain readable without external context)
-2. Concise (1-2 paragraph close justification + table; no story)
-3. Trustworthy (cites the 3 verify_repro JSONs by sha256)
-4. Actionable-as-reproducible (a maintainer who disputes the close can reproduce by re-running the 3 tests with the cited venvs)
+The verdict is mechanical given the inputs — Mode A_close is largely a check, not a judgment call.
 
 ## Mode B_close (assembler)
 
-Same shape as Mode B for NEW + EDIT; emits a closing comment body (not a new issue body) with the structured audit chain:
+Emits the closing comment body with sha-pinned audit chain:
 
-```
-TITLE: (unused — close operation, no title change; field included for schema parity but ignored at posting time)
-LABELS: (unused; same)
-BODY:
+```markdown
 ## Auto-closed by Step 2c on YYYY-MM-DD
 
-This issue tracked <N> model(s) breaking on `<pattern>`. Per file-issue close-mode (case_id=<case_id>):
+This issue tracked <N> originally-affected (model, mode) pairs. On the latest
+nightly sweep (`<sweep_label>`, torch <ver>, sweep age <D> days), **all <N>
+pairs now compile fullgraph** — the underlying gap appears to be fixed on
+trunk.
 
-**Sweep evidence (current week):**
-- Affected models <flipped|partial flipped|removed>: <list>
-- Source sweep dir: `<sweep_dir>`
+**Per-model status (current sweep):**
+| Model | Mode | Baseline status | Current status |
+|---|---|---|---|
+| ModelA | eval | eager_error    | fullgraph |
+| ModelA | train | graph_break   | fullgraph |
+| ...
 
-**MRE re-verification (3 attribution tests):**
-| Test | Env | Outcome |
-|---|---|---|
-| A | torch <current_ver> + transformers <current_ver>     | does-not-reproduce |
-| B | torch <prior_ver>   + transformers <current_ver>     | does-not-reproduce |
-| C | torch <prior_ver>   + transformers <prior_ver>       | reproduces         |
+**Closing as fixed on trunk.** Per the corpus close-mode policy, attribution
+(torch vs transformers vs vacuous) is NOT investigated at close time — we
+rely on "original models now pass on current trunk" as the close criterion.
+Attribution-level claims (e.g., "Dynamo win") live in the weekly brief.
 
-**Attribution:** torch (test C reproduces in original env; test A does not on current torch).
-**Close framing:** closed-as-completed.
+If this is incorrect (e.g., the gap moved to a different model class, or the
+auto-detection missed a related symptom), reopen and add a `do-not-auto-close`
+label.
 
-If this is incorrect (e.g., the gap moved to a different model class), reopen and add `do-not-auto-close`.
-
-<sub>verify_repro JSONs: test_a sha=…, test_b sha=…, test_c sha=…</sub>
+<sub>via subagents/file-issue close-mode case_id=<case_id> sweep=<sweep_dir>
+sweep_age_days=<D> torch=<ver></sub>
 ```
 
-The footer references the verify_repro JSONs by sha256 — the case file's `body_sha256` covers the full body so any tampering between Mode B output + post is caught at the CLI gate.
-
-Failure markers (`OVERSCOPE`, `MRE_TOO_LARGE`, `VALIDATION_FAILED`, `MODE_NOT_SPECIFIED`) carry over from Mode B for NEW with the same disposition rules (`subagents/file-issue/SKILL.md` Step 4.5).
+Mode B_close failure markers (carry over from Mode B for NEW):
+- `OVERSCOPE` — comment >4 paragraphs after self-revision (rare for close — body is templated)
+- `VALIDATION_FAILED` — pre-submission gate flag (PII, missing fields, etc.)
 
 ## Tooling — `tools/file_issues.py corpus-issue --close`
 
-New subcommand mode. Argparse signature:
+Argparse signature:
 
 ```
 python3 tools/file_issues.py corpus-issue \
     --close <issue_num> \
     --via-skill <case_id>           # required=True
-    --close-test-a <json_path>      # required=True
-    --close-test-b <json_path>      # required=True
-    --close-test-c <json_path>      # required=True
-    --body <body_path>              # required=True
-    --close-reason completed|not_planned   # required=True (GitHub state_reason field)
+    --plan <sweep-report.json>      # required=True (close_candidates source)
+    --body <body_path>              # required=True (Mode B output)
+    --close-reason completed|not_planned   # required=True
 ```
 
 Validation BEFORE any GitHub API call:
-1. `--via-skill` case file exists; `mode_a_verdict in {close-completed, close-not-applicable, close-vacuous}`; `mode_b_sha256` non-empty
-2. `body_sha256` matches the actual body file (catches tampering)
-3. All 3 verify_repro JSONs exist + are valid + each cell's classification matches what Mode A_close recorded
-4. `--close-reason` is one of GitHub's accepted values (`completed` for `close-completed`, `not_planned` for the other two close framings)
+1. `--via-skill` case file exists; `mode_a_verdict == "close"`; `mode_b_sha256` non-empty
+2. `body_sha256` matches the actual body file
+3. `--plan` exists; close_candidates contains the issue number; `classify_close_candidate(candidate) == "auto-close"`
+4. Plan metadata `timestamp` is ≤ 10 days old (staleness gate)
+5. `<sweep_dir>/.audit-rerun-required` does NOT exist (where sweep_dir is derived from the plan path's parent)
+6. `--close-reason` ∈ {`completed`, `not_planned`}
 
-If any check fails, exit non-zero with a specific error. NO close performed.
+If any check fails, exit non-zero with a specific error. NO close performed. NO comment posted.
 
-Tested by `tools/test_file_issues.py::test_close_requires_via_skill_and_three_tests` and friends.
-
-## Migration of close-stale
-
-Today: `tools/file_issues.py close-stale --apply` walks plan candidates and closes in bulk via comment + PATCH state=closed (`tools/file_issues.py:1310-1352`). It has no `--via-skill` gate.
-
-Two-phase migration:
-1. **Phase A (this design):** add the `--close` subcommand with full close-mode gating. Update local CLAUDE.md trigger so any close operation (single or batch) MUST go through `--close --via-skill <case_id>`. Direct `urllib` / `gh` / one-off scripts FORBIDDEN (already in workflow doc § Step 2c § "No bypass paths").
-2. **Phase B (separate task):** rewrite `close-stale --apply` to invoke close-mode per-candidate (one case_id per issue), so the bulk operation respects per-issue rigor. UNTIL Phase B ships: `close-stale --apply` continues to be invoked ONLY by the cron prompt's wake step, and even then only with the dry-run output reviewed first. NO ad-hoc invocation by an agent.
-
-Phase B is a follow-up task; this design covers Phase A.
+Tested by `tools/test_file_issues.py::test_close_*` (5+ tests).
 
 ## Persona.md amendment
 
-Add a new section after Mode A / Mode B:
+Add a new section to `subagents/file-issue/persona.md` after Mode A / Mode B:
 
+```markdown
+## Mode A_close — adversary for close-mode
+
+[verdict space (close / reject-keep-open / reframe / block-stale-rerun),
+ input: candidate from sweep-report.json plan + sweep_state.json,
+ mechanical check: classify_close_candidate + staleness + marker]
+
+## Mode B_close — assembler for close-mode
+
+[body template, sha-pinned audit footer, failure markers]
 ```
-## Mode A_close — close-mode adversary
 
-[verdict space, attribution test outcomes, calibration anchored on 4 criteria]
+Persona changes go through adversary-review per local CLAUDE.md trigger.
 
-## Mode B_close — close-mode assembler
+## What this REPLACES
 
-[closing comment body template, sha256 footer convention, failure markers]
-```
+Today's close paths:
+1. `tools/file_issues.py close-stale --apply` — bulk auto-close, no `--via-skill` gate. **Phase A:** keep close-stale alive but ONLY invoked by the cron prompt's wake step (no ad-hoc agent invocation). **Phase B (separate task):** retrofit close-stale --apply to invoke close-mode per-candidate.
+2. One-off `urllib` / `gh` / Python scripts — FORBIDDEN per workflow doc § Step 2c "No bypass paths"; close-mode is the only sanctioned path.
 
-Persona changes go through adversary-review per local CLAUDE.md trigger (subagents/* persona = scoring logic).
+## Test plan (rev 2)
+
+7 tests for `tools/test_file_issues.py`:
+1. `test_close_requires_via_skill` — argparse refuses without `--via-skill`
+2. `test_close_requires_plan_and_body` — argparse refuses without those
+3. `test_close_refuses_non_close_verdict` — case file says `close`, but `classify_close_candidate` returns `review-needed:*` → tool refuses
+4. `test_close_staleness_gate_refuses_old_plan` — plan timestamp > 10 days → tool refuses
+5. `test_close_marker_present_blocks_close` — `.audit-rerun-required` exists → tool refuses
+6. `test_close_body_sha256_round_trip` — body modified after Mode B → tool refuses
+7. `test_close_reason_validation` — invalid `--close-reason` rejected at argparse
 
 ## Manual gates
 
-| Gate | What requires Peng approval |
-|---|---|
-| Cluster plan covering close candidates | Step 0c (existing — same as NEW path); the cluster plan's `affected_cases` includes the close case_ids |
-| Mode A_close verdict review | Implicit — Mode A's verdict is the gate; reject-keep-open requires no further action |
-| Mode B_close body review | Same as Mode B for EDIT — surface proposed closing body to Peng's space; wait for explicit approval; only then run `--close` |
-| External Engagement Approval | Per local CLAUDE.md — closing a corpus issue is below the threshold (own repo) but a posting block is still surfaced for visibility |
+- Mode A_close verdict review — implicit (verdict drives the action)
+- Mode B_close body review — surface proposed body to Peng's space; wait for explicit approval; THEN run `--close`
+- External Engagement Approval — corpus repo is below the gate threshold (own repo) but a posting block is still surfaced for visibility
 
-## Test plan
+## Implementation scope (rev 2)
 
-- Unit: `tools/test_file_issues.py::test_close_requires_via_skill_and_three_tests` — argparse refuses any close without `--via-skill` + 3 test JSONs
-- Unit: `test_close_refuses_on_test_a_reproduces` — case file says `mode_a_verdict=close-completed` but `close-test-a.json` shows `reproduces`; tool refuses (catches Mode A / actual divergence)
-- Unit: `test_close_body_sha256_round_trip` — body modified after Mode B output; tool refuses
-- Unit: `test_close_reason_validation` — invalid `--close-reason` rejected at argparse
-- Integration (against corpus repo, dry-run mode): walk an existing closed-then-reopened issue (#21, #26, or #27) through close-mode; verify the proposed close produces the right verdict + body without actually re-closing
+- `subagents/file-issue/persona.md`: ~50 lines added (Mode A_close + Mode B_close)
+- `tools/file_issues.py`: ~120 lines added (`--close` subcommand + 6-step validation + `.audit-rerun-required` honor)
+- `tools/test_file_issues.py`: ~150 lines added (7 tests)
+- Small edit to `subagents/file-issue/SKILL.md` (Step 5 authority gate row for close)
 
-## Risks + mitigations
+Estimated total: ~320 lines. Vs rev 1's ~600+ lines.
 
-| Risk | Mitigation |
-|---|---|
-| Prior venv unavailable for Test B/C | Mode A returns `reframe`; surfaces to Peng with the missing-venv evidence; close DOES NOT proceed (no escape hatch) |
-| Bulk close-stale path remains the bypass | Phase B follow-up; Phase A makes the safe path obvious AND adds the trigger so agents reach for `--close --via-skill` first |
-| Close-mode post-validation is heavier than NEW post-validation (3 tests vs 4 cells; comparable cost) | Acceptable; close is a per-issue decision, not a batch — the per-case cost is amortized over the value of irreversible close decisions |
-| Close-completed claim later disputed by maintainer | Audit chain (3 verify_repro JSONs sha-pinned in body) lets a maintainer reproduce the test; `do-not-auto-close` reopen path documented in body |
+## Adversary-review case
 
-## Implementation scope
-
-- `subagents/file-issue/persona.md`: ~150 lines added (Mode A_close + Mode B_close blocks)
-- `tools/file_issues.py`: ~200 lines added (`--close` subcommand + validation gates)
-- `tools/test_file_issues.py`: ~100 lines added (4 new tests)
-- `subagents/file-issue/SKILL.md`: small edits (Step 5 authority gate row for close, +failure markers section pointer)
-- `sweep/WEEKLY_SWEEP_WORKFLOW.md`: small edit — Step 2c "(NOT YET BUILT)" → "shipped, see CLOSE_MODE_DESIGN.md"
-- Adversary-review on persona.md changes + on file_issues.py changes (both = scoring logic)
-
-Estimated effort: 6-8 focused hours including tests + adversary-review iterations.
+`adv-2026-05-10-152000-close-mode-design` — to be created with this implementation commit.
