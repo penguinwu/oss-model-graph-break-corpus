@@ -1,6 +1,6 @@
 # PLAN.md — corpus project working plan
 
-**Last updated:** 2026-05-10 12:05 ET (Otter)
+**Last updated:** 2026-05-10 12:11 ET (Otter)
 **Active workstreams:** 2 (cap). New workstreams go to Backlog until a slot opens.
 
 Read this FIRST when starting a session. State "Plan loaded: <current focus>" in the first message. Update after every completed task, every new task added, every scope change.
@@ -69,9 +69,13 @@ Execution of WS1's standard workflow on real data — without re-running the swe
 
 These are real proposed work but blocked on the 2-active-workstream cap. Promote one of these only when WS1 or WS2 finishes.
 
-- **Cluster-plan dashboard** — small script (~30 lines) that lists `subagents/file-issue/cluster-plans/*.yaml` files and classifies each as approved (has `peng_approval.token`) / pending Peng approval / expired. Currently 0 cluster plans on disk; only matters when cluster-driven issue filing ramps up. Without it, plans I file for Peng's approval can sit forgotten between sessions.
+- **Finish the NGB report and sweep analysis and issue opening.** The Nested Graph Break (NGB) verify gate sweep + analysis was started prior weeks; needs completion. Three components: (1) Compose the analysis report from the NGB-verify sweep results (which models have NGB issues, which break_reason patterns dominate, what's the impact on overall fullgraph rate). (2) Open new dynamo issues for any patterns surfaced by the analysis that aren't already tracked (use file-issue subagent workflow per the gating rules). (3) Cross-reference NGB findings against the regular sweep cohort to see whether NGB enabling changes the per-model status. Status: prior NGB-verify sweep result data exists somewhere in `sweep_results/experiments/`; needs locating + analyzing. Owner: Otter.
 
-**No "weekly workflow retrospective" task** — per Peng directive 2026-05-10 12:04 ET, when learning is discovered we encode it into the workflow (fix the tool / update the process spec) immediately, not into a reflection log. Reflection logs are pacifier; surface-and-fix is the work.
+- **Improve adversarial agent system using Claude-generated agent role PDF.** The current `subagents/adversary-review/` skill has a persona.md that I wrote based on lessons from the corpus work. Anthropic has published an agent-design PDF (need to locate the specific URL Peng will share OR find via metamate). Task: read that PDF, identify gaps in our adversary-review persona compared to Anthropic's recommendations (e.g., better adversary prompting techniques, better gap-classification taxonomy, structured failure modes the adversary should probe for), and refactor `subagents/adversary-review/persona.md` to incorporate those improvements. Goal: a more reliable adversary that catches more design flaws before code is written.
+
+- **Audit entire project using the new (improved) adversarial agent system.** Once the adversary improvements above land, run a full-project audit. Step 1: define ~3-5 typical user journeys that the project supports (e.g., "Peng asks Otter to surface this week's regressions" / "Otter files a new dynamo issue for a pattern observed in the sweep" / "Otter responds to a user-group question about a specific model" / "Otter triages a new transformers release that added 20 models"). Step 2: for each journey, walk the codebase + tools + workflows that participate, invoke adversary-review on each touch point. Step 3: compile findings into a per-journey gap report with prioritized fix tasks. The journey definitions become part of `sweep/WEEKLY_SWEEP_WORKFLOW.md` (or a new `docs/USER_JOURNEYS.md`). Goal: surface project-wide gaps that single-component audits miss.
+
+- **Design an orchestrator agent to babysit the entire weekly sweep workflow to completion.** Today the weekly sweep workflow (Steps 1-2d in WS1) requires Peng to intervene at multiple gates (close approvals, brief approvals, error triage decisions). Goal: a single orchestrator agent that runs the full pipeline autonomously from Saturday night launch through Sunday brief posting, surfacing to Peng ONLY at pre-defined approval gates (cluster plan approval per file-issue, brief approval before posting). Architecture sketch: separate "operator" agent (long-running, owns the workflow state machine) from the existing per-step subagents (file-issue, mre, adversary-review). The operator decides which subagent to invoke for which step, accumulates state across the workflow, surfaces gates with full context. Replaces the current pattern of Otter-in-the-loop for every step. Design proposal first; implementation deferred until WS1 Step 2 tools all ship (since the orchestrator sequences those tools).
 
 ---
 
