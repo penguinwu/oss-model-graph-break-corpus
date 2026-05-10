@@ -157,7 +157,18 @@ EOF
         exit 99
         ;;
     *ALIVE*|*MISSING_STATE*|"")
-        # Healthy or sweep-not-yet-started. Silent.
+        # Healthy or sweep-not-yet-started. Post a heartbeat ONLY when
+        # progress was made this cycle (observer line contains
+        # "+N since last check"). Silent on no-progress ALIVE — those
+        # cycles add nothing for the reviewer, and STALLED has its own arm.
+        # Reason: the reviewer is actively waiting for completion during
+        # explain phase; per-cycle progress (e.g. done=73/1474 +5) is the
+        # heartbeat. Phase-agnostic so it covers identify too.
+        case "$WATCHDOG_OUT" in
+            *"since last check"*)
+                gchat send "$GCHAT_SPACE" "[🦦 watchdog] $WATCHDOG_OUT" --as-bot || true
+                ;;
+        esac
         exit 0
         ;;
     *)
