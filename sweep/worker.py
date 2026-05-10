@@ -692,7 +692,11 @@ def _fix_config(model_name, config):
 
     # --- Mistral3/LightOnOcr: default image_size=1540 creates too many patches ---
     # (1540/14)^2 = 12100 patches → 3025 features per image. Cap to 224.
-    if name_lower in ("mistral3model", "lightonocrmodel"):
+    # 2026-05-10: extended to FCG variants too (mistral3forconditionalgeneration).
+    # Without this, default 1540 image_size produces 131072 features vs 129 tokens
+    # → eager_error "Image features and image tokens do not match".
+    if name_lower in ("mistral3model", "mistral3forconditionalgeneration",
+                      "lightonocrmodel", "lightonocrforconditionalgeneration"):
         vision_cfg = getattr(config, "vision_config", None)
         if vision_cfg:
             vision_cfg.image_size = 224
@@ -1501,8 +1505,16 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
             # Default: 2D (batch, seq_len)
             inputs = {"past_values": torch.randn(B, seq_len, device=device)}
     elif input_type == "audio_codec":
-        # Audio codec models (Encodec, DAC, Xcodec, Mimi) — raw waveform
-        inputs = {"input_values": torch.randn(B, 1, 16000, device=device)}
+        # Audio codec models (Encodec, DAC, Xcodec, Mimi, HiggsAudioV2Tokenizer) — raw waveform.
+        # Default 16000 samples = 1s @ 16kHz works for most. HiggsAudio needs 24kHz +
+        # alignment to internal stride product (320 from acoustic downsampling), so use
+        # 24000 samples (= 1s @ 24kHz) — divisible by 320, matches the model's actual SR.
+        sr = getattr(config, "sample_rate", None) or getattr(config, "sampling_rate", 16000)
+        # Pick a length that's both ≥1s AND divisible by the downsampling product
+        # (default 320 for most codec models). 1s@SR = SR samples; if SR % 320 != 0,
+        # round up to next multiple of 320.
+        n_samples = sr if sr % 320 == 0 else ((sr // 320) + 1) * 320
+        inputs = {"input_values": torch.randn(B, 1, n_samples, device=device)}
     elif input_type == "audio":
         # Audio models have varied input formats
         model_type = getattr(config, "model_type", "")
@@ -3153,7 +3165,10 @@ def _detect_hf_input_type(model_name, config):
         return "time_series"
 
     # Audio codec models (encode/decode raw waveforms, NOT text)
-    audio_codec_keywords = ["encodec", "dac", "xcodec", "mimi"]
+    # higgsaudiov2tokenizer added 2026-05-10 — same input shape as encodec/dac/xcodec/mimi
+    # (B, 1, T) raw waveform; was classified as plain "audio" and got 2D fallback
+    # which failed `channels != 1` check at modeling_higgs_audio_v2_tokenizer.py:534.
+    audio_codec_keywords = ["encodec", "dac", "xcodec", "mimi", "higgsaudiov2tokenizer"]
     model_type_lower = getattr(config, "model_type", "").lower()
     if any(kw in name_lower for kw in audio_codec_keywords) or any(kw in model_type_lower for kw in audio_codec_keywords):
         return "audio_codec"
