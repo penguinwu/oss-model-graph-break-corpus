@@ -1,194 +1,236 @@
-# Weekly Sweep Workflow — Current State + Gap Analysis
+# Weekly Sweep Workflow
 
-**Status:** DRAFT for review (Peng) per directive 2026-05-10 11:03 ET ("encode the right process for this workflow that we repeat every week ... runs smoothly with little intervention from me").
+The standard repeated weekly process for the corpus project. Source of truth for what happens, in what order, with what tools and what manual gates.
 
-**Goal:** A standard weekly sweep workflow that runs autonomously, with Peng intervening only at pre-defined gates (cluster-plan approval, brief approval, external posts).
-
-**Author note:** This is a READ-ONLY pass. No implementation. Surfacing for Peng's review of the gap inventory + step-by-step plan.
+**Goal:** the workflow runs autonomously from Saturday-night sweep launch to Sunday brief post. Manual approvals required only at predefined gates (cluster plan, brief approval, external posts).
 
 ---
 
-## Workflow as Peng described it (2026-05-10 11:03 ET)
+## The steps
 
-| Step | What | Where we are |
-|---|---|---|
-| 1 | Run sweep + collect results.jsonl with errors / GB counts / fullgraph counts | **WE ARE HERE** — sweep in explain phase. Watchdog just fixed today. |
-| 2a | New errors triage → (infra fix) OR (open new issue candidate) | NOT STARTED |
-| 2b | New models triage → tier (large/very_large/regular), known_errors, skip_models, file infra fixes | NOT STARTED |
-| 2c | Walk all dynamo issues → close / edit / open new (using gated file-issue workflow) | I JUMPED HERE EARLY — bypassed gates, had to revert |
-| 2d | Brief report comparing to baseline (kept in repo / posted upon Peng approval) | NOT STARTED |
+```
+Step 1  — Run sweep + collect results
+Step 2a — New errors triage
+Step 2b — New models triage
+Step 2c — Walk all dynamo issues (close / edit / open)
+Step 2d — Compose brief report
+Step 3  — Learning + encoding
+```
 
-The unit of repeated weekly work is Steps 1-2d, in order. Any time we skip the order or bypass a gate, we accumulate one-off noise that doesn't compound into autonomy.
-
----
-
-## Inventory: what infrastructure exists today
-
-### Step 1 (Run sweep)
-
-| Component | What it does | Status |
-|---|---|---|
-| `tools/run_experiment.py nightly` | End-to-end pipeline (refresh → preflight → canary → sweep → close-stale dry-run) | EXISTS |
-| `nightly-sweep` cron (Sat 8 PM ET) | Launches detached pipeline; schedules wake-cron at +4h for close-stale review | EXISTS |
-| `sweep/run_sweep.py` orchestrator | identify pass + auto-retry-timeout + auto-retry-errors phases | EXISTS |
-| `sweep/sweep_watchdog.py` (v3, today) | Stateless observer: ALIVE/STALLED/DEAD/COMPLETE with tier-aware threshold | JUST SHIPPED |
-| `sweep/sweep_watchdog_cycle.sh` (v3, today) | Cron wrapper: case-statement dispatch + `.resume_in_flight` marker mechanism | JUST SHIPPED |
-| `sweep/run_sweep.py::_is_retry_eligible` | Auto-retry whitelist (OOM, subprocess crashes, CUDA-assert) | JUST SHIPPED |
-| `sweep/skip_models.json` | Skip list (BLT, Gemma3n, etc.) | EXISTS |
-| `sweep/known_errors.json` | Known eager/create_error suppressions with version filter | EXISTS |
-| `sweep/large_models.json` | Tier registry (large/very_large) — **NOT YET WIRED into nightly pipeline** | EXISTS, scheduled for tomorrow per `TIMEOUT_PROPAGATION_DESIGN.md` |
-
-**Gaps in Step 1:**
-- ⚠ Per-model timeout NOT yet enforced in nightly pipeline (tomorrow's task; design doc pending Peng review).
-- ⚠ Watchdog v3 untested in a real death scenario; verified only via marker-grace + stale-marker scenarios this morning.
-
-### Step 2a (New errors triage)
-
-| Component | What it does | Status |
-|---|---|---|
-| Walk `identify_streaming.jsonl` for HF eager_error / create_error not in known_errors/skip_models | Manual one-off Python script today | **MISSING — should be `tools/audit_new_errors.py`** |
-| Triage decision per error: (fix-infra) / (add-known-errors) / (add-skip-models) / (file-new-issue) | Manual judgment | **MISSING — no tracking, no audit trail** |
-| Infra fix workflow: edit `sweep/worker.py` (or equivalent), test, commit | Manual today | EXISTS as discipline; no automation |
-
-**Gaps in Step 2a:**
-- ⚠ No `audit_new_errors.py` tool. Each week I re-write the same Python script.
-- ⚠ No structured triage tracker. Decisions live in commit messages, not in a queryable place.
-- ⚠ No "new error" definition: is it "not in known_errors AND not in skip_models AND not in last week's results"? Each session I redefine this.
-
-### Step 2b (New models triage)
-
-| Component | What it does | Status |
-|---|---|---|
-| Detect new models added since last sweep | None — `tools/sweep_compare.py` shows cat 4 (NEW only in current) | PARTIAL |
-| Per-model triage: tier classification, known_errors entry, skip_models entry, fixture fix | Manual today | **MISSING — no tool** |
-| Fix create_errors before declaring model ready for sweep | Per Peng directive 2026-05-10 ("create_errors are entirely our infra's fault") | **MISSING — no enforcement** |
-
-**Gaps in Step 2b:**
-- ⚠ `sweep_compare.py --check-only` requires explain pass to pass invariants; can't pre-audit just from identify.
-- ⚠ For each new model, the triage path is: try eager → try compile → measure GPU mem → assign tier. No tool that walks this.
-- ⚠ create_errors on new models should BLOCK adding the model to the cohort until fixed; today there's no enforcement.
-
-### Step 2c (Issue actions: close / edit / open)
-
-| Component | What it does | Status |
-|---|---|---|
-| `subagents/file-issue/` Mode A + Mode B | Gated NEW issue workflow with adversary + assembler + verify_repro × 4 | EXISTS |
-| `tools/file_issues.py corpus-issue --new` | Posts NEW issue, gated by --via-skill + --cluster-plan-approved + 4 repro JSONs | EXISTS |
-| `tools/file_issues.py corpus-issue --edit <num>` | EDITs existing issue, gated by --via-skill + --cluster-plan-approved (no repro gate per v1.0) | EXISTS |
-| `tools/file_issues.py close-stale --plan <sweep-report>` | Bulk close-with-comment for issues whose all-affected models now compile fullgraph | **GAP: NO --via-skill gate** |
-| `subagents/file-issue/` CLOSE mode | Gated CLOSE workflow with adversary review of the close evidence + MRE re-verification | **MISSING (deferred to v1.5 per SKILL.md)** |
-| `tools/file_issues.py corpus-issue --close <num>` | CLI subcommand to close an issue with audit comment | **MISSING** |
-| `tools/cluster_failures.py` | Cluster sweep failures into batches; emit cluster plan for Peng approval | EXISTS |
-| `tools/dedup_search.py` | Dedup against existing open issues for cluster plan | EXISTS |
-
-**Gaps in Step 2c (HIGHEST PRIORITY — this is what bit us this morning):**
-- ⚠ **`close-stale` has no per-issue review gate.** Bulk-close with criterion "all models flipped fullgraph" is mechanical — but the AUDIT comment makes a causal claim ("torch fixed the gap") that R3 (weekly-sweep-brief methodology) requires verifying via MRE re-run.
-- ⚠ **`subagents/file-issue/` deliberately defers CLOSE to v1.5.** Today there is NO gated close workflow at all. close-stale fills the bulk-action gap but skips per-issue rigor.
-- ⚠ When I bypassed both today, I made data-driven decisions but skipped the causal-attribution rigor → had to revert.
-
-### Step 2d (Brief report)
-
-| Component | What it does | Status |
-|---|---|---|
-| `skills/weekly-sweep-brief/SKILL.md` | 7-step workflow: gather data → verify attribution → segment per-pattern → umbrella-split → compose → self-check → post | EXISTS |
-| `template.md` | 8-section structure: Headline, Wins, GB-reduction, Regressions, Issues, New-models, New-patterns, Actionable | EXISTS |
-| `methodology.md` | R1-R8 hard rules + S1-S4 soft rules + self-check checklist (12 items) | EXISTS |
-| `tools/sweep_compare.py` | Single source of truth (R1) — apple-to-apple comparison with invariant check | EXISTS |
-| `tools/post_to_feedback.py` | Gated wrapper for user-group posts (R7) | EXISTS |
-
-**Gaps in Step 2d:**
-- ⚠ No `tools/compose_brief.py` that pre-fills the 8 sections from sweep_compare output. Each brief is hand-composed.
-- ⚠ Brief is composed AFTER all of Step 2c (close/edit/open) — but Step 2c is partially manual today, so brief composition has been blocked or delayed.
-- ⚠ The brief includes "Issues — actions taken (umbrella-split policy)" — Section 5. This section depends on Step 2c outputs being machine-readable. Today, Step 2c is ad-hoc, so Section 5 is hand-summarized.
-
-### Cross-cutting
-
-| Component | Status |
-|---|---|
-| `subagents/adversary-review/` | EXISTS — should be invoked for ANY substantive code/decision in this workflow |
-| `subagents/mre/` | EXISTS — provides verified MRE for issue bodies; ledger tracks every dogfood |
-| Weekly workflow checklist | **MISSING** — Steps 1-2d aren't documented as a single ordered checklist anywhere |
-| Workflow retrospective | **MISSING** — no place to log "this week I made these mistakes; here's how the workflow needs to harden" |
+PLAN.md tracks which tools are built; this doc describes what each step DOES.
 
 ---
 
-## Gap analysis — prioritized
+## Step 1 — Run sweep + collect results
 
-### Tier 1 (BLOCKING repeat weekly autonomy)
+**Trigger:** cron `nightly-sweep` fires Saturday 17:00 PT = 20:00 ET.
 
-1. **CLOSE workflow (Step 2c)** — file-issue skill defers to v1.5; close-stale has no per-issue gate. This is the gap that caused this morning's 3-issue rollback. Either:
-   - **Option A:** Extend `subagents/file-issue/` with a `mode: close` that adversary-reviews the close evidence + requires MRE re-verification on current torch (R3 enforcement). Then add `tools/file_issues.py corpus-issue --close <num> --via-skill ...` analogous to --edit.
-   - **Option B:** Extend `tools/file_issues.py close-stale` to require per-candidate `--via-skill` (auto-generated case_id from a file-issue close-mode invocation). Each candidate must have an MRE re-verification recorded in the case file before close.
-   - I lean Option A — it makes "close" a first-class file-issue operation with its own rigor; close-stale becomes a batch-launcher of close cases.
+**What runs today** (per current `tools/run_experiment.py nightly`):
+1. `refresh-nightly` (skipped on `--resume`) — pip-update venv to latest torch nightly.
+2. Preflight + canary — verify venv + GPU + corpus health on 1 model.
+3. Identify pass — every model in cohort × 2 modes (eval/train), `fullgraph=True`. Each row classified as `full_graph` / `graph_break` / `eager_error` / `create_error` / `worker_error` / `timeout`.
+4. Auto-retry-timeout pass — re-run timed-out models. **Today uses single `--timeout 180` for all models; the per-tier extension (3× / 9× from `large_models.json`) is NOT YET wired into this code path. Target state: extended per-tier timeout. See `sweep/TIMEOUT_PROPAGATION_DESIGN.md` for the implementation plan.**
+5. Auto-retry-errors pass — re-run only RETRY_ELIGIBLE failures (OOM, subprocess crashes, CUDA device-side assert) serially with 1 worker. Whitelist policy in `sweep/run_sweep.py::_is_retry_eligible`. Other eager/create errors are NOT retried (deterministic; fix root cause).
+6. Explain pass — for every `graph_break` model, capture detailed break-reason text via `TORCH_LOGS=graph_breaks` re-run.
 
-2. **New-errors triage (Step 2a)** — manual ad-hoc each week. Need:
-   - `tools/audit_new_errors.py <current-sweep-dir> <baseline-sweep-dir>` — emits structured candidate list (per error: model, mode, error message, current status in known_errors/skip_models, suggested triage class).
-   - Triage decisions tracked in `sweep/triage_decisions.jsonl` (or per-week dir under `sweep_results/nightly/<date>/triage.jsonl`).
-   - Each "fix-infra" decision creates a TODO that blocks the brief until resolved (or explicitly deferred with reason).
+**Convention for documenting target-vs-current state:** wherever the doc says "Today X; Target Y; see Z" it means X is what the implementation actually does AND a future agent must NOT assume Y is in effect. Y is what the WS1 task in PLAN.md will deliver.
 
-3. **Per-model timeout enforcement (Step 1)** — already designed (`TIMEOUT_PROPAGATION_DESIGN.md`); pending Peng review tomorrow morning per existing reminder cron.
+**Watchdog:** cron `sweep-watchdog-<DATE>` runs every 15 min. Reports ALIVE / STALLED / DEAD / COMPLETE. On DEAD: writes `.resume_in_flight` marker, auto-resumes via `tools/run_experiment.py nightly --force --resume`. Death-spiral guard: 3 consecutive failed resumes → escalate to human reviewer, no further auto-resume. Self-disables when `explain_results.json` is present.
 
-### Tier 2 (IMPROVES weekly experience but workable manually)
+**Output files** (in `sweep_results/nightly/<date>/`):
+- `identify_results.json` — final per-model status.
+- `identify_streaming.jsonl` — append-only as workers complete.
+- `explain_results.json` / `explain_checkpoint.jsonl` — break-reason details.
+- `auto_retry_timeout_checkpoint.jsonl`, `auto_retry_errors_checkpoint.jsonl`.
+- `retry_classification.jsonl` — what was retried vs skipped (whitelist decisions).
+- `sweep_state.json` — orchestrator status snapshot.
 
-4. **New-models triage (Step 2b)** — needs `tools/audit_new_models.py` to detect cohort additions/removals + propose tier classification.
+**Manual intervention required:** NONE in steady state. Watchdog handles death/stall; auto-retry handles transients. manual review only required on death-spiral escalation (rare).
 
-5. **`compose_brief.py`** — pre-fill the 8 brief sections from sweep_compare output. Currently the brief is hand-composed.
-
-6. **Weekly workflow checklist** — single canonical doc that lists Steps 1-2d in order with "what to run, what to surface, what gates to clear." Today the workflow lives across 6+ docs (this file, weekly-sweep-brief/SKILL.md, file-issue/SKILL.md, WORKFLOWS.md, cron prompts, ad-hoc memory).
-
-### Tier 3 (NICE-TO-HAVE)
-
-7. **Workflow retrospective** — append to `sweep/WEEKLY_RETROSPECTIVE.md` after every weekly cycle: what mistakes happened, what's the encoded learning?
-
-8. **Cluster-plan dashboard** — `subagents/file-issue/cluster-plans/` accumulates over time; eventually need a "what's pending Peng approval" view.
+**Gate to Step 2:** cron prompt's wake-cron at sweep-launch +4h triggers post-sweep step (close-stale dry-run today; eventually full Step 2 sequence).
 
 ---
 
-## Proposed next steps (for Peng to choose order)
+## Step 2a — New errors triage
 
-I'd ask you to pick the next concrete thing to work on. Three plausible orders:
+**Trigger:** Step 1 explain pass complete (`explain_results.json` present).
 
-### Path A — finish Step 1 first, then build Step 2c gates
-1. Tomorrow: Per-model timeout (pending Peng design review).
-2. After: Build close-mode in file-issue (Tier 1 #1, Option A above).
-3. After: Build audit_new_errors (Tier 1 #2).
-4. Use the new infra in next week's sweep cycle.
+**What it does:** for each `eager_error` / `create_error` row in current sweep that is NOT in `known_errors.json`, NOT in `skip_models.json`, AND NOT present at the same status in baseline sweep — classify and propose triage decision.
 
-### Path B — finish Step 2 for THIS sweep first, building infra as we go
-1. Today: When current sweep's explain finishes, walk Step 2a manually (audit new errors). As I do so, capture the script as `tools/audit_new_errors.py`.
-2. Today: Walk Step 2b manually. Capture as `tools/audit_new_models.py`.
-3. Today: For Step 2c, propose CLOSE design + iterate with you on it; don't actually close anything via the new path yet (because design isn't built).
-4. Today: Compose the brief by hand using existing weekly-sweep-brief skill.
+**Tool:** `tools/audit_new_errors.py` (NOT YET BUILT — WS1 task).
 
-### Path C — pause sweep work; design the full Step 2c gate this morning, then resume
-1. Today: Design + ship the file-issue CLOSE mode (Tier 1 #1, Option A).
-2. After: Use it on the 3 issues I had to revert; produce clean R3-verified closes.
-3. After: Resume Step 2 for the rest.
+**Triage classes** (heuristic-driven, with manual fallback):
+- `fixture-bug` → action: fix `sweep/worker.py` input synthesis. Examples: "Audio must be mono" (HiggsAudio), "Image features and image tokens do not match" (Mistral3 FCG variant). Bias toward fix-infra over escape-hatch.
+- `gpu-contention` (CUDA OOM in multi-worker) → action: wait for auto-retry serial pass; if it still OOMs, classify as `large` or `very_large` tier in `large_models.json`.
+- `cuda-context-pollution` (device-side assert) → action: wait for auto-retry; if still fails serially, file as upstream bug.
+- `subprocess-crash` (worker died before completing) → action: wait for auto-retry.
+- `upstream-bug` (model code bug we can't fix) → action: file new issue via `subagents/file-issue/` workflow.
+- `unknown` → action: manual triage (surface to human reviewer if persistent).
 
-I'd lean **Path B** — it gets THIS week's sweep through Steps 2a-d while building the missing infra incrementally, but keeps the rigor (no closes without designed-gate; design first, then use).
+**Principle:** create_errors are entirely infra's fault and MUST be fixed (not added to known_errors as escape hatch). Bias toward fix-infra over add-to-list.
 
-What's your call?
+**Output:** markdown report + JSON sidecar with per-candidate triage class + suggested action.
+
+**Re-run scope rule (load-bearing — addresses adversary concern #1):** if any `fixture-bug` candidate gets a `worker.py` fix committed during Step 2a, the affected models' identify_results.json rows are STALE. Step 2c MUST NOT proceed on stale rows. The rule:
+- After any fixture commit, re-run JUST the affected models via `tools/run_experiment.py sweep --models '<list>' --output-dir <current-sweep-dir> --resume`.
+- The resume-into-existing-sweep-dir merges the fresh rows (orchestrator deduplicates by `(name, mode)` — newest write wins).
+- Step 2c reads identify_results.json AFTER all in-cycle fixture fixes have been re-run.
+
+**Manual intervention:** for each `unknown` candidate, human reviewer reviews. For `upstream-bug` candidates, human reviewer approves issue filing per Step 2c gates.
 
 ---
 
-## Appendix: file-paths cited in this doc
+## Step 2b — New models triage
 
-- `subagents/file-issue/SKILL.md` — gated NEW + EDIT issue workflow (CLOSE deferred)
-- `subagents/file-issue/persona.md` — Mode A + Mode B
-- `subagents/mre/SKILL.md` — verified MRE construction
-- `subagents/adversary-review/SKILL.md` — code review subagent
-- `tools/file_issues.py` — corpus-issue NEW/EDIT, close-stale (no via-skill), pytorch-upstream
-- `tools/cluster_failures.py` — Step 0 cluster
-- `tools/dedup_search.py` — Step 0 dedup
-- `tools/sweep_compare.py` — apple-to-apple comparison (R1 source of truth)
-- `tools/run_experiment.py` — nightly pipeline
-- `sweep/run_sweep.py` — orchestrator (with new auto-retry whitelist)
-- `sweep/sweep_watchdog.py` — observer (v3, just shipped)
-- `sweep/sweep_watchdog_cycle.sh` — cycle script (v3, just shipped)
-- `sweep/skip_models.json`, `known_errors.json`, `large_models.json` — config files
-- `skills/weekly-sweep-brief/SKILL.md` + `methodology.md` + `template.md` — Step 2d
-- `~/.myclaw/spaces/AAQANraxXE4/cron-prompts/nightly-sweep.md` — versioned cron prompt
-- `~/.myclaw/spaces/AAQANraxXE4/WORKFLOWS.md` — workflow index (incomplete)
-- `sweep/TIMEOUT_PROPAGATION_DESIGN.md` — Step 1 follow-up (tomorrow)
-- `sweep/AUTO_RETRY_REFINEMENT.md` — Step 1 detail (just shipped)
-- `sweep/WATCHDOG_DESIGN.md` — Step 1 detail (just shipped)
+**Trigger:** Step 1 explain pass complete (parallel with Step 2a).
+
+**What it does:** for each model in current cohort that was NOT in baseline cohort (NEW model, e.g., from transformers library upgrade), perform tier classification + error triage.
+
+**Tool:** `tools/audit_new_models.py` (NOT YET BUILT — WS1 task).
+
+**Per-NEW-model checks:**
+1. Status in identify pass: `full_graph` / `graph_break` / errors → continue with normal tracking.
+2. If `eager_error` or `create_error`: needs fixture fix (infra's fault; must be fixed before model is "ready").
+3. Wall-clock + GPU memory measurement → propose tier:
+   - `regular` (default): no entry needed.
+   - `large` (> 60s wall OR > 5GB GPU mem): add to `large_models.json` with `timeout_tier: "large"`.
+   - `very_large` (> 300s wall OR > 15GB GPU mem): add to `large_models.json` with `timeout_tier: "very_large"`.
+4. If unfixable in time for sweep: add to `skip_models.json` with reason (TEMPORARY — must have a follow-up fix task).
+
+**Per-REMOVED-model checks:** confirm in `skip_models.json` (intentional). If not, investigate as transformers refactor (model renamed or deprecated).
+
+**Output:** markdown report listing per-model decisions + proposed config-file edits.
+
+**Manual intervention:** human reviewer reviews and approves config-file edits before commit. New-model fixture fixes are normal `worker.py` commits (no special gate beyond standard adversary-review for `sweep/` changes).
+
+---
+
+## Step 2c — Walk all dynamo issues (close / edit / open)
+
+**Trigger:** Steps 2a + 2b complete (because issue-walk needs to know which models are stable / new / errored).
+
+**What it does:** for each open dynamo issue + every error pattern surfaced this week, decide one of CLOSE / EDIT / OPEN-NEW / NO-ACTION, then route all action decisions through the file-issue subagent.
+
+**Source of truth for the workflow:** `subagents/file-issue/SKILL.md`. That doc owns the gating mechanism (Mode A adversary review, Mode B assembler, cluster plan + human approval, `--via-skill` argparse enforcement, case-file audit chain). This Step does NOT repeat that workflow — when the file-issue skill changes, those changes apply here.
+
+**What this Step adds on top of file-issue:**
+
+**Per-open-issue decision tree (Step 2c is the routing layer; file-issue is the action layer):**
+1. From Step 1 identify, look up affected models' current statuses:
+   - All flipped to `full_graph`: invoke file-issue **close-mode** (NOT YET BUILT — WS1 task).
+   - Some flipped, some still failing: invoke file-issue **edit-mode** (body update reflects new statuses).
+   - None flipped: NO-ACTION.
+
+**Close-mode attribution tests (the routing layer's check before file-issue close-mode runs):**
+A sweep-data flip alone is insufficient evidence for a close. The router runs three tests; close-mode receives the verdict + framing:
+- **Test A:** re-run issue's MRE on CURRENT torch. If MRE still reproduces → NOT a close candidate (the gap is real; sweep flip is misleading).
+- **Test B:** re-run MRE on PRIOR torch + CURRENT transformers. If MRE no longer reproduces here either → root cause is transformers code drift. Close framing: `closed-as-not-applicable`.
+- **Test C:** re-run MRE on PRIOR torch + PRIOR transformers (original repro env). If still reproduces → torch attribution confirmed; close framing: `closed-as-completed (torch fixed)`. If no longer reproduces → model removed/rewritten; close framing: `closed-as-vacuous`.
+
+Only Test C confirming "still reproduces in original env, no longer reproduces on current torch" justifies attribution to a torch fix. Other outcomes use different framings.
+
+**For NEW patterns** (not tracked by any open issue): invoke file-issue Step 0 (cluster + dedup). All ceremony — cluster plan content, human approval mechanism, case-file schema, posting commands — lives in `subagents/file-issue/SKILL.md`.
+
+**No bypass paths — enforcement:**
+- All close/edit/open operations MUST go through `tools/file_issues.py corpus-issue --via-skill <case_id>`. The `--via-skill` flag is `argparse required=True` (mechanically enforced; tested by `tools/test_file_issues.py`).
+- Direct GitHub API calls (curl, urllib, gh CLI) for issue close/edit/open from this repo are FORBIDDEN.
+- Today the `tools/file_issues.py close-stale` subcommand has no `--via-skill` gate (open exception). Until close-mode ships, `close-stale --apply` is invoked ONLY by the cron prompt's wake step — never by an agent ad-hoc.
+
+---
+
+## Step 2d — Compose brief report
+
+**Trigger:** Step 2c complete (so the brief reflects the post-action state).
+
+**What it does:** compose the brief comparing current sweep to baseline, then post to the team group after manual approval.
+
+**Source of truth for brief content + composition rules:** `~/projects/oss-model-graph-break-corpus/skills/weekly-sweep-brief/`. That dir owns:
+- `template.md` — section structure
+- `methodology.md` — R1-R8 hard rules + S1-S4 soft rules + 12-item self-check
+- `SKILL.md` — 7-step composition workflow
+
+This Step does NOT repeat what's in those files — when the skill changes, those changes apply here.
+
+**What this Step adds on top of the brief skill:**
+- **Tool (NOT YET BUILT — WS1 task):** `tools/compose_brief.py` pre-fills sections from `tools/sweep_compare.py` output and runs the methodology self-check mechanically.
+- **Bridge (NOT YET WIRED — WS1 task):** `tools/sweep_compare.py` is auto-invoked at end of Step 1 nightly pipeline so its output is ready when Step 2d runs.
+- **Manual gate:** human reviewer approves the draft brief before post. Posting routes through `~/.myclaw/spaces/AAQANraxXE4/tools/post_to_feedback.py` (gated wrapper).
+
+---
+
+## Step 3 — Learning + encoding
+
+**Trigger:** Steps 2a-2d complete (or Step 2 stalled at a gate — also a learning trigger).
+
+**What it does:** reflect on what gaps surfaced during this sweep cycle, propose specific actions, and either address them in-cycle OR add tasks to PLAN.md.
+
+**Per cycle, capture:**
+1. **Gaps surfaced** — anything where the workflow needed manual intervention beyond the predefined gates, anything where a tool was missing and we improvised, anything where a step's spec was ambiguous and we had to decide.
+2. **Proposed action per gap** — either "encode now into <tool/spec>" or "add task to PLAN.md WS1/WS2".
+3. **Disposition per gap** — either fixed in-cycle (with commit ref) or queued (with PLAN.md task ref).
+
+**Output destination:** included in the per-sweep summary surfaced to human reviewer (the same surface as the brief approval gate). NOT included in the dynamo-team brief or user-group post — internal to the corpus project workflow improvement loop.
+
+**Principle:** learnings → specific actions, not journal entries. If a gap can be fixed before the brief posts, fix it. If it needs design or larger scope, queue it as a PLAN.md task. Never "note for later" — that's pacifier.
+
+---
+
+## Manual gates summary (where action is required)
+
+| Step | Gate | Frequency |
+|---|---|---|
+| Step 1 | Death-spiral escalation | Rare (only when watchdog has tried 3 resumes) |
+| Step 2a | Triage `unknown` candidates | Per sweep, ~0-3 candidates |
+| Step 2a | Approve `upstream-bug` filings (per Step 2c gate) | Per sweep, ~0-2 |
+| Step 2b | Approve config-file edits for new tier classifications | Per sweep, when transformers ships new models |
+| Step 2c | Approve cluster plan | Per sweep, 1 per filing batch |
+| Step 2c | Approve Mode B body (NEW + EDIT) | Per posted issue |
+| Step 2c | Approve close-mode decision | Per closed issue |
+| Step 2d | Approve brief before post | Per sweep, 1 |
+
+**Goal:** these gates are the ONLY manual touchpoints in steady state. Everything else automated.
+
+---
+
+## Gaps in current state (each is a WS1 task in PLAN.md)
+
+The workflow above describes what SHOULD happen. Today, several pieces are missing:
+
+| Gap | Where in workflow | WS1 task in PLAN.md |
+|---|---|---|
+| Per-model timeout not enforced in nightly | Step 1 #4 | "Per-model timeout propagation" |
+| `audit_new_errors.py` doesn't exist | Step 2a | "Build `tools/audit_new_errors.py`" |
+| `audit_new_models.py` doesn't exist | Step 2b | "Build `tools/audit_new_models.py`" |
+| close-stale lacks `--via-skill` gate; close-mode doesn't exist | Step 2c | "Build file-issue close-mode workflow" |
+| Brief is hand-composed | Step 2d | "Build `tools/compose_brief.py`" |
+| `sweep_compare.py` invoked manually | Step 1 → Step 2 bridge | "Wire `tools/sweep_compare.py` into nightly pipeline" |
+
+---
+
+## Discoverability (addresses adversary concern #5)
+
+This doc is useless if no one reads it. Wired into:
+- **Project `CLAUDE.md`** (top): "When about to perform any post-sweep step (2a/2b/2c/2d), READ `sweep/WEEKLY_SWEEP_WORKFLOW.md` first. It is the canonical spec for the weekly sweep workflow."
+- **Space `CLAUDE.md`** (`~/.myclaw/spaces/AAQANraxXE4/CLAUDE.md`): session-start checklist references this doc as the workflow source-of-truth alongside PLAN.md.
+- **PLAN.md**: WS1 task "Maintain `sweep/WEEKLY_SWEEP_WORKFLOW.md`" tracks updates; TASK 0 in WS2 cites this doc as the spec to walk.
+- **`nightly-sweep` cron prompt**: the +4h post-sweep wake's prompt begins with "read `sweep/WEEKLY_SWEEP_WORKFLOW.md` Step 2 sequence before doing anything else."
+
+If you're an agent reading this and you didn't get here through one of those paths, one of the entry points is broken — fix it before proceeding.
+
+## Known-errors rot audit (quarterly — addresses adversary concern #2)
+
+Every ~3 months (or when `known_errors.json` exceeds 25 entries, whichever first), audit existing entries:
+- For each entry with `applies_to_versions` covering a version older than 6 months: re-run on current torch + current transformers. If the bug clears, remove the entry.
+- For each entry whose original reason cites "fixture" or "input" or vague "investigate later": flag for re-triage as fixture-bug candidate.
+- Goal: prevent corpus rot where escape-hatch entries accumulate forever.
+
+This is NOT a per-sweep step. Surfaced separately when the audit cadence triggers.
+
+## Update cadence for THIS doc
+
+This doc describes the standard process. Update when:
+- A new step or gate is added to the workflow.
+- A tool replaces a manual intervention (e.g., when `audit_new_errors.py` ships, Step 2a's "(NOT YET BUILT)" goes away + the Manual Gates row updates).
+- the workflow definition changes definition.
+
+NOT updated for: per-week findings (those go in the weekly brief), per-issue decisions (those live in issue comments / file-issue case files), implementation details (those live in tool docstrings).

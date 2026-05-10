@@ -8,6 +8,12 @@
 > `experiments/<name>/plan.md` per the existing Plan-driven Work convention;
 > PLAN.md is the umbrella above those.
 
+> **Weekly sweep workflow:** when about to perform any post-sweep step
+> (Step 2a / 2b / 2c / 2d), READ `sweep/WEEKLY_SWEEP_WORKFLOW.md` first. It
+> is the canonical spec — what each step does, what tools run it, what
+> gates exist, what manual interventions Peng performs. Without reading it,
+> you will improvise (e.g., yesterday's bypass-script close incident).
+
 > **Note (2026-05-02):** Skill-discovery work has moved to a separate repo,
 > [penguinwu/pt2-skill-discovery](https://github.com/penguinwu/pt2-skill-discovery)
 > (`~/projects/pt2-skill-discovery/`). The `discovery/` dir was removed from
