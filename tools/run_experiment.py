@@ -2137,6 +2137,11 @@ def main():
     sub_sweep.add_argument("--allow-stale-cohort", action="store_true",
                            help="Allow loading a cohort whose source file (per _metadata.derived_from) "
                                 "now has a newer mtime. Default: REJECTED (forces fresh-cohort discipline).")
+    sub_sweep.add_argument("--allow-missing-versions", action="store_true",
+                           help="Allow starting the sweep without recording torch + transformers "
+                                "versions in sweep_state.json. Default: REJECTED (apple-to-apple "
+                                "comparisons require both versions known; the 2026-05-03 baseline "
+                                "had an empty versions block and broke this week's brief).")
     sub_sweep.add_argument("--stability", choices=["stable", "unstable"],
                            help="Filter by corpus stability")
     sub_sweep.add_argument("--limit", type=int,

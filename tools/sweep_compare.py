@@ -717,6 +717,16 @@ def main() -> int:
                          "Repeat the flag for multiple patterns. Output is the structured "
                          "breakdown (cat3 delta = real regression/improvement, cat1/cat4 = exposure). "
                          "Mutually exclusive with --out (writes to stdout instead).")
+    ap.add_argument("--source", action="append", default=None,
+                    choices=["hf", "diffusers", "custom"],
+                    help="Filter rows by source. Repeat for multiple. Default: all sources. "
+                         "For weekly HF-only sweeps, pass `--source hf` so apple-to-apple "
+                         "is HF-only. Filter applied to BOTH baseline + current before categorization.")
+    ap.add_argument("--ignore-invariants", action="store_true",
+                    help="Emit warnings on invariant failures instead of refusing to write output. "
+                         "Used when a baseline has known explain_coverage gaps that cannot be "
+                         "backfilled (e.g. baseline venv unrecoverable). Output JSON metadata "
+                         "records the bypass for audit.")
     args = ap.parse_args()
 
     # Load
@@ -728,6 +738,18 @@ def main() -> int:
     except (FileNotFoundError, json.JSONDecodeError) as e:
         print(f"IO/parse error: {e}", file=sys.stderr)
         return 3
+
+    # --source filter (applied to BOTH sides before categorization)
+    if args.source:
+        sources = set(args.source)
+        before_b = len(b_id); before_c = len(c_id)
+        b_id = {k: r for k, r in b_id.items() if r.get("source") in sources}
+        c_id = {k: r for k, r in c_id.items() if r.get("source") in sources}
+        b_ex = {k: r for k, r in b_ex.items() if isinstance(r, dict) and r.get("source") in sources}
+        c_ex = {k: r for k, r in c_ex.items() if isinstance(r, dict) and r.get("source") in sources}
+        if args.verbose:
+            print(f"Source filter {sorted(sources)}: baseline {before_b} → {len(b_id)} pairs, "
+                  f"current {before_c} → {len(c_id)} pairs", file=sys.stderr)
 
     if args.verbose:
         print(f"Loaded baseline: {len(b_id)} identify, {len(b_ex)} explain", file=sys.stderr)
@@ -747,11 +769,17 @@ def main() -> int:
         return 1
 
     # Enforce invariants
+    invariant_bypass = None
     try:
         enforce_invariants(cats, b_id, c_id, b_ex, c_ex, skip_models=skip_models)
     except InvariantFailure as e:
-        print(f"INVARIANT FAILURE [{e.kind}]: {e}", file=sys.stderr)
-        return 2 if e.kind == "explain_coverage" else 1
+        if args.ignore_invariants and e.kind == "explain_coverage":
+            invariant_bypass = {"kind": e.kind, "message": str(e)}
+            print(f"INVARIANT FAILURE [{e.kind}] BYPASSED via --ignore-invariants: {e}",
+                  file=sys.stderr)
+        else:
+            print(f"INVARIANT FAILURE [{e.kind}]: {e}", file=sys.stderr)
+            return 2 if e.kind == "explain_coverage" else 1
 
     if args.verbose or args.check_only:
         print(
@@ -788,7 +816,14 @@ def main() -> int:
         sys.stdout.write(md)
 
     if args.json:
-        args.json.write_text(json.dumps(cats_to_json(cats), indent=2, default=str))
+        out_data = cats_to_json(cats)
+        out_data["metadata"] = {
+            "baseline_dir": str(args.baseline),
+            "current_dir": str(args.current),
+            "source_filter": sorted(set(args.source)) if args.source else None,
+            "invariant_bypass": invariant_bypass,
+        }
+        args.json.write_text(json.dumps(out_data, indent=2, default=str))
         print(f"Wrote JSON: {args.json}", file=sys.stderr)
 
     return 0

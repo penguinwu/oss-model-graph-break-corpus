@@ -629,6 +629,33 @@ def run_sweep(args):
 
     # ── Log and validate library versions ──
     version_info = _log_versions(python_bin, output_dir)
+    # Per Peng directive 2026-05-10: REFUSE to start a sweep without recorded
+    # versions. Without versions, downstream apple-to-apple comparisons are
+    # unverifiable. Baseline 2026-05-03 had an empty versions block (silent
+    # subprocess failure in log_versions) — the gap that wrecked trust in
+    # this week's brief. Hard-fail unless --allow-missing-versions override.
+    REQUIRED_VERSION_KEYS = ("torch", "transformers")
+    missing_keys = []
+    if not version_info:
+        missing_keys = list(REQUIRED_VERSION_KEYS)
+    else:
+        missing_keys = [k for k in REQUIRED_VERSION_KEYS if not version_info.get(k)]
+    if missing_keys:
+        if not getattr(args, "allow_missing_versions", False):
+            print(
+                f"[run_sweep] FATAL: cannot record versions for keys {missing_keys}.\n"
+                f"  Detected: {version_info}\n"
+                f"  Without recorded torch + transformers versions, the resulting sweep "
+                f"is NOT comparable to any other sweep (apple-to-apple comparisons "
+                f"require both versions to be known).\n"
+                f"  Pass --allow-missing-versions to override (records {{}} into "
+                f"sweep_state.json; downstream sweep_compare may refuse the sweep).",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        else:
+            print(f"[run_sweep] WARN: --allow-missing-versions; missing {missing_keys} "
+                  f"will be recorded as null in sweep_state.json", file=sys.stderr)
     if version_info:
         early_state["versions"] = version_info
         with open(state_file, "w") as f:
