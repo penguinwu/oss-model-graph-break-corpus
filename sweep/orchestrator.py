@@ -675,6 +675,11 @@ def log_versions(python_bin):
     """Detect PyTorch, transformers, and diffusers versions.
 
     Returns a dict with version info, or None on failure.
+
+    Diagnostic logging surfaces the underlying failure reason so the empty-
+    versions failure mode (baseline 2026-05-03) is investigable next time.
+    Per Peng directive 2026-05-10 19:00 ET — root-cause "why was the versions
+    block empty?" rather than just hard-fail going forward.
     """
     script = (
         "import json, sys; d = {}; "
@@ -690,13 +695,34 @@ def log_versions(python_bin):
             capture_output=True, text=True, timeout=30,
         )
         if result.returncode == 0:
-            versions = json.loads(result.stdout.strip())
+            try:
+                versions = json.loads(result.stdout.strip())
+            except json.JSONDecodeError as e:
+                print(f"WARNING: log_versions: subprocess succeeded but stdout is "
+                      f"not valid JSON: {e}\n  stdout (first 500 chars): "
+                      f"{result.stdout[:500]!r}\n  stderr (first 500 chars): "
+                      f"{result.stderr[:500]!r}")
+                return None
             print(f"Environment: torch={versions.get('torch')}, "
                   f"transformers={versions.get('transformers')}, "
                   f"diffusers={versions.get('diffusers')}")
             return versions
         else:
-            print(f"WARNING: Could not detect library versions: {result.stderr.strip()}")
+            print(f"WARNING: log_versions: subprocess exited rc={result.returncode}.\n"
+                  f"  python_bin: {python_bin}\n"
+                  f"  stderr (first 500 chars): {result.stderr[:500]!r}\n"
+                  f"  stdout (first 500 chars): {result.stdout[:500]!r}")
+    except subprocess.TimeoutExpired as e:
+        print(f"WARNING: log_versions: subprocess TIMEOUT after 30s.\n"
+              f"  python_bin: {python_bin}\n"
+              f"  partial stderr: {(e.stderr or b'')[:500]!r}\n"
+              f"  partial stdout: {(e.stdout or b'')[:500]!r}\n"
+              f"  Possible cause: venv contains slow-import modules; raise timeout "
+              f"if torch import alone takes > 30s on this machine.")
+    except FileNotFoundError as e:
+        print(f"WARNING: log_versions: python_bin not found: {python_bin}\n"
+              f"  exception: {e}")
     except Exception as e:
-        print(f"WARNING: Version check failed: {e}")
+        print(f"WARNING: log_versions: unexpected {type(e).__name__}: {e}\n"
+              f"  python_bin: {python_bin}")
     return None

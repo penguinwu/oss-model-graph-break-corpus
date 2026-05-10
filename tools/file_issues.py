@@ -1627,6 +1627,35 @@ def _do_close_op(args, body_text: str) -> int:
         )
         return 1
 
+    # Step 6.5: compiler-flags-match check (per Peng directive 2026-05-10 15:27 ET).
+    # Verify sweep's compile_kwargs match the canonical full-graph config the
+    # corpus tracks issues under. A model can pass with `dynamic=False` but break
+    # with `dynamic=True`; closing on the wrong-flag sweep would mask the real
+    # failure. The corpus default is fullgraph=True, backend=eager, dynamic=null.
+    expected_kwargs = {"fullgraph": True, "backend": "eager"}
+    sample_pair = next(iter(affected_models.items()))
+    sample_mode = sample_pair[1][0] if sample_pair[1] else "eval"
+    sample_key = (sample_pair[0], sample_mode)
+    sys.path.insert(0, str(REPO_ROOT / "sweep"))
+    from results_loader import load_effective_results  # noqa: E402
+    rows = load_effective_results(sweep_dir)
+    sample_row = rows.get(sample_key, {})
+    actual_kwargs = sample_row.get("compile_kwargs", {})
+    mismatches = [
+        f"{k}: expected {expected_kwargs[k]!r}, got {actual_kwargs.get(k)!r}"
+        for k in expected_kwargs if actual_kwargs.get(k) != expected_kwargs[k]
+    ]
+    if mismatches:
+        print(
+            f"ERROR: compiler-flags-match check failed. Sweep's compile_kwargs do NOT "
+            f"match the corpus canonical config (fullgraph=True, backend='eager'). "
+            f"Closing on a non-canonical config could mask real failures.\n"
+            f"  Sweep dir: {sweep_dir}\n  Sample pair: {sample_key}\n"
+            f"  Mismatches: {', '.join(mismatches)}",
+            file=sys.stderr,
+        )
+        return 1
+
     # Step 7: post the close (Mode A_close verdict = close)
     if not args.post:
         print(f"[DRY-RUN] would CLOSE issue #{issue_num} on {REPO_SLUG}")
