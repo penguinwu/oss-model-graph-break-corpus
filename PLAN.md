@@ -1,6 +1,6 @@
 # PLAN.md — corpus project working plan
 
-**Last updated:** 2026-05-10 11:58 ET (Otter)
+**Last updated:** 2026-05-10 12:00 ET (Otter)
 **Active workstreams:** 2 (cap). New workstreams go to Backlog until a slot opens.
 
 Read this FIRST when starting a session. State "Plan loaded: <current focus>" in the first message. Update after every completed task, every new task added, every scope change.
@@ -58,6 +58,8 @@ Execution of WS1's standard workflow on real data — without re-running the swe
 - [ ] **Sub-checkpoint of TASK 0: Step 2c application** — for each open dynamo issue, surface close/edit/open decision. The 3 reverted issues (#21, #26, #27) need close-mode workflow; 14 stable-failure issues need no action; #77 needs comment with progress (75% improved). Will be done as part of TASK 0.
 
 - [ ] **Sub-checkpoint of TASK 0: Step 2d application** — compose brief: 0 dynamo wins, 0 dynamo regressions, 5 non-dynamo improvements (Aria* fixture). Quiet-week brief. Surface for Peng approval before posting. Will be done as part of TASK 0.
+
+- [ ] **Audit the 3 reverted issues (#21, #26, #27) for unexpected side effects.** Per Peng directive 2026-05-10 11:58 ET. Independent of the close-mode workflow that will eventually re-process them properly. Things to check: (a) verify all 3 are currently `state=open` on GitHub, (b) verify the reversal comment posted correctly on each (no malformed markdown, no missing pieces), (c) verify the prior closing comments are still on each issue's timeline (not deleted — they document the audit chain), (d) verify no labels were dropped during close/reopen, (e) verify no GitHub auto-link pollution onto OTHER issues from any of the comments (per the corpus's no-#NNN-in-subagent-files rule), (f) verify no downstream effects (sweep-update tool didn't try to act on closed-then-reopened state, etc.). Goal: surface anything I missed during the rapid close+revert cycle this morning.
 
 ---
 
