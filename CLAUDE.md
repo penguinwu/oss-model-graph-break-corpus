@@ -1,5 +1,13 @@
 # OSS Model Compiler Quality Corpus
 
+> **READ FIRST AT SESSION START:** `PLAN.md` at the repo root is the project's
+> living working plan. State "Plan loaded: <current focus>" in your first
+> message. Update PLAN.md after every completed task, every new task added,
+> every scope change. NEVER let it go stale — it's the only thing that
+> survives session resets. For experiment-scoped plans, use
+> `experiments/<name>/plan.md` per the existing Plan-driven Work convention;
+> PLAN.md is the umbrella above those.
+
 > **Note (2026-05-02):** Skill-discovery work has moved to a separate repo,
 > [penguinwu/pt2-skill-discovery](https://github.com/penguinwu/pt2-skill-discovery)
 > (`~/projects/pt2-skill-discovery/`). The `discovery/` dir was removed from
