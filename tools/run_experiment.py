@@ -1535,9 +1535,24 @@ def run_nightly_command(args):
     print(f"  Start:  {time.strftime('%H:%M:%S')}")
 
     # ── Refresh venv ──────────────────────────────────────────────────
-    _run([python, script, "refresh-nightly",
-          "--venv", str(venv_dir), "--with-transformers"],
-         "Refresh nightly venv")
+    # On --resume, skip refresh-nightly: the venv was at the correct version
+    # at original launch; pip's metadata fetch + dep verification adds 2-15
+    # min of latency on every resume cycle for no benefit. (Death-spiral
+    # scenarios re-resume frequently, so this latency compounds.)
+    # Added 2026-05-09 per Peng directive after observing the resume cycle's
+    # refresh-nightly was the dominant non-orchestrator cost.
+    if getattr(args, "resume", False):
+        print(f"\n{'='*70}")
+        print(f"NIGHTLY: Refresh nightly venv — SKIPPED (--resume)")
+        print(f"{'='*70}")
+        print(f"  Resume continues with venv state from original launch.")
+        print(f"  If the venv has been mutated since, run `refresh-nightly` "
+              f"manually before resuming.")
+        steps_done.append("Refresh skipped (--resume)")
+    else:
+        _run([python, script, "refresh-nightly",
+              "--venv", str(venv_dir), "--with-transformers"],
+             "Refresh nightly venv")
 
     # ── Version + source build fallback ─────────────────────────────
     ver_result = subprocess.run(

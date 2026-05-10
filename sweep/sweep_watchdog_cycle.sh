@@ -59,6 +59,35 @@ fi
 WATCHDOG_OUT="$($TORCH211_PYTHON "$REPO_ROOT/sweep/sweep_watchdog.py" "$RESULTS_DIR" 2>&1 || true)"
 echo "$WATCHDOG_OUT"
 
+# ── Step 2.5: setup-in-progress guard ──────────────────────────────────
+# If watchdog says DEAD but a resume launcher OR refresh-nightly subprocess
+# is alive, the orchestrator is not really dead — its PID just hasn't been
+# updated in sweep_state.json yet (setup phase in progress). Treat as
+# silent + don't auto-resume. The next watchdog cycle will see the new PID.
+#
+# Process-match patterns are narrow enough to exclude the watchdog cycle
+# script itself (which would otherwise self-match its own shell command):
+#   refresh-nightly subprocess: must include "--venv" arg
+#   nightly launcher: must end with output-dir arg matching this sweep
+SETUP_IN_PROGRESS=0
+# Filter to actual python subprocesses (process name = python). Shell wrappers
+# whose cmdline happens to mention these patterns won't match because their
+# process name is "bash". This avoids the watchdog cycle script self-matching.
+if pgrep -af "^python.*run_experiment\.py refresh-nightly" > /dev/null \
+   || pgrep -af "^python.*tools/run_experiment\.py refresh-nightly" > /dev/null \
+   || pgrep -af "envs/.*python.*run_experiment\.py refresh-nightly" > /dev/null; then
+    SETUP_IN_PROGRESS=1
+elif pgrep -af "envs/.*python.*run_experiment\.py nightly .* --resume .* $RESULTS_DIR" > /dev/null; then
+    # Launcher cmd uses "nightly --resume ... <results_dir>".
+    # Orchestrator uses "sweep ..." (different subcommand) — won't match.
+    SETUP_IN_PROGRESS=1
+fi
+
+if echo "$WATCHDOG_OUT" | grep -q "DEAD" && [ "$SETUP_IN_PROGRESS" = "1" ]; then
+    echo "SETUP_IN_PROGRESS: watchdog reported DEAD but a resume launcher is in setup phase — staying silent"
+    exit 0
+fi
+
 # ── Step 3: auto-resume on DEAD (with progress + max-attempts guard) ────
 # Track resume attempts in a state file in the sweep dir. If N attempts pass
 # WITHOUT advancing past the last-known-dead item count, stop auto-resuming
