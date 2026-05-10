@@ -1198,44 +1198,6 @@ def _get_last_sweep_git_version():
     return data.get("git_version") or data.get("torch_git")
 
 
-def _find_prior_baseline(current_dir):
-    """Find the dated nightly sweep dir immediately preceding current_dir.
-
-    Walks the parent dir for sibling YYYY-MM-DD subdirs lexicographically
-    LESS than current_dir.name, picks the largest qualifying one. Skips:
-      - current_dir itself
-      - dirs without identify_results.json (incomplete)
-      - dirs whose sweep_state.json shows status != "done"
-
-    Returns None if no qualifier found. Per
-    sweep/SWEEP_COMPARE_WIRING_DESIGN.md.
-    """
-    parent = current_dir.parent
-    if not parent.exists():
-        return None
-    candidates = sorted(
-        (d for d in parent.iterdir()
-         if d.is_dir()
-         and d.name != current_dir.name
-         and len(d.name) == 10  # YYYY-MM-DD
-         and d.name[:4].isdigit()
-         and d.name < current_dir.name),
-        reverse=True,
-    )
-    for d in candidates:
-        if not (d / "identify_results.json").exists():
-            continue
-        state_file = d / "sweep_state.json"
-        if state_file.exists():
-            try:
-                with open(state_file) as f:
-                    state = json.load(f)
-                if state.get("status") != "done":
-                    continue
-            except (OSError, json.JSONDecodeError):
-                continue
-        return d
-    return None
 
 
 def pipeline_preflight(python, device="cuda"):
@@ -1750,19 +1712,15 @@ def _run_post_sweep(python, script, repo_root, results_dir, label, steps_done):
         _run([python, file_issues, "close-stale", "--plan", plan_file],
              "Close-stale dry-run", allow_fail=True)
 
-    # Step 5c: sweep_compare vs prior week's baseline
-    # Added 2026-05-10 per sweep/SWEEP_COMPARE_WIRING_DESIGN.md.
-    # Single source of truth for Steps 2a/2b/2d. allow_fail=True so invariant
-    # failures (exit 1) and explain-coverage gaps (exit 2) surface as signal
-    # without aborting the rest of the nightly.
+    # Step 5c: sweep_compare vs prior baseline (only when --baseline-dir is given)
+    # Added 2026-05-10 per sweep/SWEEP_COMPARE_WIRING_DESIGN.md rev 2.
+    # Baseline is INPUT to the system — caller (cron prompt or human invoker)
+    # specifies the comparison target explicitly. No auto-discovery; that was
+    # over-engineering per Peng directive 2026-05-10 14:12 ET. allow_fail=True
+    # so invariant failures (exit 1/2) surface without aborting the nightly.
+    baseline_dir = getattr(args, "baseline_dir", None)
     sweep_compare = str(tools_dir / "sweep_compare.py")
-    baseline_dir = _find_prior_baseline(Path(results_dir))
-    if baseline_dir is None:
-        print(f"\n{'='*70}")
-        print("NIGHTLY: sweep_compare vs prior baseline — SKIPPED (no baseline found)")
-        print(f"{'='*70}")
-        steps_done.append("sweep_compare skipped (no baseline)")
-    elif Path(sweep_compare).exists():
+    if baseline_dir and Path(sweep_compare).exists():
         compare_md = str(Path(results_dir) / "compare-vs-baseline.md")
         compare_json = str(Path(results_dir) / "compare-vs-baseline.json")
         _run([python, sweep_compare,
@@ -1771,8 +1729,14 @@ def _run_post_sweep(python, script, repo_root, results_dir, label, steps_done):
               "--out", compare_md,
               "--json", compare_json,
               "--verbose"],
-             f"sweep_compare vs {baseline_dir.name}",
+             f"sweep_compare vs {Path(baseline_dir).name}",
              allow_fail=True)
+    elif not baseline_dir:
+        print(f"\n{'='*70}")
+        print("NIGHTLY: sweep_compare — SKIPPED (no --baseline-dir given)")
+        print(f"  Pass --baseline-dir <prior-sweep-dir> to enable.")
+        print(f"{'='*70}")
+        steps_done.append("sweep_compare skipped (no baseline)")
 
     # Step 6: summary
     print(f"\n{'='*70}")
@@ -2319,6 +2283,11 @@ def main():
     sub_nightly.add_argument("--force", action="store_true",
                              help="Run even if nightly build is unchanged")
     sub_nightly.add_argument("--device", default="cuda", choices=["cpu", "cuda"])
+    sub_nightly.add_argument("--baseline-dir", metavar="DIR", default=None,
+                             help="Prior sweep dir to compare against. When given, runs "
+                                  "tools/sweep_compare.py after explain to produce "
+                                  "<output-dir>/compare-vs-baseline.{md,json}. When omitted, "
+                                  "the comparison step is skipped (run sweep_compare manually).")
 
     # ── selftest ──────────────────────────────────────────────────────────
     sub_selftest = subparsers.add_parser(

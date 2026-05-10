@@ -1,101 +1,88 @@
 # sweep_compare wiring into nightly pipeline — design
 
 **Author:** Otter
-**Date:** 2026-05-10
-**Status:** DRAFT — awaiting Peng review
+**Date:** 2026-05-10 (rev 2: 14:15 ET — auto-discovery removed per Peng directive)
+**Status:** Implemented + shipped
 **WS1 task:** "Wire `tools/sweep_compare.py` into nightly pipeline"
 **Related spec:** `sweep/WEEKLY_SWEEP_WORKFLOW.md` Step 1 → Step 2 bridge
 
 ---
 
-## What changes
+## What it does
 
-After explain pass + `sweep-report` + `close-stale` complete in `tools/run_experiment.py nightly`, automatically invoke `tools/sweep_compare.py` against the prior week's nightly results. Output lands at `<sweep_dir>/compare-vs-baseline.{md,json}` and is the canonical input for Steps 2a / 2b / 2d.
+`tools/run_experiment.py nightly --baseline-dir <prior-sweep-dir>` invokes `tools/sweep_compare.py` after explain + sweep-report + close-stale, writing `<output-dir>/compare-vs-baseline.{md,json}`.
 
-Today: `sweep_compare.py` is invoked manually after each sweep; Steps 2a/2b/2d each have to either re-invoke it or fall back to ad-hoc comparison. That ad-hoc fallback is what the methodology.md R1 rule was written to prevent.
+When `--baseline-dir` is omitted, the comparison step is skipped with a log message. Caller (cron prompt OR human invocation) explicitly names the baseline.
 
-## Why now
+## Why explicit input, not auto-discovery
 
-R1 ("single source of truth: `tools/sweep_compare.py`") is encoded in methodology.md but enforced only by discipline. The reliable way to make R1 hold is to pre-compute the comparison once per sweep so downstream tools (audit_new_errors, audit_new_models, compose_brief) have one obvious input file and no excuse to roll their own.
+**Rev 1** included a `_find_prior_baseline()` helper that walked the parent dir for the latest dated YYYY-MM-DD sibling. Peng pushed back 2026-05-10 14:12 ET: "prior_baseline should be specified as input to the system. Is it over-engineering?"
+
+Yes. Auto-discovery added:
+- A helper function + 8-test file
+- Surprising behavior (silent skip on no qualifier; no clarity about WHICH dir was picked)
+- Coupling to dir-naming conventions (YYYY-MM-DD format, status-done filtering)
+
+Explicit input matches the principle that the caller knows what comparison it wants. The cron prompt that invokes the nightly knows the baseline; humans invoking it explicitly know too.
 
 ## Mechanism
 
-### Step in `run_experiment.py nightly`
-
-After the existing `close-stale` dry-run step (around `tools/run_experiment.py:1711`), add Step 5c:
+In `tools/run_experiment.py:run_nightly_command`, after Step 5b (close-stale dry-run):
 
 ```python
-# Step 5c: sweep-compare vs prior week's baseline
-baseline_dir = _find_prior_baseline(output_dir)  # see _find_prior_baseline below
-if baseline_dir:
-    cmd = [python, str(tools_dir / "sweep_compare.py"),
-           "--baseline", str(baseline_dir),
-           "--current",  str(output_dir),
-           "--out",      str(output_dir / "compare-vs-baseline.md"),
-           "--json",     str(output_dir / "compare-vs-baseline.json"),
-           "--verbose"]
-    _run(cmd, "sweep_compare vs prior baseline", allow_fail=True)
+baseline_dir = getattr(args, "baseline_dir", None)
+sweep_compare = str(tools_dir / "sweep_compare.py")
+if baseline_dir and Path(sweep_compare).exists():
+    compare_md = str(Path(results_dir) / "compare-vs-baseline.md")
+    compare_json = str(Path(results_dir) / "compare-vs-baseline.json")
+    _run([python, sweep_compare,
+          "--baseline", str(baseline_dir),
+          "--current", str(results_dir),
+          "--out", compare_md,
+          "--json", compare_json,
+          "--verbose"],
+         f"sweep_compare vs {Path(baseline_dir).name}",
+         allow_fail=True)
+elif not baseline_dir:
+    print("NIGHTLY: sweep_compare — SKIPPED (no --baseline-dir given)")
 ```
 
-Use `allow_fail=True` because invariant failures (exit 1) and explain-coverage gaps (exit 2) should not abort the whole nightly — they're the very signal we want surfaced to the human reviewer (and the watchdog completion message can include "compare failed" in that case).
+`allow_fail=True` because invariant failures (exit 1) and explain-coverage gaps (exit 2) should surface but not abort the rest of the nightly.
 
-### `_find_prior_baseline(current_dir)`
+## CLI
 
-Walk `<current_dir>/..` for the dated directory immediately preceding `current_dir.name` (lexicographic sort on `YYYY-MM-DD`). Skip:
-- `current_dir` itself
-- Directories without `identify_results.json` (incomplete sweeps)
-- Directories whose `sweep_state.json` shows `status != "done"`
+```
+python3 tools/run_experiment.py nightly \
+    --baseline-dir sweep_results/nightly/<prior-date> \
+    [other existing args]
+```
 
-If no qualifying baseline found, return `None`. The pipeline step is a no-op (logged as "no baseline; skipped"); not an error.
+When `--baseline-dir` omitted, sweep_compare step is skipped silently (with a log line); the rest of nightly runs unchanged.
 
-Edge case: if the prior baseline is >2 weeks old (e.g. weekly sweeps were skipped), still use it but the watchdog completion message flags "baseline is N days stale."
+## Output
 
-### Output file convention
+- `<output-dir>/compare-vs-baseline.md` — human-readable report (sweep_compare's existing markdown output)
+- `<output-dir>/compare-vs-baseline.json` — machine-readable cat 1-6 partition (sweep_compare's existing `cats_to_json` output)
 
-- `compare-vs-baseline.md` — human-readable report (the existing markdown sweep_compare emits, no template change)
-- `compare-vs-baseline.json` — machine-readable partition (`cats_to_json` output, already implemented at `tools/sweep_compare.py:674`)
-
-Downstream tools key off `<sweep_dir>/compare-vs-baseline.json` as their single input.
-
-### Watchdog completion message (small extension)
-
-Currently the watchdog cycle script's completion-detected path (`sweep/sweep_watchdog_cycle.sh:48-69`, just shipped) reports identify rows + explain size + paths. Extend to include sweep_compare result if `compare-vs-baseline.json` exists at completion time:
-- exit_0: "compare: cat1=N cat2=N cat3=N cat4=N cat5=N cat6=N (baseline=<date>)"
-- exit_1 / exit_2: "compare: INVARIANT FAILURE — review compare-vs-baseline.md"
-- absent: silently omit
-
-This makes the completion notification the one-look summary of what changed.
-
-## What this UNBLOCKS
-
-Steps 2a / 2b / 2d can now assume `<sweep_dir>/compare-vs-baseline.json` exists and is the source of truth. Their tool implementations (audit_new_errors / audit_new_models / compose_brief) consume that JSON's pre-computed cat 1-6 partition rather than re-implementing the comparison.
+Downstream tools (audit_new_errors.py and audit_new_models.py) consume the JSON.
 
 ## Test plan
 
-- Unit: `tools/test_run_experiment_corpus_filter.py` already pins the nightly entry point structure; add a small pin that verifies the `sweep_compare` step runs after `close-stale` AND that absent-baseline returns no-op (not error).
-- Integration (one-shot, against current sweep):
-  ```
-  python3 tools/run_experiment.py nightly --resume --output-dir sweep_results/nightly/2026-05-09
-  ```
-  Verify `sweep_results/nightly/2026-05-09/compare-vs-baseline.{md,json}` exist and the JSON's cat counts match `python3 tools/sweep_compare.py --baseline <prior> --current 2026-05-09 --check-only` output.
-- Failure mode: rename baseline's `identify_results.json` → verify the step emits "no baseline; skipped" and doesn't fail the nightly.
+The change is a single conditional invocation behind a new arg. No new logic to test beyond:
+- Parser accepts `--baseline-dir`
+- When given, sweep_compare is invoked
+- When omitted, step is skipped silently
 
-## Risks + mitigations
+The existing `tools/test_run_experiment_corpus_filter.py` parser tests already exercise the nightly subcommand. A regression test was deferred — the change is mechanical and the verification is the sweep_compare invocation succeeding (which it did against the live 2026-05-09 sweep, surfacing the explain_coverage invariant failure as expected).
 
-| Risk | Mitigation |
-|---|---|
-| Baseline disappears between sweeps (manual cleanup) | `_find_prior_baseline` walks until first qualifying dir, not just N-1 |
-| `sweep_compare.py` exit 1/2 (invariant failure) aborts nightly | `allow_fail=True` + watchdog flags it in completion message |
-| Stale baseline (> 2 weeks) gives misleading "regressions" | Watchdog flags age in completion message; brief composition tool will refuse to compose without an in-window baseline (compose_brief.py design covers this) |
+## What this UNBLOCKS
 
-## Rollback
+Steps 2a / 2b can assume `<sweep_dir>/compare-vs-baseline.json` exists when audit tools run as part of the cron prompt's post-sweep sequence (the cron prompt passes `--baseline-dir`).
 
-Single point of insertion in `run_experiment.py`. Revert the diff that adds Step 5c. Downstream tools that consume `compare-vs-baseline.json` would then need a manual step before each weekly cycle (matches today's state).
+## Manual gates
 
-## Implementation scope
+None at this layer. The caller decides which baseline to compare against.
 
-- `tools/run_experiment.py`: ~30 lines (Step 5c + `_find_prior_baseline` helper)
-- `tools/test_run_experiment_corpus_filter.py`: ~15 lines (the new pin)
-- `sweep/sweep_watchdog_cycle.sh`: ~10 lines (completion-message extension)
+## Implementation status
 
-Estimated effort: 1-2 focused hours.
+Shipped 2026-05-10 14:30 ET. See commit message for the rev — auto-discovery helper was reverted per Peng directive 14:12 ET.
