@@ -1,6 +1,6 @@
 # PLAN.md — corpus project working plan
 
-**Last updated:** 2026-05-10 19:30 ET (Otter; drove down WS1: shipped 4 more tasks)
+**Last updated:** 2026-05-10 19:50 ET (Otter; close-mode rev 5 design + adversary done; impl ready for next session)
 
 **Review policy (encoded 2026-05-10 14:00 ET per Peng directive):** low-level script designs (heuristic tables, tier thresholds, pipeline glue) go through adversary-review locally — Peng's attention is reserved for architecture-level questions (does the script need to exist at all? does it cross a privacy/external/irreversible boundary?). Design tasks below mark which gate they use.
 **Active workstreams:** 2 (cap). New workstreams go to Backlog until a slot opens.
@@ -71,7 +71,7 @@ The standard weekly process (per Peng spec 2026-05-10): launch sweep on Saturday
 
 - [ ] **File explain-pass infra issue: stable explain_error on QianfanOCR + UdopEncoder + Blip2.** 6 of 7 broken-explain pairs in baseline 2026-05-03 are STILL broken in current 2026-05-09 (QianfanOCR×4, UdopEncoder×2). Plus Blip2ForConditionalGeneration|eval is newly broken this week. These are explain-pass crashes, not Dynamo bugs — file as `[corpus-tooling]` issue against this repo, not pytorch upstream. Models compile fine in identify pass; only the explain re-run for capturing detailed break_reasons crashes. Surfaced 2026-05-10 18:25 ET.
 
-- [ ] **close-mode rev 5: spawn-agent MRE+model verification (per Peng directive 2026-05-10 18:34 ET).** Even after sweep evidence + per-mode pre-flight pass, close-mode must spawn a sub-agent that: (a) re-runs the issue's MRE in the sweep's nightly venv (no fresh build), (b) re-runs each affected (model, mode) pair via sweep/worker.py against the same venv, (c) reports MRE-reproduces? + per-pair status?. New verdict in Mode A_close: `verify-failed` if either re-run still reproduces. Defense-in-depth: sweep evidence is the trigger, MRE+model re-run is confirmation. Both must agree. Estimated 6-8h. Adversary-review required.
+- [ ] **close-mode rev 5: spawn-agent MRE+model verification (DESIGN DONE; impl pending).** Per Peng directive 2026-05-10 18:34 ET. Design rev 2 at `subagents/file-issue/CLOSE_MODE_REV5_DESIGN.md`. Adversary-review case `adv-2026-05-10-193500-close-mode-rev5-design`: 8 gaps, all addressed in rev 2 (notably the HIGH-severity `--pass-num` flag-name bug + the `spawn_worker` reuse instead of hand-rolled subprocess.run + the closed-set worker status vocabulary). Implementation: `tools/verify_close_candidate.py` (new, ~350 lines) + `tools/file_issues.py` Step 7 in `_do_close_op` (new gate for `--close-verify-json` + sha256 pin). 11 + 5 tests specified. Estimated 8-10h implementation. Ready to ship next session.
 
 - [x] **Diagnostic logging in log_versions for empty-versions root-cause investigation.** Shipped 2026-05-10 19:15 ET. `sweep/orchestrator.py::log_versions` now logs full stderr/stdout on subprocess failure (rc != 0), JSONDecodeError details, TimeoutExpired with partial output, FileNotFoundError on python_bin, and any other exception type. Next time a sweep produces empty versions block (the 2026-05-03 failure mode), the underlying reason will be in the logs.
 
