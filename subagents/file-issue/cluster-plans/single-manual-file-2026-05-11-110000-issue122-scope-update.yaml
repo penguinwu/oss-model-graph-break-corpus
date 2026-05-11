@@ -1,0 +1,33 @@
+{
+  "sweep_ref": "single-manual-file-2026-05-11-110000-issue122-scope-update",
+  "generated_at": "2026-05-11T15:20:31Z",
+  "clustering_method": "single_manual",
+  "total_failure_rows": 1,
+  "total_clustered_rows": 1,
+  "multi_root_cases": [],
+  "single_manual": true,
+  "clusters": [
+    {
+      "cluster_id": "single-file-2026-05-11-110000-issue122-scope-update",
+      "cluster_type": "single_manual",
+      "root_signal": {
+        "case_id": "file-2026-05-11-110000-issue122-scope-update"
+      },
+      "affected_cases": [
+        {
+          "case_id": "file-2026-05-11-110000-issue122-scope-update",
+          "role": "primary"
+        }
+      ],
+      "case_count": 1,
+      "representative_case": "file-2026-05-11-110000-issue122-scope-update",
+      "dup_candidates": [],
+      "action": "proceed-as-new"
+    }
+  ],
+  "peng_approval": {
+    "token": "self-referencing — sha256 of this file at posting time IS the binding; per _validate_cluster_plan rationale (lines 2177-2182 of tools/file_issues.py), token-must-equal-itself is unsolvable; approved_at is the load-bearing event marker",
+    "approved_at": "2026-05-11T15:25:00Z",
+    "approval_message_ref": "Peng GChat 2026-05-11 11:17 ET 'You need to update the body and title of #122 to reduce the scope of 122 to focus on the models or GB reasons not covered by the other issues.' — explicit directive to perform this --edit"
+  }
+}
