@@ -7,17 +7,21 @@
 
 ## 1. Headline
 
-Net **+4 graph breaks** on the apple-to-apple set (1432 common pairs), entirely from 4 GraniteMoeHybrid pairs already tracked at issue **[#55](https://github.com/penguinwu/oss-model-graph-break-corpus/issues/55)** (`_local_scalar_dense` from `.tolist()`). Zero models flipped graph_break → full_graph. Zero real upstream compile regressions.
+Net **+4 graph breaks** on the apple-to-apple set (1432 common pairs), entirely from 4 GraniteMoeHybrid pairs already tracked at issue **[#55](https://github.com/penguinwu/oss-model-graph-break-corpus/issues/55)** (`_local_scalar_dense` from `.tolist()`); most likely a transformers `5.8.0 → 5.6.2` downgrade artifact (see §2). Zero models flipped graph_break → full_graph. Zero real upstream compile regressions.
 
 ## 2. Setup
 
-⚠️ **Caveat:** baseline 2026-05-03 has NO recorded `transformers` / `diffusers` versions in `sweep_state.json` (the sweep predates the fail-loud guardrail shipped 2026-05-10). Cross-week attribution of the +4 delta is not bytewise-verifiable; the assumption below is that transformers held steady at 5.6.2 (in use mid-April), but the assumption is not pinned.
+⚠️ **Methodology note:** baseline 2026-05-03 has NO recorded `transformers` / `diffusers` versions in `sweep_state.json` (the sweep predates the fail-loud guardrail shipped 2026-05-10). However, last week's published brief reports baseline transformers as `5.8.0` (pip-installed venv). This week ran on `5.6.2` (modellibs tree) — i.e., a TRANSFORMERS DOWNGRADE between the two sweeps. This is the load-bearing methodology issue this week:
+- the cohort delta in §5.1 (9 model classes "absent") is the downgrade — those classes exist in transformers 5.7+ but not 5.6.2;
+- the +4 GraniteMoeHybrid GB delta in §1 is most likely transformers source drift in the GraniteMoeHybrid forward path between `5.8.0` and `5.6.2` (downgrade direction); already covered by #55.
 
 | Setup         | Last week (2026-05-03)        | This week (2026-05-09)       |
 |---|---|---|
 | torch nightly | `2.13.0.dev20260502+cu126`    | `2.13.0.dev20260507+cu126`   |
-| transformers  | _(not recorded)_              | `5.6.2`                      |
+| transformers  | `5.8.0` (pip-installed)       | `5.6.2` (modellibs)          |
 | diffusers     | _(not recorded)_              | `0.38.0`                     |
+
+The modellibs upgrade to `5.8.0+` is queued for next week to restore version parity (the apparent "cohort shrinkage" in §5.1 then reverses).
 
 ## 3. Apple-to-apple Topline
 
@@ -75,7 +79,7 @@ The "if you read nothing else, read this" surface for the Dynamo team. Three len
 
 Removed breakdown:
 - **1 entry REMOVED from `known_errors.json`**: `MimiModel` — eager-side bug [`pytorch/pytorch#182339`](https://github.com/pytorch/pytorch/issues/182339) closed upstream 2026-05-06 and verified locally; both modes now flip `eager_error → graph_break`. Net `known_errors` count: 8 → 7.
-- **9 model classes** absent from current modellibs transformers 5.6.2 (cohort/version drift): DeepseekV4ForCausalLM, DeepseekV4Model, Deimv2Model, GraniteSpeechPlusForConditionalGeneration, LagunaForCausalLM, LagunaModel, MiniCPMV4_6ForConditionalGeneration, MiniCPMV4_6Model, PPFormulaNetForConditionalGeneration. (Modellibs upgrade to 5.8.0 queued for next week.)
+- **9 model classes** absent from this week's modellibs transformers `5.6.2` but present in last week's pip-installed `5.8.0` — i.e., the transformers DOWNGRADE between sweeps removed them from the cohort: DeepseekV4ForCausalLM, DeepseekV4Model, Deimv2Model, GraniteSpeechPlusForConditionalGeneration, LagunaForCausalLM, LagunaModel, MiniCPMV4_6ForConditionalGeneration, MiniCPMV4_6Model, PPFormulaNetForConditionalGeneration. (Modellibs upgrade to `5.8.0+` queued for next week to restore version parity.)
 
 ### 5.2 Newly compile-testable models (state flips: error → success)
 
