@@ -62,19 +62,16 @@ SKIP_MODELS_FILE = REPO_ROOT / "sweep" / "skip_models.json"
 def _load_skip_models() -> set[str]:
     """Load model names from sweep/skip_models.json (out-of-scope models).
 
-    These are MODEL NAMES (not (name, mode) keys) that the sweep is
-    configured to skip entirely — currently used for timm-dependent
-    models (out of our test scope: pip install timm not in our setup).
+    Delegates to sweep.skip_models_loader (handles both legacy list + dict formats).
 
     sweep_compare excludes any (name, mode) where name is in this list
     from the 6-category partition, placing them in a separate
     'skip_listed' bucket so they don't pollute regression / improvement
     counts. Symmetric with how run_sweep.py handles them.
     """
-    if not SKIP_MODELS_FILE.exists():
-        return set()
-    with open(SKIP_MODELS_FILE) as f:
-        return set(json.load(f))
+    sys.path.insert(0, str(REPO_ROOT / "sweep"))
+    from skip_models_loader import load_skip_models  # noqa: E402
+    return load_skip_models(SKIP_MODELS_FILE)
 
 
 def is_success(status: str) -> bool:

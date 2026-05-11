@@ -1,19 +1,87 @@
-[
-  "BltForCausalLM",
-  "BltModel",
-  "ConditionalDetrModel",
-  "DabDetrModel",
-  "DeformableDetrModel",
-  "DetrModel",
-  "FLUX.1-DiT",
-  "FastVlmForConditionalGeneration",
-  "FastVlmModel",
-  "Gemma3nForConditionalGeneration",
-  "Gemma3nModel",
-  "PeAudioVideoModel",
-  "PeVideoModel",
-  "PerceptionLMForConditionalGeneration",
-  "PerceptionLMModel",
-  "TableTransformerModel",
-  "TimmWrapperModel"
-]
+{
+  "BltForCausalLM": {
+    "reason": "very_large tier (needs 1620s timeout). Was added 2026-04-12 as interim unblock for nightly sweeps that timed out at default 180s. Per-model timeout propagation now ships (2026-05-10); SHOULD BE REMOVABLE once next sweep verifies cleanly with the new per-tier wiring.",
+    "follow_up_task": "Verify BLT runs cleanly on next nightly with per-model timeout (1620s); then remove this entry. Tracked in PLAN.md WS1 'Per-model timeout propagation' Migration step.",
+    "added": "2026-04-12"
+  },
+  "BltModel": {
+    "reason": "very_large tier (needs 1620s timeout). Same root cause as BltForCausalLM — added 2026-04-12 as interim unblock for nightly sweeps timing out at default 180s.",
+    "follow_up_task": "Same as BltForCausalLM — verify on next nightly with per-model timeout, then remove.",
+    "added": "2026-04-12"
+  },
+  "ConditionalDetrModel": {
+    "reason": "DETR family — depends on timm which is intentionally out-of-scope for our test environment (pip install timm not in our setup). Skipped at the source-enumeration level for the same reason as the other DETR models below.",
+    "follow_up_task": null,
+    "added": "2026-04-13"
+  },
+  "DabDetrModel": {
+    "reason": "DETR family — depends on timm which is intentionally out-of-scope for our test environment (pip install timm not in our setup). Skipped permanently per source-enumeration policy.",
+    "follow_up_task": null,
+    "added": "2026-04-13"
+  },
+  "DeformableDetrModel": {
+    "reason": "DETR family — depends on timm which is intentionally out-of-scope for our test environment (pip install timm not in our setup). Skipped permanently per source-enumeration policy.",
+    "follow_up_task": null,
+    "added": "2026-04-13"
+  },
+  "DetrModel": {
+    "reason": "DETR family — depends on timm which is intentionally out-of-scope for our test environment (pip install timm not in our setup). Skipped permanently per source-enumeration policy.",
+    "follow_up_task": null,
+    "added": "2026-04-13"
+  },
+  "FLUX.1-DiT": {
+    "reason": "Custom-source model (corpora/custom-models registry, NOT HF transformers). The HF-only sweep default (2026-05-10) excludes custom-source models entirely; this skip-list entry is redundant under HF-only but kept for safety in case a future sweep re-enables custom source.",
+    "follow_up_task": "Re-evaluate when/if custom source is re-enabled; may be removable then.",
+    "added": "2026-04-15"
+  },
+  "FastVlmForConditionalGeneration": {
+    "reason": "FastVlm family had a stable failure pattern in identify pass (specific reason not recorded at add time). Added during a sweep cleanup pass; investigation needed.",
+    "follow_up_task": "Investigate failure mode + either fix at root OR document as upstream bug. Reason text needs backfill from sweep history.",
+    "added": "2026-04-20"
+  },
+  "FastVlmModel": {
+    "reason": "Same as FastVlmForConditionalGeneration — FastVlm family stable failure (specific reason not recorded). Investigation needed.",
+    "follow_up_task": "Investigate with FastVlmForConditionalGeneration; remove together once root cause documented.",
+    "added": "2026-04-20"
+  },
+  "Gemma3nForConditionalGeneration": {
+    "reason": "Gemma3n family — was hitting compile-time issues that exceeded the default 180s timeout. Originally categorized as very_large but skipped pending per-model timeout wiring. With per-model timeout now shipped (2026-05-10), may be removable; needs verification.",
+    "follow_up_task": "Verify Gemma3n runs cleanly on next nightly with per-model timeout (1620s); same status as BLT.",
+    "added": "2026-04-22"
+  },
+  "Gemma3nModel": {
+    "reason": "Same as Gemma3nForConditionalGeneration — Gemma3n family timeout issue. Per-model timeout now ships; needs verification before removal.",
+    "follow_up_task": "Same as Gemma3nForConditionalGeneration — verify on next nightly.",
+    "added": "2026-04-22"
+  },
+  "PeAudioVideoModel": {
+    "reason": "Stable eager_error in pure-eager forward (KeyError(None) per known_errors.json). Skipped at the sweep level (in addition to known_errors.json gating) to avoid running the failed eager pass at all.",
+    "follow_up_task": "Remove from skip_models.json IF the known_errors entry is removed; otherwise keep skipped.",
+    "added": "2026-04-25"
+  },
+  "PeVideoModel": {
+    "reason": "Same root cause as PeAudioVideoModel — stable eager-side failure in the Pe* family. Skipped to avoid running the failed eager pass.",
+    "follow_up_task": "Re-evaluate with PeAudioVideoModel.",
+    "added": "2026-04-25"
+  },
+  "PerceptionLMForConditionalGeneration": {
+    "reason": "PerceptionLM family had a stable failure pattern (specific reason not recorded at add time). Possibly transformers-version dependent.",
+    "follow_up_task": "Investigate failure mode; remove if fixed in newer transformers OR document upstream bug.",
+    "added": "2026-05-01"
+  },
+  "PerceptionLMModel": {
+    "reason": "Same as PerceptionLMForConditionalGeneration — PerceptionLM family stable failure (specific reason not recorded). Investigation needed.",
+    "follow_up_task": "Re-evaluate with PerceptionLMForConditionalGeneration.",
+    "added": "2026-05-01"
+  },
+  "TableTransformerModel": {
+    "reason": "DETR-family variant — depends on timm which is out-of-scope for our test environment (pip install timm not in our setup).",
+    "follow_up_task": null,
+    "added": "2026-04-13"
+  },
+  "TimmWrapperModel": {
+    "reason": "TimmWrapper — depends on timm which is intentionally out-of-scope for our test environment (pip install timm not in our setup).",
+    "follow_up_task": null,
+    "added": "2026-04-13"
+  }
+}

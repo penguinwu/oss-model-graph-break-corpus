@@ -129,11 +129,16 @@ def check_pre_launch(cohort_path: Path) -> list:
     if skip_models_path.is_file():
         try:
             skip_data = json.loads(skip_models_path.read_text())
-            # skip_models.json shape: {"models": [...]} OR {"<name>": {...}, ...}
+            # skip_models.json shapes (in priority order):
+            #   - dict-of-objects (current schema): {"<name>": {"reason": ..., ...}, ...}
+            #   - flat list (legacy schema): ["<name>", ...]
+            #   - {"models": [...]} (legacy variant)
             if isinstance(skip_data, dict) and "models" in skip_data:
                 skip_set = set(skip_data["models"])
             elif isinstance(skip_data, dict):
                 skip_set = set(skip_data.keys())
+            elif isinstance(skip_data, list):
+                skip_set = set(skip_data)
             else:
                 skip_set = set()
             in_skip = sorted(cohort_names & skip_set)

@@ -2030,15 +2030,19 @@ KNOWN_ERRORS_FILE = SWEEP_DIR / "known_errors.json"
 
 
 def _load_skip_models():
-    """Auto-load toxic model skip list from config file."""
-    if SKIP_MODELS_FILE.exists():
-        with open(SKIP_MODELS_FILE) as f:
-            models = set(json.load(f))
-        if models:
-            print(f"Skip list: {len(models)} models will be skipped "
-                  f"(from {SKIP_MODELS_FILE})")
-        return models
-    return set()
+    """Auto-load toxic model skip list from config file.
+
+    Delegates to sweep.skip_models_loader (handles both legacy list + dict format).
+    """
+    try:
+        from sweep.skip_models_loader import load_skip_models as _load
+    except ImportError:
+        from skip_models_loader import load_skip_models as _load
+    models = _load(SKIP_MODELS_FILE)
+    if models:
+        print(f"Skip list: {len(models)} models will be skipped "
+              f"(from {SKIP_MODELS_FILE})")
+    return models
 
 
 def _torch_major_minor(python_bin=None):

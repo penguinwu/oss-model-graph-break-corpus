@@ -195,10 +195,9 @@ def load_known_errors_filtered(active_torch_major_minor: str | None) -> set:
 
 
 def load_skip_models() -> set:
-    if not SKIP_MODELS_FILE.exists():
-        return set()
-    with open(SKIP_MODELS_FILE) as f:
-        return set(json.load(f))
+    """Delegates to sweep.skip_models_loader (handles legacy + dict formats)."""
+    from skip_models_loader import load_skip_models as _load
+    return _load(SKIP_MODELS_FILE)
 
 
 def load_compare(sweep_dir: Path) -> dict | None:
