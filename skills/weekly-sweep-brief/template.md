@@ -36,7 +36,8 @@ If transformers / diffusers versions are NOT RECORDED for either side, surface t
 |---|---|---|
 | torch nightly | `{{baseline_torch}}`           | `{{current_torch}}`          |
 | transformers  | `{{baseline_tx}}`              | `{{current_tx}}`             |
-| diffusers     | `{{baseline_df}}`              | `{{current_df}}`             |
+
+**Diffusers row (conditional, per Peng directive 2026-05-11 17:19 ET):** include the `diffusers` row ONLY when this sweep's scope INCLUDES diffusers models. For HF-only sweeps (the default since 2026-05-10), the diffusers version is not load-bearing signal and should be omitted from the table to avoid noise.
 
 ## 3. Apple-to-apple Topline
 
@@ -84,11 +85,9 @@ Higher-leverage items first. If 0 items: state explicitly "Nothing actionable fo
 
 (Items in §4.3 may overlap with §4.1 / §4.2 — that's expected; §4.1 is "biggest patterns we should track", §4.2 is "narrow wins available", §4.3 is "what landed THIS week or what's most ripe for action NOW.")
 
-## 5. Cohort + newly compile-testable models (per Peng directive 2026-05-11 15:50 ET, merged from old §5 + §8)
+## 5. Cohort changes (per Peng directive 2026-05-11 17:19 ET — folded old §5.2 into this section)
 
-This section captures both set-membership changes (cohort additions/removals) and state-transition changes (models that flipped from error → compile-testable). Two subsections preserve the distinction:
-
-### 5.1 Cohort changes (set arithmetic)
+**Cohort definition:** the "compile-testable cohort" — model × mode pairs that are NOT in `known_errors.json` (eager-side bugs we deliberately exclude) and NOT in `skip_models.json` (intentional skips). When a `known_errors.json` entry is removed (e.g., upstream eager-side bug closed), the affected pairs re-enter the cohort and naturally appear as "Models added" below; no separate state-flip subsection is needed.
 
 |                                                  | Count           |
 |---|---|
@@ -97,21 +96,10 @@ This section captures both set-membership changes (cohort additions/removals) an
 
 **Detail rule (per Peng directive 2026-05-11 15:39 ET):** explain WHY only when there's something added or removed. Specifically:
 - If `skip_models.json` had **N≥1 entries added** this week → list the names + briefly: which bug.
-- If `known_errors.json` had **N≥1 entries added or removed** this week → cite the pytorch/pytorch tracking issue # by URL.
-- If `N model classes` are absent from current modellibs transformers (cohort/version drift) → list the names ONLY if N≥1 changed since last week.
-- If nothing was added/removed in any of these buckets → omit the breakdown entirely; the count table above is the full §5.1.
-
-### 5.2 Newly compile-testable models (state flips: error → success)
-
-Per definition: any flip from error to eager-success/compile-success counts as a new model. This includes truly-new models (first appearance in the cohort this week, captured in §5.1) AND was-error-in-baseline models that now run (NOT captured in §5.1 because they were in baseline cohort, just errored).
-
-**Detail rule (per Peng directive 2026-05-11 15:39 ET):** focus on the DIFFERENCE — what's actually new this week. If 0 newly-compile-testable: title carries the verdict ("### 5.2 Newly compile-testable models — 0 this week") and body is one sentence. No need to define terms or explain decomposition when the count is zero.
-
-If >0:
-- Total work items + distinct model count
-- % full_graph out of newly-compile-testable
-- Decomposition: truly-new (model didn't exist in baseline cohort) vs was-error-in-baseline. For was-error-in-baseline, name the prior-status breakdown (eager_error → success: N, timeout → success: N, worker_error → success: N).
-- **Tracking-issue citation requirement (per Peng directive 2026-05-11 13:05 ET):** when discussing a `known_errors.json` entry that was removed (model became compile-testable because the upstream eager-side bug closed) OR added (new eager-side bug discovered this week), cite the pytorch/pytorch tracking issue # by URL. Pre-publish gate (SKILL Step 5.5) verifies the tracking issue's CURRENT upstream state (closed/open) before publish.
+- If `known_errors.json` had **N≥1 entries added or removed** this week → cite the pytorch/pytorch tracking issue # by URL. **Tracking-issue citation requirement (per Peng directive 2026-05-11 13:05 ET):** Pre-publish gate (SKILL Step 5.5) verifies the tracking issue's CURRENT upstream state (closed/open) before publish.
+- If `N model classes` are absent because of `transformers` version differences between sweeps (cohort/version drift) → list the names + name the version delta direction (upgrade or downgrade).
+- For models that flipped from error → compile-testable this week (covered by the "Models added" line above), name the prior-status breakdown if useful (eager_error → success: N, timeout → success: N, worker_error → success: N) and cite the underlying fix (e.g., upstream tracking issue closed).
+- If nothing was added/removed in any of these buckets → omit the breakdown entirely; the count table above is the full §5.
 
 ## 6. Model state changes (merged §2/§3/§4 from old template per Peng directive 2026-05-11 15:39 ET)
 

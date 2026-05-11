@@ -19,9 +19,10 @@ Net **+4 graph breaks** on the apple-to-apple set (1432 common pairs), entirely 
 |---|---|---|
 | torch nightly | `2.13.0.dev20260502+cu126`    | `2.13.0.dev20260507+cu126`   |
 | transformers  | `5.8.0` (pip-installed)       | `5.6.2` (modellibs)          |
-| diffusers     | _(not recorded)_              | `0.38.0`                     |
 
-The modellibs upgrade to `5.8.0+` is queued for next week to restore version parity (the apparent "cohort shrinkage" in §5.1 then reverses).
+(`diffusers` row omitted: this sweep is HF-only, diffusers version is not load-bearing.)
+
+The modellibs upgrade to `5.8.0+` is queued for next week to restore version parity (the apparent "cohort shrinkage" in §5 then reverses).
 
 ## 3. Apple-to-apple Topline
 
@@ -68,25 +69,20 @@ The "if you read nothing else, read this" surface for the Dynamo team. Three len
 2. **[#126](https://github.com/penguinwu/oss-model-graph-break-corpus/issues/126)** — `[dynamo]` `PendingUnbackedSymbolNotFound` in `nn.functional.pad` with int-tensor padding (MimiModel `_pad1d`). Newly surfaced after `pytorch/pytorch#182339` eager fix landed (which previously masked this Dynamo gap). ~30-line standalone MRE in body, verified live. Leverage: 2 MimiModel pairs currently graph_break instead of full_graph; likely affects any audio-model family that does dynamic-shape padding via int-tensor.
 3. **[#55](https://github.com/penguinwu/oss-model-graph-break-corpus/issues/55)** — `_local_scalar_dense` from `.tolist()` (already tracked). This week's +4 GB delta on GraniteMoeHybrid is the entire net-GB regression. No new ask; tracking issue is already actionable.
 
-## 5. Cohort + newly compile-testable models
+## 5. Cohort changes
 
-### 5.1 Cohort changes (set arithmetic)
+**Cohort definition:** the "compile-testable cohort" — model × mode pairs that are NOT in `known_errors.json` (eager-side bugs we deliberately exclude) and NOT in `skip_models.json` (intentional skips). Removing a `known_errors.json` entry adds the affected pairs back to the cohort; transformers version differences between sweeps add or remove model classes wholesale.
 
 |                                                  | Count           |
 |---|---|
-| Models added (in this week, NOT in last week)    | 0               |
+| Models added (in this week, NOT in last week)    | 2 work items / 1 distinct (MimiModel ×2 modes) |
 | Models removed (in last week, NOT in this week)  | 18 work items / 9 distinct |
 
-Removed breakdown:
-- **1 entry REMOVED from `known_errors.json`**: `MimiModel` — eager-side bug [`pytorch/pytorch#182339`](https://github.com/pytorch/pytorch/issues/182339) closed upstream 2026-05-06 and verified locally; both modes now flip `eager_error → graph_break`. Net `known_errors` count: 8 → 7.
-- **9 model classes** absent from this week's modellibs transformers `5.6.2` but present in last week's pip-installed `5.8.0` — i.e., the transformers DOWNGRADE between sweeps removed them from the cohort: DeepseekV4ForCausalLM, DeepseekV4Model, Deimv2Model, GraniteSpeechPlusForConditionalGeneration, LagunaForCausalLM, LagunaModel, MiniCPMV4_6ForConditionalGeneration, MiniCPMV4_6Model, PPFormulaNetForConditionalGeneration. (Modellibs upgrade to `5.8.0+` queued for next week to restore version parity.)
+**Added breakdown:**
+- **MimiModel ×2 (eval + train)** — re-entered the cohort because we REMOVED the `known_errors.json` entry after [`pytorch/pytorch#182339`](https://github.com/pytorch/pytorch/issues/182339) closed upstream 2026-05-06. Both modes now run eagerly (`eager_error → graph_break`); the new Dynamo gap they surface is filed as [#126](https://github.com/penguinwu/oss-model-graph-break-corpus/issues/126). Net `known_errors.json` count: 8 → 7. % full_graph out of newly-compile-testable: 0% (both flipped to `graph_break`, not `full_graph`).
 
-### 5.2 Newly compile-testable models (state flips: error → success)
-
-- Total work items: **2**
-- Distinct model count: **1** (MimiModel)
-- % full_graph out of newly-compile-testable: **0%** (both pairs flipped `eager_error → graph_break`, not `full_graph`)
-- Decomposition: 2 pairs that were `eager_error` in baseline are now compile-testable (MimiModel|eval, MimiModel|train) after [`pytorch/pytorch#182339`](https://github.com/pytorch/pytorch/issues/182339) closed upstream — both surface a new Dynamo gap (filed as #126).
+**Removed breakdown:**
+- **9 model classes** absent from this week's modellibs transformers `5.6.2` but present in last week's pip-installed `5.8.0` — i.e., the transformers DOWNGRADE between sweeps removed them from the cohort: DeepseekV4ForCausalLM, DeepseekV4Model, Deimv2Model, GraniteSpeechPlusForConditionalGeneration, LagunaForCausalLM, LagunaModel, MiniCPMV4_6ForConditionalGeneration, MiniCPMV4_6Model, PPFormulaNetForConditionalGeneration. (Modellibs upgrade to `5.8.0+` queued for next week to restore version parity; the cohort returns when that lands.)
 
 ## 6. Model state changes
 
