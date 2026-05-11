@@ -70,7 +70,7 @@ Mechanical gate: SKILL Step 5.5 Gate A greps for these phrases and blocks public
 
 ### R10 — Definitive answer per new break-reason (Peng directive 2026-05-11 13:05 ET)
 
-For each NEW break-reason listed in §7, the body MUST give one of three definitive answers:
+For each NEW break-reason listed in §9 (NEW break-reason types surfaced), the body MUST give one of three definitive answers:
 - Covered by existing tracking issue # (cite + URL)
 - Newly-filed this sweep as # (cite + URL)
 - Executed-TODO with # now cited (the act-then-document path)
@@ -83,7 +83,7 @@ Anything else — "covered by ?" / "needs check" / "investigation pending" — f
 
 The brief audience is the PT2 dynamo team. Internal corpus-side process corrections (auto-close-script bugs, revert flows, close-mode rev N catching errors, infra hygiene fixes) are NOISE for that audience. They live in PLAN.md, not in the brief.
 
-Mechanical gate: SKILL Step 5.5 Gate D scans §5 + §8 for corpus-side process-correction mentions and blocks publication if found.
+Mechanical gate: SKILL Step 5.5 Gate D scans §7 (Issues — actions taken) + §10 (Actionable for PT2 team) for corpus-side process-correction mentions and blocks publication if found.
 
 (Reason: 2026-05-10 brief §5 explained "the 3 issues that were closed earlier today (#21, #26, #27) were closed wrongly via a bypass-script that had a mode-collapse bug ... close-mode rev 3 catches this class". Peng's correction: "no need to talk about our internal glitches — too much information can be confusing to users." R11 encodes the principle.)
 
@@ -121,8 +121,8 @@ Walk through every item. Each must pass.
 - [ ] R7: signal-boost message goes through `post_to_feedback.py`, not raw `gchat send`
 - [ ] R8: destination group name in the signal-boost matches `meta workplace.group details` output (verified, not from memory)
 - [ ] R9: brief contains zero "pending follow-up" / "TODO" / "TBD" / "needs investigation" — all such items executed and the resulting #/result cited
-- [ ] R10: each new break-reason in §7 has a definitive answer (existing-issue # cited / newly-filed # cited / executed-TODO with # now cited)
-- [ ] R11: no internal corpus-side process corrections in §5 or §8 (auto-close-script bugs, revert flows, close-mode-rev-N catches, infra hygiene fixes — all live in PLAN.md, not the brief)
+- [ ] R10: each new break-reason in §9 has a definitive answer (existing-issue # cited / newly-filed # cited / executed-TODO with # now cited)
+- [ ] R11: no internal corpus-side process corrections in §7 or §10 (auto-close-script bugs, revert flows, close-mode-rev-N catches, infra hygiene fixes — all live in PLAN.md, not the brief)
 - [ ] S1: headline numbers reconcile with body sub-totals
 - [ ] S2: no "likely" / "substantially" / "some" / "a few" in load-bearing claims
 - [ ] S3: audience can read this without our internal context (no bare #N, no "cat 3" / "cat 1" / "cat 4" jargon — use plain English: apple-to-apple set / newly-compile-testable / truly new)
