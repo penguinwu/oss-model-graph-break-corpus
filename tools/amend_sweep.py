@@ -74,6 +74,12 @@ def _run_harness_for_models(
         "--timeout", str(timeout_s),
         "--identify-only", "--no-auto-retry",
         "--output-dir", str(output_dir),
+        # amend_sweep operates on a small ad-hoc cohort (re-run the affected
+        # models). The cohort-validator's metadata requirement (designed for
+        # full sweep launches) is overkill here — pass --allow-bare-cohort
+        # so amend_sweep accepts a flat list. The amendment audit trail
+        # already captures provenance via fix_commit + fix_description.
+        "--allow-bare-cohort",
     ]
     print(f"  Running: {' '.join(cmd)}", file=sys.stderr)
     result = subprocess.run(cmd, cwd=REPO_ROOT, check=False)
