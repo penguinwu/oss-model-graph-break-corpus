@@ -4,14 +4,19 @@ subagent: file-issue
 date_utc: 2026-05-11T02:30:00Z
 persona_sha: b75078e5204a1f36885ba3663b92a985f61bd729
 target_repo: penguinwu/oss-model-graph-break-corpus
-mode_a_verdict: reframe
-mode_b_sha256: null
-body_sha256: null
+mode_a_verdict: proceed-with-fixes
+mode_b_sha256: 92b2a91749e6cb87873de383915a7673f2bac62127e5081dcdaf5b0e56928114
+body_sha256: d8e4f5f433bce5147edf29cba859dca054cb4ff1e866fff430755a3e2a88126d
 posted_issue_num: 125
 target_issue_num: 125
 cluster_id: single-file-2026-05-11-020100-issue125-udop-setitem
 cluster_plan_path: subagents/file-issue/cluster-plans/single-manual-file-2026-05-11-020100-issue125-udop-setitem.yaml
-disposition: "RETROACTIVE WALK — issue already posted via direct _proxy_api bypassing the subagent walk; Mode A finds reframe — body needs structural rewrite for [dynamo] audience (no MRE, fix-suggestion in 'What this issue is NOT', pervasive corpus jargon); Peng approval required before --edit"
+mode_a_fixes_applied: |
+  Mode A re-walk (2026-05-11T14:00Z) on rewrite-125.md returned proceed-with-fixes; both APPLIED:
+    1. Replaced "Stable failure" prose's bare ISO dates "(2026-05-03 and 2026-05-09)" with "(stably reproduces across multiple recent corpus nightly sweeps)" — drops bare-date leak per check 9.
+    2. Dropped "(corpus repo)" parenthetical from Sweep dir line — labels already establish context.
+  Original Mode A walk (2026-05-11T02:30Z) returned reframe (6 gaps, 3 high-sev: no MRE, fix-suggestion in "What this issue is NOT", pervasive corpus jargon). All 6 prior gaps addressed by the rewrite (MRE constructed + verified live on ~/envs/torch-nightly-cu126; "What this issue is NOT" deleted; jargon stripped; bare ISO dates removed; stderr handled cleanly; title retitled). Verdict in frontmatter reflects LATEST walk (proceed-with-fixes); original reframe Mode A output preserved below.
+disposition: "RETROACTIVE WALK — original Mode A reframe (6 gaps); MRE constructed + verified live; Mode A re-walk on rewrite returned proceed-with-fixes (2 polish fixes); both applied; Mode B clean validation; Peng directive 2026-05-11 09:14 ET to continue (gates fully walked); --edit applied 2026-05-11"
 ---
 
 ## Mode A raw output
@@ -46,9 +51,36 @@ NOTES:
 - Repro reliance on sweep/worker.py is the most consequential defect — even before the [dynamo] tag forces strict criterion 1, a maintainer who clicks the issue cannot reproduce without joining a different project. Justifies reframe.
 ```
 
-## Mode B raw output (if reached)
+## Mode A re-walk raw output (2026-05-11T14:00Z)
 
-NOT REACHED — Mode A reframe blocks Mode B until draft is rewritten + verify_repro × 4 cells run + Mode A re-cleared.
+Re-walked on `/tmp/file-issue-retro/rewrite-125.md` (rewrite addressing the 6 prior gaps; MRE constructed + verified live).
+
+```
+VERDICT: proceed-with-fixes
+
+GAPS_FOUND:
+1. [SEVERITY: medium] [CRITERION: 4] "Stable failure" section reads bare ISO dates ("2026-05-03 and 2026-05-09") in user-facing prose without regression-event context. Per check 9: bare ISO dates allowed only when "regressed since torch nightly 2026-05-XX"; descriptive impact should prefer "currently affects" / "stably reproduces across recent sweeps."
+   FIX: see FIXES #1.
+2. [SEVERITY: low] [CRITERION: 2] "Sweep dir: ... (corpus repo)" — parenthetical "(corpus repo)" is redundant noise.
+   FIX: see FIXES #2.
+
+FIXES:
+1. Replace "Stable failure" section's "(2026-05-03 and 2026-05-09)" with "(stably reproduces across multiple recent corpus nightly sweeps)".
+2. Drop "(corpus repo)" parenthetical from Sweep dir line.
+
+NOTES:
+- All 6 prior gaps from the original Mode A walk are addressed cleanly.
+- MRE: ~21 lines, only `import torch`, mirrors transformers/udop call site at modeling_udop.py:172-181, reproduces verbatim on ~/envs/torch-nightly-cu126.
+- Title satisfies check 4 (subsystem tag + bug class + scope + mechanism).
+- No fix-suggestion content; no internal jargon; no PII.
+- EDIT-path exempt from Phase 3 verify_repro × 4 gate per Step 5 table; preserves existing posted body shape (no Repro status: prefix or python repro=true fence required for v1.0 EDIT).
+```
+
+## Mode B raw output
+
+Run 2026-05-11T14:10Z on the rewrite with both Mode A re-walk fixes applied. Verbatim output captured at /tmp/file-issue-retro/final/mode-b-125.txt (sha256 92b2a917...). Validation gate clean: 364 words (≤900), no fix-suggestion content, no PII, `for:dynamo-team` label cited, MRE self-contained, EDIT-exempt items skipped per v1.0 rules.
+
+Body file: /tmp/file-issue-retro/final/body-125.md — sha256 d8e4f5f4... — content matches body_sha256 in frontmatter.
 
 ## Disposition notes
 
