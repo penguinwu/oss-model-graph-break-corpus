@@ -1,6 +1,6 @@
 # Weekly Sweep Brief — template
 
-Fill in the 10 sections below. Each section is required (omit a section only if the corresponding finding is genuinely zero, e.g. "Compile regressions: 0" still gets a section even if there's nothing to detail).
+Fill in the 8 sections below (plus optional one-off §9+). Each section is required (omit a section only if the corresponding finding is genuinely zero, e.g. "Compile regressions: 0" still gets a section even if there's nothing to detail).
 
 **Encoding principle (per Peng directive 2026-05-10 21:40 ET):** when a sweep changes (re-run, amend_sweep), the report is RE-GENERATED from this template + augmented sweep data. Do NOT manually edit the previous report. New findings encode here, propagate via re-generation.
 
@@ -51,7 +51,9 @@ If transformers / diffusers versions are NOT RECORDED for either side, surface t
 
 Status counts on the common-pair set are by definition byte-identical UNLESS Dynamo behavior changed. Total-GB delta is the load-bearing apple-to-apple metric.
 
-## 4. Dynamo focus — top-5 lists (per Peng directive 2026-05-11 15:39 ET, standard section)
+## 4. Dynamo focus — top-5 lists + actionable this week (per Peng directives 2026-05-11 15:39 + 15:50 ET)
+
+This section is the "if you read nothing else, read this" surface for the Dynamo team. Three lenses on the same question — what should we focus on?
 
 ### 4.1 Top 5 Dynamo issues by blast radius (model count × break count)
 
@@ -71,7 +73,22 @@ Pull from the open `[dynamo]` issue list, ranked by `model_count × break_count`
 
 Curated list of issues where the path-to-fix is narrow + has a verified live MRE in the issue body. The "Why easy" column is the load-bearing signal — without it, this list is just a smaller version of §4.1.
 
-## 5. Cohort Delta
+### 4.3 Actionable this week
+
+Bulleted, 5±2 items. Each item must:
+- Name the issue # (or filable item) directly
+- State the leverage (how many breaks / models cleared if the action lands)
+- Be specific enough that the PT2 team can act on it without further triage from us
+
+Higher-leverage items first. If 0 items: state explicitly "Nothing actionable for PT2 team this week." Do NOT mention internal corpus-side workstreams (they live in PLAN.md, not the brief). Per Peng directive 2026-05-10 20:56 ET: corpus-side work is not of Dynamo team's interest.
+
+(Items in §4.3 may overlap with §4.1 / §4.2 — that's expected; §4.1 is "biggest patterns we should track", §4.2 is "narrow wins available", §4.3 is "what landed THIS week or what's most ripe for action NOW.")
+
+## 5. Cohort + newly compile-testable models (per Peng directive 2026-05-11 15:50 ET, merged from old §5 + §8)
+
+This section captures both set-membership changes (cohort additions/removals) and state-transition changes (models that flipped from error → compile-testable). Two subsections preserve the distinction:
+
+### 5.1 Cohort changes (set arithmetic)
 
 |                                                  | Count           |
 |---|---|
@@ -80,9 +97,21 @@ Curated list of issues where the path-to-fix is narrow + has a verified live MRE
 
 **Detail rule (per Peng directive 2026-05-11 15:39 ET):** explain WHY only when there's something added or removed. Specifically:
 - If `skip_models.json` had **N≥1 entries added** this week → list the names + briefly: which bug.
-- If `known_errors.json` had **N≥1 entries added or removed** this week → cite the pytorch/pytorch tracking issue # by URL (per §8 Tracking-issue citation requirement also).
+- If `known_errors.json` had **N≥1 entries added or removed** this week → cite the pytorch/pytorch tracking issue # by URL.
 - If `N model classes` are absent from current modellibs transformers (cohort/version drift) → list the names ONLY if N≥1 changed since last week.
-- If nothing was added/removed in any of these buckets → omit the breakdown entirely; the count table above is the full §5.
+- If nothing was added/removed in any of these buckets → omit the breakdown entirely; the count table above is the full §5.1.
+
+### 5.2 Newly compile-testable models (state flips: error → success)
+
+Per definition: any flip from error to eager-success/compile-success counts as a new model. This includes truly-new models (first appearance in the cohort this week, captured in §5.1) AND was-error-in-baseline models that now run (NOT captured in §5.1 because they were in baseline cohort, just errored).
+
+**Detail rule (per Peng directive 2026-05-11 15:39 ET):** focus on the DIFFERENCE — what's actually new this week. If 0 newly-compile-testable: title carries the verdict ("### 5.2 Newly compile-testable models — 0 this week") and body is one sentence. No need to define terms or explain decomposition when the count is zero.
+
+If >0:
+- Total work items + distinct model count
+- % full_graph out of newly-compile-testable
+- Decomposition: truly-new (model didn't exist in baseline cohort) vs was-error-in-baseline. For was-error-in-baseline, name the prior-status breakdown (eager_error → success: N, timeout → success: N, worker_error → success: N).
+- **Tracking-issue citation requirement (per Peng directive 2026-05-11 13:05 ET):** when discussing a `known_errors.json` entry that was removed (model became compile-testable because the upstream eager-side bug closed) OR added (new eager-side bug discovered this week), cite the pytorch/pytorch tracking issue # by URL. Pre-publish gate (SKILL Step 5.5) verifies the tracking issue's CURRENT upstream state (closed/open) before publish.
 
 ## 6. Model state changes (merged §2/§3/§4 from old template per Peng directive 2026-05-11 15:39 ET)
 
@@ -117,19 +146,7 @@ Required subsections (each terse if zero, e.g. "Closed: 0"):
 
 **FORBIDDEN in §7:** internal corpus-side process corrections (e.g., "we accidentally closed these issues via a buggy script and reverted"). Those are noise to the Dynamo team — track in PLAN.md, not in the brief. Per Peng directive 2026-05-11 10:55 ET: "the audience is Dynamo team, no need to talk about our internal glitches — too much information can be confusing to users."
 
-## 8. Newly compile-testable models added this week
-
-Per definition: any flip from error to eager-success/compile-success counts as a new model.
-
-**Detail rule (per Peng directive 2026-05-11 15:39 ET):** focus on the DIFFERENCE — what's actually new this week. If 0 newly-compile-testable: title carries the verdict ("## 8. Newly compile-testable models — 0 this week") and body is one sentence. No need to define terms or explain decomposition when the count is zero.
-
-If >0:
-- Total work items + distinct model count
-- % full_graph out of newly-compile-testable
-- Decomposition: truly-new (model didn't exist in baseline cohort) vs was-error-in-baseline. For was-error-in-baseline, name the prior-status breakdown (eager_error → success: N, timeout → success: N, worker_error → success: N).
-- **Tracking-issue citation requirement (per Peng directive 2026-05-11 13:05 ET):** when discussing a `known_errors.json` entry that was removed (model became compile-testable because the upstream eager-side bug closed) OR added (new eager-side bug discovered this week), cite the pytorch/pytorch tracking issue # by URL. Pre-publish gate (SKILL Step 5.5) verifies the tracking issue's CURRENT upstream state (closed/open) before publish.
-
-## 9. NEW break-reason types surfaced (not seen in any baseline model)
+## 8. NEW break-reason types surfaced (not seen in any baseline model)
 
 Table of patterns + counts + top affected files. Highlight any new operator (e.g. `aten.bincount`) that needs an ops-coverage decision.
 
@@ -138,19 +155,8 @@ Table of patterns + counts + top affected files. Highlight any new operator (e.g
 - **Newly-filed this sweep as #NNN** (cite + link) — new dynamo issue filed during the brief composition workflow.
 - **TODO + EXECUTED before publish** — only acceptable if the TODO was completed in the same workflow cycle (e.g., file-issue subagent walked + new issue posted) and the # is now cited.
 
-If §9 lists a break-reason without one of those three answers, the brief FAILS the SKILL Step 5.5 pre-publish gate. Do NOT publish a brief that says "needs follow-up" or "TBD" for any new break-reason.
-
-## 10. Actionable for Animesh / PT2 team
-
-Bulleted, 5±2 items. Each item must:
-- Name the issue # (or filable item) directly
-- State the leverage (how many breaks / models cleared if the action lands)
-- Be specific enough that the PT2 team can act on it without further triage from us
-
-Higher-leverage items first.
-
-If 0 items: state explicitly "Nothing actionable for PT2 team this week." Do NOT mention internal corpus-side workstreams (they live in PLAN.md, not the brief). Per Peng directive 2026-05-10 20:56 ET: corpus-side work is not of Dynamo team's interest.
+If §8 lists a break-reason without one of those three answers, the brief FAILS the SKILL Step 5.5 pre-publish gate. Do NOT publish a brief that says "needs follow-up" or "TBD" for any new break-reason.
 
 ---
 
-(End of template. Optional one-off sections — e.g., "Major rewrite of Dynamo issues this week" — appear AFTER §10 with the next contiguous integer (§11, §12, ...) and are clearly labeled as one-off.)
+(End of standard template. Optional one-off sections — e.g., "Major rewrite of Dynamo issues this week" — appear AFTER §8 with the next contiguous integer (§9, §10, ...) and are clearly labeled as one-off.)

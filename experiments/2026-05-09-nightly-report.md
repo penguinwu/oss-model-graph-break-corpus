@@ -32,7 +32,9 @@ Net **+4 graph breaks** on the apple-to-apple set (1432 common pairs), entirely 
 
 Status counts on the common-pair set are by definition byte-identical UNLESS Dynamo behavior changed. Total-GB delta is the load-bearing apple-to-apple metric.
 
-## 4. Dynamo focus — top-5 lists
+## 4. Dynamo focus — top-5 lists + actionable this week
+
+The "if you read nothing else, read this" surface for the Dynamo team. Three lenses on the same question.
 
 ### 4.1 Top 5 Dynamo issues by blast radius (model count × break count)
 
@@ -56,7 +58,15 @@ Status counts on the common-pair set are by definition byte-identical UNLESS Dyn
 | [99](https://github.com/penguinwu/oss-model-graph-break-corpus/issues/99)   | `SymInt / SymInt` division not supported | 3 sliding-window models, 100 breaks | Narrow algorithmic gap; MRE in body |
 | [116](https://github.com/penguinwu/oss-model-graph-break-corpus/issues/116) | `range(int, Tensor, int)` builtin not traced | 2 models, 12 breaks | Very specific builtin gap |
 
-## 5. Cohort Delta
+### 4.3 Actionable this week
+
+1. **[#125](https://github.com/penguinwu/oss-model-graph-break-corpus/issues/125)** — `[dynamo]` FX `setitem` on FakeTensor fails for UdopEncoderModel. Fake-tensor `setitem` on a `(2, 196)` bool tensor cannot be traced when the index is a tuple of 0-d int64 tensors (produced by `zip(*ind)` over an `(N, 2)` index tensor). 2 model×mode pairs currently zero-coverage on the corpus. ~25-line standalone MRE in body, verified live. Leverage: if FX fake-tensor setitem path handles tuples of 0-d tensor indices, both pairs become Dynamo-testable.
+2. **[#126](https://github.com/penguinwu/oss-model-graph-break-corpus/issues/126)** — `[dynamo]` `PendingUnbackedSymbolNotFound` in `nn.functional.pad` with int-tensor padding (MimiModel `_pad1d`). Newly surfaced after `pytorch/pytorch#182339` eager fix landed (which previously masked this Dynamo gap). ~30-line standalone MRE in body, verified live. Leverage: 2 MimiModel pairs currently graph_break instead of full_graph; likely affects any audio-model family that does dynamic-shape padding via int-tensor.
+3. **[#55](https://github.com/penguinwu/oss-model-graph-break-corpus/issues/55)** — `_local_scalar_dense` from `.tolist()` (already tracked). This week's +4 GB delta on GraniteMoeHybrid is the entire net-GB regression. No new ask; tracking issue is already actionable.
+
+## 5. Cohort + newly compile-testable models
+
+### 5.1 Cohort changes (set arithmetic)
 
 |                                                  | Count           |
 |---|---|
@@ -66,6 +76,13 @@ Status counts on the common-pair set are by definition byte-identical UNLESS Dyn
 Removed breakdown:
 - **1 entry REMOVED from `known_errors.json`**: `MimiModel` — eager-side bug [`pytorch/pytorch#182339`](https://github.com/pytorch/pytorch/issues/182339) closed upstream 2026-05-06 and verified locally; both modes now flip `eager_error → graph_break`. Net `known_errors` count: 8 → 7.
 - **9 model classes** absent from current modellibs transformers 5.6.2 (cohort/version drift): DeepseekV4ForCausalLM, DeepseekV4Model, Deimv2Model, GraniteSpeechPlusForConditionalGeneration, LagunaForCausalLM, LagunaModel, MiniCPMV4_6ForConditionalGeneration, MiniCPMV4_6Model, PPFormulaNetForConditionalGeneration. (Modellibs upgrade to 5.8.0 queued for next week.)
+
+### 5.2 Newly compile-testable models (state flips: error → success)
+
+- Total work items: **2**
+- Distinct model count: **1** (MimiModel)
+- % full_graph out of newly-compile-testable: **0%** (both pairs flipped `eager_error → graph_break`, not `full_graph`)
+- Decomposition: 2 pairs that were `eager_error` in baseline are now compile-testable (MimiModel|eval, MimiModel|train) after [`pytorch/pytorch#182339`](https://github.com/pytorch/pytorch/issues/182339) closed upstream — both surface a new Dynamo gap (filed as #126).
 
 ## 6. Model state changes
 
@@ -112,14 +129,7 @@ Zero pairs flipped from compile-success → error.
 
 **Net effect on tracked issues (corpus repo):** new issues +4 / closed 0 → net +4 open. (One upstream pytorch/pytorch close drove a known_errors removal but didn't close any corpus-side issue. #122 scope-reduction is an edit, not a close.)
 
-## 8. Newly compile-testable models added this week
-
-- Total work items: **2**
-- Distinct model count: **1** (MimiModel)
-- % full_graph out of newly-compile-testable: **0%** (both pairs flipped `eager_error → graph_break`, not `full_graph`)
-- Decomposition: 2 pairs that were `eager_error` in baseline are now compile-testable (MimiModel|eval, MimiModel|train) after [`pytorch/pytorch#182339`](https://github.com/pytorch/pytorch/issues/182339) closed upstream — both surface a new Dynamo gap (filed as #126).
-
-## 9. NEW break-reason types surfaced (not seen in any baseline model)
+## 8. NEW break-reason types surfaced (not seen in any baseline model)
 
 Zero new break-reason types on the apple-to-apple set.
 
@@ -128,13 +138,7 @@ Zero new break-reason types on the apple-to-apple set.
 
 No new operators (e.g. no `aten.bincount`-class additions) need an ops-coverage decision this week.
 
-## 10. Actionable for the PT2 team
-
-1. **[#125](https://github.com/penguinwu/oss-model-graph-break-corpus/issues/125)** — `[dynamo]` FX `setitem` on FakeTensor fails for UdopEncoderModel. Fake-tensor `setitem` on a `(2, 196)` bool tensor cannot be traced when the index is a tuple of 0-d int64 tensors (produced by `zip(*ind)` over an `(N, 2)` index tensor). 2 model×mode pairs currently zero-coverage on the corpus. ~25-line standalone MRE in body, verified live. Leverage: if FX fake-tensor setitem path handles tuples of 0-d tensor indices, both pairs become Dynamo-testable.
-2. **[#126](https://github.com/penguinwu/oss-model-graph-break-corpus/issues/126)** — `[dynamo]` `PendingUnbackedSymbolNotFound` in `nn.functional.pad` with int-tensor padding (MimiModel `_pad1d`). Newly surfaced after `pytorch/pytorch#182339` eager fix landed (which previously masked this Dynamo gap). ~30-line standalone MRE in body, verified live. Leverage: 2 MimiModel pairs currently graph_break instead of full_graph; likely affects any audio-model family that does dynamic-shape padding via int-tensor.
-3. **[#55](https://github.com/penguinwu/oss-model-graph-break-corpus/issues/55)** — `_local_scalar_dense` from `.tolist()` (already tracked). This week's +4 GB delta on GraniteMoeHybrid is the entire net-GB regression. No new ask; tracking issue is already actionable.
-
-## 11. Major rewrite of Dynamo issues this week (one-off)
+## 9. Major rewrite of Dynamo issues this week (one-off)
 
 The corpus has been investing heavily in raising the contribution-quality bar of Dynamo issues. Two waves of rewrite work landed in the last 7 days:
 
