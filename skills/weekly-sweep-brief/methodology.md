@@ -60,6 +60,33 @@ Filing an issue against the explain pass (claiming serialization drops the inner
 
 (Reason: 2026-05-04 signal boost called the brief's destination "PT2 Compile Q&A" — wrong; the actual group is "PyTorch Compiler AI-native Working Group" (`1251481819891072`). The PT2 Compile Q&A group exists separately at `1075192433118967`. Peng caught and corrected. The Workflow Step 7b now mechanically captures the name into a shell variable before composing the signal-boost.)
 
+### R9 — Brief is for completed actions; no pending follow-ups (Peng directive 2026-05-11 13:05 ET)
+
+The brief documents work that is DONE. Phrases like "pending follow-up", "TODO", "TBD", "needs follow-up", "needs investigation", "to be filed", "will file" are FORBIDDEN in the published brief. Their presence indicates the agent deferred work that should have been completed in the same composition cycle.
+
+Mechanical gate: SKILL Step 5.5 Gate A greps for these phrases and blocks publication. The fix on a hit is to EXECUTE the implied action and update the brief with the resulting #/result, NOT to soften the wording.
+
+(Reason: 2026-05-10 brief shipped with "Pending follow-up: file [corpus-tooling] issue for stable explain-pass crashes on QianfanOCR (4 pairs), UdopEncoder (2 pairs), and Blip2 (1 new this week)." Peng's correction: those should have been filed BEFORE publishing the brief, not deferred as TODOs. Filing them was completed in agent-time the same day. R9 encodes the principle so this class of deferral is mechanically caught.)
+
+### R10 — Definitive answer per new break-reason (Peng directive 2026-05-11 13:05 ET)
+
+For each NEW break-reason listed in §7, the body MUST give one of three definitive answers:
+- Covered by existing tracking issue # (cite + URL)
+- Newly-filed this sweep as # (cite + URL)
+- Executed-TODO with # now cited (the act-then-document path)
+
+Anything else — "covered by ?" / "needs check" / "investigation pending" — fails this rule. Mechanical gate: SKILL Step 5.5 Gate C.
+
+(Reason: 2026-05-10 brief mentioned ".tolist() in Granite MoE" as a new break-reason WITHOUT noting whether it's covered by an existing issue. Peng's correction: "is there an existing issue or not? We need to give a definitive answer." Answer was #55 (`_local_scalar_dense` from `.tolist()`) — already tracked. The brief should have cited #55 directly. R10 encodes the principle.)
+
+### R11 — No internal corpus-side glitches in user-facing prose (Peng directive 2026-05-11 10:55 ET)
+
+The brief audience is the PT2 dynamo team. Internal corpus-side process corrections (auto-close-script bugs, revert flows, close-mode rev N catching errors, infra hygiene fixes) are NOISE for that audience. They live in PLAN.md, not in the brief.
+
+Mechanical gate: SKILL Step 5.5 Gate D scans §5 + §8 for corpus-side process-correction mentions and blocks publication if found.
+
+(Reason: 2026-05-10 brief §5 explained "the 3 issues that were closed earlier today (#21, #26, #27) were closed wrongly via a bypass-script that had a mode-collapse bug ... close-mode rev 3 catches this class". Peng's correction: "no need to talk about our internal glitches — too much information can be confusing to users." R11 encodes the principle.)
+
 ## Soft rules (judgment, no mechanical guard)
 
 ### S1 — Numbers in the headline must reconcile with body sections
@@ -86,16 +113,19 @@ Walk through every item. Each must pass.
 
 - [ ] Step 1: `tools/sweep_compare.py --check-only` returned exit code 0
 - [ ] R1: every number in the brief comes from sweep_compare output (markdown, JSON, or `--pattern` query) — no ad-hoc scripts
-- [ ] R2: every "regression" or "improvement" claim names cat 3 explicitly (or is qualified as "exposure" / "newly observable" for cat 1/cat 4)
+- [ ] R2: every "regression" or "improvement" claim is on the apple-to-apple set explicitly (or is qualified as "exposure" / "newly observable" for newly-compile-testable / truly-new models)
 - [ ] R3: attribution verified on ≥2 flipped models, OR explicitly marked UNVERIFIED
 - [ ] R4: every umbrella issue mentioned has been split (or marked for split this cycle)
 - [ ] R5: every new issue filed today was preceded by a `gh issue list --search` against existing
-- [ ] R6: "newly compile-testable" includes cat 1 + cat 4, not just cat 4
+- [ ] R6: "newly compile-testable" includes both truly-new and was-error-in-baseline models
 - [ ] R7: signal-boost message goes through `post_to_feedback.py`, not raw `gchat send`
 - [ ] R8: destination group name in the signal-boost matches `meta workplace.group details` output (verified, not from memory)
+- [ ] R9: brief contains zero "pending follow-up" / "TODO" / "TBD" / "needs investigation" — all such items executed and the resulting #/result cited
+- [ ] R10: each new break-reason in §7 has a definitive answer (existing-issue # cited / newly-filed # cited / executed-TODO with # now cited)
+- [ ] R11: no internal corpus-side process corrections in §5 or §8 (auto-close-script bugs, revert flows, close-mode-rev-N catches, infra hygiene fixes — all live in PLAN.md, not the brief)
 - [ ] S1: headline numbers reconcile with body sub-totals
 - [ ] S2: no "likely" / "substantially" / "some" / "a few" in load-bearing claims
-- [ ] S3: audience can read this without our internal context (no bare #N, no "cat 3" load-bearing without intro)
+- [ ] S3: audience can read this without our internal context (no bare #N, no "cat 3" / "cat 1" / "cat 4" jargon — use plain English: apple-to-apple set / newly-compile-testable / truly new)
 - [ ] S4: each actionable bullet names the leverage in numbers
 
 If any item fails: fix it, then re-run the checklist (don't selectively re-check). The whole list must pass before Step 7 (post).
@@ -110,3 +140,5 @@ If any item fails: fix it, then re-run the checklist (don't selectively re-check
 - **R7** added 2026-05-04 — watchdog status leaked to user group via raw `gchat send --as-user`. Settings deny + this rule added.
 - **R8** added 2026-05-04 — signal-boost called destination "PT2 Compile Q&A" (wrong); actual group is "PyTorch Compiler AI-native Working Group". Workflow Step 7b now captures name into shell variable mechanically.
 - **S1, S2, S3, S4** consolidated 2026-05-04 from iterations during the 2026-05-03 brief composition.
+- **R9, R10, R11** added 2026-05-11 — 2026-05-10 brief shipped with three structural defects: (R9) "pending follow-up" wording for issues that should have been filed in agent-time the same day; (R10) "1 new break-reason: .tolist() in Granite MoE" without a definitive answer on whether an existing tracking issue covers it (it does — #55); (R11) §5 recap of an internal close-script bug + revert flow that's noise to the dynamo audience. SKILL Step 5.5 added 4 mechanical pre-publish gates (A/B/C/D) backing R9/R10/R11.
+- **Plain-English vocabulary** consolidated 2026-05-11 — Peng correction that "cat-3 / cat-1 / cat-4" jargon confuses dynamo team readers. R2 / R6 / S3 self-check items rewritten to use plain English ("apple-to-apple set" / "newly-compile-testable" / "truly new"). Template §1 / §3 / §4 / §6 / §7 instructions also rewritten.

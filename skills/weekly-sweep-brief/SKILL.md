@@ -66,6 +66,20 @@ Before referring to any tracked issue:
 
 Use `template.md` (in this skill dir). 8 fixed sections, all required. See `methodology.md` for what each section must contain + forbidden patterns.
 
+### Step 5.5 — Pre-publish gates (Peng directive 2026-05-11 13:05 ET)
+
+Before Step 6 (self-check), walk this gate. ANY failure blocks publication.
+
+**Gate A — Zero pending follow-ups.** Grep the composed brief for "pending follow-up", "TODO", "TBD", "needs follow-up", "needs investigation", "to be filed", "will file". If ANY match: STOP. Either execute the implied action (file the issue, add the comment, run the check) and update the brief with the resulting #/result, OR explicitly remove the speculative wording. The brief is for COMPLETED actions. A user reading the brief should not be left with action items waiting on us.
+
+**Gate B — Tracking-issue citation for known_errors changes.** For each `known_errors.json` entry added or removed since baseline (surfaced in §6), verify the body cites the pytorch/pytorch tracking issue # by URL. Then run `python3 tools/check_known_errors.py --check-tracking-status` to verify each cited tracking issue's CURRENT upstream state (closed/open). If a tracking issue's current state contradicts the brief's framing (e.g., brief says "fix landed and we removed entry" but the tracking issue is still open), fix the brief OR re-investigate.
+
+**Gate C — Definitive answer per new break-reason in §7.** Each break-reason listed in §7 must have one of: existing-issue # / newly-filed-this-sweep # / executed-TODO-with-#-now-cited. If any break-reason lacks a definitive answer, either execute the lookup/filing now and add the #, or remove the break-reason from §7 (it's not new-this-week) — do not ship with "covered by ?" wording.
+
+**Gate D — No internal corpus-side glitches in user-facing prose.** Scan §5 + §8 for mentions of corpus-side process corrections (e.g., "we accidentally closed via a buggy script", "reverted via revert script", "close-mode rev N caught this"). Such mentions belong in PLAN.md, not in the brief — Dynamo team isn't the audience for our internal infra hygiene. If found, delete or move to PLAN.md.
+
+If all four gates pass, proceed to Step 6.
+
 ### Step 6 — Self-check before posting
 
 Walk through `methodology.md` § "Self-check checklist" — every item must pass. If anything fails, fix before Step 7. Do NOT post a brief that fails the checklist.

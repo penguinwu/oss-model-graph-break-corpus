@@ -16,12 +16,12 @@ Fill in the 11 sections below. Each section is required (omit a section only if 
 ## 1. Headline
 
 One paragraph. Required content:
-- Net GB delta on common compile-success pairs (apple-to-apple, cat 3 only)
+- Net GB delta on common compile-success pairs (apple-to-apple set — pairs that ran in BOTH baseline and current with compile-success status both times)
 - Number of models that flipped graph_break → full_graph
 - Attribution status: VERIFIED on N≥2 models? If not, mark as UNVERIFIED + name the suspected source.
-- Real upstream compile regressions count (cat 2 minus known-bug-not-regression). Usually 0.
+- Real upstream compile regressions count (pairs that flipped from compile-success → error this week, minus known-bug-not-regression). Usually 0.
 
-Forbidden in headline: any number that mixes cat 3 with cat 1/cat 4 (use `--pattern` segmentation).
+Forbidden in headline: any number that mixes the apple-to-apple set with newly-compile-testable or truly-new-model exposures (use `--pattern` segmentation). Cat-N internal jargon ("cat 3", "cat 1", "cat 4") is FORBIDDEN in the published brief — Dynamo team readers don't know what those mean. Use plain English ("apple-to-apple set", "newly compile-testable", "truly new this week").
 
 ## 1.5. Setup
 
@@ -62,46 +62,48 @@ If N_removed > 0, list categories — each with reasons readers can act on:
 
 If 0: title is "## 2. Pure Dynamo wins — 0 this week" and body is one sentence ("No flips on the apple-to-apple HF set."). Skip the attribution test subsection entirely.
 
-If >0: table of clusters / models. Then table of break-reason types eliminated by the flips. Then "### Attribution test (verified on K models)" — name the K models tested, the older-torch venv used, what reproduced, what code-paths verified byte-identical, and the narrowed window for the candidate Dynamo PR. If attribution is not yet verified, mark "### Attribution status: UNVERIFIED — testing pending" and propose the test.
-
-## 2. Pure Dynamo wins — N models flipped graph_break → full_graph
-
-Table of clusters / models. Then table of break-reason types eliminated by the flips (counted across baseline break_reasons of the flipped models).
-
-Then "### Attribution test (verified on K models)" subsection — name the K models tested, the older-torch venv used, what reproduced, what code-paths verified byte-identical, and the narrowed window for the candidate Dynamo PR.
-
-If attribution is not yet verified, mark "### Attribution status: UNVERIFIED — testing pending" and propose the test.
+If >0: title becomes "## 2. Pure Dynamo wins — N models flipped graph_break → full_graph". Table of clusters / models. Then table of break-reason types eliminated by the flips (counted across baseline break_reasons of the flipped models). Then "### Attribution test (verified on K models)" — name the K models tested, the older-torch venv used, what reproduced, what code-paths verified byte-identical, and the narrowed window for the candidate Dynamo PR. If attribution is not yet verified, mark "### Attribution status: UNVERIFIED — testing pending" and propose the test.
 
 ## 3. Compile-success → compile-success with reduced (but non-zero) GBs
 
-Models in cat 3 with `gb_delta < 0`. Per-model table with baseline → current → Δ. Total GB reduction across this group.
+Models on the apple-to-apple set with `gb_delta < 0`. Per-model table with baseline → current → Δ. Total GB reduction across this group. If 0: title carries the verdict ("## 3. Compile-success → compile-success with reduced GBs — 0 pairs this week") and body is one sentence.
 
 ## 4. Compile regressions: K real
 
-If 0 real: state explicitly "0 real" with rationale (any cat 2 work items + why they don't count, e.g., known PT bug, deterministic-mode trigger, etc.).
+If 0 real: state explicitly "0 real" with rationale (any compile-success → error work items + why they don't count, e.g., known PT bug, deterministic-mode trigger, etc.). If 0 with no rationale needed: title carries the verdict and body is one sentence.
 
 If >0 real: per-regression detail, with attribution + filed pytorch issue link.
 
 ## 5. Issues — actions taken
 
 Required subsections (each terse if zero, e.g. "Closed: 0"):
-- **Closed** — list with brief framing (closed-as-completed via close-mode evidence; OR closed via known_errors entry retired after upstream fix tracking_issue confirmed closed)
+- **Closed** — list with brief framing (closed-as-completed via close-mode evidence; OR closed via known_errors entry retired after upstream fix tracking_issue confirmed closed). Cite the pytorch/pytorch tracking issue # for any upstream-fix-driven close.
 - **New issues filed** — table with #, pattern, breaks, models
 - **Comments added to existing issues** — list of issue numbers + brief description (model adds, status updates, etc.)
 - **Net effect on tracked issues** — before/after counts
 
+**FORBIDDEN in §5:** internal corpus-side process corrections (e.g., "we accidentally closed these issues via a buggy script and reverted"). Those are noise to the Dynamo team — track in PLAN.md, not in the brief. Per Peng directive 2026-05-11 10:55 ET: "the audience is Dynamo team, no need to talk about our internal glitches — too much information can be confusing to users."
+
 ## 6. Newly compile-testable models added this week
 
-Per definition: any flip from error to eager-success/compile-success counts as a new model. Cat 1 + cat 4 successes combined.
+Per definition: any flip from error to eager-success/compile-success counts as a new model. Combines truly-new models (added to the cohort this week) and models that were error-in-baseline but now run.
 
 Required:
 - Total work items + distinct model count
 - % full_graph out of newly-compile-testable
-- Decomposition: cat 4 (truly new) vs cat 1 (was error in baseline). For cat 1, name the prior-status breakdown (eager_error → success: N, timeout → success: N, worker_error → success: N).
+- Decomposition: truly-new (model didn't exist in baseline cohort) vs was-error-in-baseline. For was-error-in-baseline, name the prior-status breakdown (eager_error → success: N, timeout → success: N, worker_error → success: N).
+- **Tracking-issue citation requirement (per Peng directive 2026-05-11 13:05 ET):** when discussing a `known_errors.json` entry that was removed (model became compile-testable because the upstream eager-side bug closed) OR added (new eager-side bug discovered this week), cite the pytorch/pytorch tracking issue # by URL. Pre-publish gate (SKILL Step 5.5) verifies the tracking issue's CURRENT upstream state (closed/open) before publish.
 
 ## 7. NEW break-reason types surfaced (not seen in any baseline model)
 
 Table of patterns + counts + top affected files. Highlight any new operator (e.g. `aten.bincount`) that needs an ops-coverage decision.
+
+**Definitive-answer requirement (per Peng directive 2026-05-11 13:05 ET):** for EACH new break-reason type listed, the body MUST give one of three definitive answers — no "pending" or "needs investigation":
+- **Covered by existing issue # NNN** (cite + link) — pattern is already tracked; this row is observational.
+- **Newly-filed this sweep as #NNN** (cite + link) — new dynamo issue filed during the brief composition workflow.
+- **TODO + EXECUTED before publish** — only acceptable if the TODO was completed in the same workflow cycle (e.g., file-issue subagent walked + new issue posted) and the # is now cited.
+
+If §7 lists a break-reason without one of those three answers, the brief FAILS the SKILL Step 5.5 pre-publish gate. Do NOT publish a brief that says "needs follow-up" or "TBD" for any new break-reason.
 
 ## 8. Actionable for Animesh / PT2 team
 
