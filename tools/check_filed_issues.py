@@ -177,6 +177,36 @@ def fetch_tracked_issues(token: str) -> list[dict]:
     return unique
 
 
+def _fetch_events_since(repo: str, number: int, prev_updated_at: str,
+                        token: str) -> list[dict]:
+    """Fetch issue events strictly newer than `prev_updated_at`. Returns [] on error.
+
+    Used to detect SELF-CAUSED issue-level activity (body edits, label/state
+    changes, new-issue creation) that bumps `updated_at` without adding a
+    comment. The `_classify_comments` filter only catches self-comments —
+    this catches the rest.
+
+    Per Peng directive 2026-05-11: filter ALL Otter-caused activity from the
+    GChat alert path (a) self-comments, (b) self body edits, (c) self issue
+    creation, (d) self labels/state changes. (a) is handled by
+    _classify_comments; (b)+(c)+(d) by this function.
+
+    See `https://docs.github.com/en/rest/issues/events`. Endpoint returns
+    actor + event type for each timeline event. We filter to events strictly
+    after `prev_updated_at` (defensive against the boundary-comment leak that
+    bit us 2026-05-06; see _fetch_new_comments docstring).
+    """
+    url = f"https://api.github.com/repos/{repo}/issues/{number}/events?per_page=100"
+    try:
+        items = _gh_get(url, token) or []
+    except Exception as e:
+        print(f"warning: fetching events for {repo}#{number}: {e}", file=sys.stderr)
+        return []
+    if prev_updated_at:
+        items = [e for e in items if (e.get("created_at") or "") > prev_updated_at]
+    return items
+
+
 def _fetch_new_comments(repo: str, number: int, n_new: int,
                         prev_updated_at: str, token: str) -> list[dict]:
     """Fetch comments strictly newer than `prev_updated_at`. Returns [] on error.
@@ -254,12 +284,27 @@ def diff_against_state(issues: list[dict], state: dict, token: str) -> list[dict
 
     `state` is keyed `<repo>#<number>` → {"last_updated_at": ..., "last_comments_count": ...}
 
-    Two-stage classification:
-      Stage 1 — count delta. If comments_count increased OR updated_at advanced,
-                potential activity.
+    Three-stage self-noise filter (Peng directive 2026-05-11 — the GChat alert
+    path must not surface activity caused by Otter; sweep-report and
+    weekly-brief paths intentionally still summarize self-actions because
+    those have a different audience):
+      Stage 1 — count + updated_at delta. Potential activity if either changed.
       Stage 2 — fetch new comments + filter self/bot. If 0 non-self comments
-                remain, drop the new_activity flag (pure self-noise).
-                Tag priority based on commenter allowlist + @-mentions.
+                remain, the comment delta is pure self-noise.
+      Stage 3 — fire WHENEVER updated_advanced (body edit / label / state /
+                new-issue creation), regardless of comments_increased. Without
+                this gating, a self-comment co-occurring with an external rename
+                in the same poll window would shadow the rename. Returns
+                `non_self_issue_event: True` if an external actor caused any
+                issue-level action; False if all-self.
+
+                Empty-events heuristic: GitHub's `/issues/N/events` endpoint
+                does NOT log pure-description edits. When `events == []` AND
+                `updated_advanced` is true, the bump came from a body edit
+                (or similar untracked action). Heuristic: if the issue's
+                author is Otter, only Otter could have body-edited without
+                leaving an event → suppress. If author is external, we can't
+                tell → fail-open and surface (rare but possible scenario).
     """
     flagged: list[dict] = []
     for iss in issues:
@@ -267,13 +312,15 @@ def diff_against_state(issues: list[dict], state: dict, token: str) -> list[dict
         prev = state.get(key, {})
         prev_updated = prev.get("last_updated_at", "")
         prev_count = prev.get("last_comments_count", 0)
+        is_brand_new = (key not in state)
 
         # Stage 1 — coarse delta
         comments_increased = iss["comments_count"] > prev_count
+        # prev_updated="" sentinel for new issues; lexicographic > works because
+        # ISO-8601 strings sort chronologically and any non-empty timestamp > "".
         updated_advanced = iss["updated_at"] > prev_updated
 
-        # Stage 2 — fetch + filter (only when comments increased; updated_at-only
-        # changes are typically labels/state)
+        # Stage 2 — fetch + filter comments (only when comments increased)
         non_self_count = 0
         priority_signals: list[str] = []
         if comments_increased:
@@ -287,14 +334,36 @@ def diff_against_state(issues: list[dict], state: dict, token: str) -> list[dict
             non_self_count = cls["non_self_count"]
             priority_signals = cls["priority_signals"]
 
-        # Compose signal — comments_increased suppressed if all new comments
-        # are self/bot. updated_advanced kept ONLY when no comments increased
-        # (otherwise the updated_at bump is from the self comments themselves
-        # and is also self-noise).
+        # Stage 3 — issue-level external-actor detection. Fires whenever
+        # updated_advanced is true (NOT gated on comments_increased — that
+        # gating was the Gap-1 false-suppression bug).
+        non_self_issue_event = False
+        if updated_advanced:
+            new_events = _fetch_events_since(
+                iss["repo"], iss["number"], prev_updated, token,
+            )
+            actors = [
+                (e.get("actor") or {}).get("login", "")
+                for e in new_events
+            ]
+            if is_brand_new:
+                # Treat the creator as an implicit actor for brand-new issues
+                # (we just learned about it, so its existence is itself activity).
+                actors.append(iss.get("author", ""))
+
+            if actors:
+                non_self_issue_event = any(a and a != AUTHOR for a in actors)
+            else:
+                # Empty events: pure body edit (no /events log) or similar.
+                # Heuristic above — only the author can edit body silently.
+                non_self_issue_event = (iss.get("author") != AUTHOR)
+
+        # Compose signal. Suppress when comments delta is all-self AND any
+        # issue-level update is all-self. Surface either signal independently.
         signal: list[str] = []
         if comments_increased and non_self_count > 0:
             signal.append(f"+{non_self_count} non-self comments")
-        if updated_advanced and not comments_increased:
+        if updated_advanced and non_self_issue_event:
             signal.append(f"updated {iss['updated_at'][:10]}")
 
         new_activity = bool(signal) or bool(priority_signals)
@@ -306,6 +375,7 @@ def diff_against_state(issues: list[dict], state: dict, token: str) -> list[dict
             "priority": priority,
             "priority_signals": priority_signals,
             "non_self_comment_count": non_self_count,
+            "self_only_issue_update": updated_advanced and not non_self_issue_event,
             "signal": "; ".join(signal) if signal else "no change",
         })
     return flagged
