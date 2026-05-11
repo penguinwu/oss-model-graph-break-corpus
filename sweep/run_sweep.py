@@ -906,28 +906,28 @@ def run_sweep(args):
           f"Modes: {modes}, Timeout: {args.timeout}s"
           f"{f', Dynamic: {args.dynamic_dim}' if args.dynamic_dim else ''}")
 
-    # ── Load large model registry for tiered timeouts ──
+    # ── Load per-model timeout overrides ──
+    # Single source of truth: sweep/timeout_tiers.py (refactored 2026-05-10
+    # per TIMEOUT_PROPAGATION_DESIGN.md). large=3×, very_large=9× multipliers.
+    try:
+        from sweep.timeout_tiers import load_per_model_timeouts, summarize_overrides
+    except ImportError:
+        from timeout_tiers import load_per_model_timeouts, summarize_overrides
+    timeout_overrides = load_per_model_timeouts(args.timeout)
+    print(summarize_overrides(timeout_overrides, args.timeout))
+    # Launch validation: refuse if large_models.json is non-empty but no
+    # overrides emerged. Catches the regression class where the per-tier
+    # wiring breaks silently and very_large models all time out at 180s.
     large_registry = load_large_models()
-    # Tier-aware timeouts (2026-04-28). Previously all "large" registry
-    # entries got `args.timeout * 3` regardless of tier, so models marked
-    # `very_large` (e.g. Gemma3n) still timed out. Now: `large = 3x`,
-    # `very_large = 9x` — matches what the entries declare.
-    timeout_large = args.timeout * 3
-    timeout_very_large = args.timeout * 9
-    def _timeout_for(name):
-        entry = large_registry.get(name)
-        if not entry:
-            return None
-        tier = entry.get("timeout_tier", "large") if isinstance(entry, dict) else "large"
-        if tier == "very_large":
-            return timeout_very_large
-        return timeout_large
-    timeout_overrides = {name: _timeout_for(name) for name in large_registry}
-    if large_registry:
-        n_large = sum(1 for v in timeout_overrides.values() if v == timeout_large)
-        n_vl = sum(1 for v in timeout_overrides.values() if v == timeout_very_large)
-        print(f"Large model registry: {n_large} 'large' tier ({timeout_large}s) + "
-              f"{n_vl} 'very_large' tier ({timeout_very_large}s)")
+    if large_registry and not timeout_overrides:
+        print(
+            f"[run_sweep] FATAL: large_models.json is non-empty ({len(large_registry)} "
+            f"entries) but load_per_model_timeouts returned NO overrides. The per-tier "
+            f"wiring is broken — refusing to launch (would deterministically time-out "
+            f"very_large-tier models at the base {args.timeout}s).",
+            file=sys.stderr,
+        )
+        sys.exit(2)
 
     # ── Load skip list (toxic models) — auto-loaded from config ──
     skip_models = _load_skip_models()

@@ -1,6 +1,16 @@
 # PLAN.md — corpus project working plan
 
-**Last updated:** 2026-05-10 19:50 ET (Otter; close-mode rev 5 design + adversary done; impl ready for next session)
+**Last updated:** 2026-05-10 20:15 ET (Otter; modellibs-upgrade dependency sequence approved; per-model timeout impl in flight)
+
+**Modellibs-upgrade sequence (approved by Peng 2026-05-10 20:12 ET):**
+```
+Step 1: Per-model timeout propagation     [BLOCKER — implementing now]
+Step 2: close-mode rev 4 OR check_skip_models  [recommended; ship in parallel with upgrade]
+Step 3: Modellibs upgrade (WS2-1)
+Step 4: Run validation sweep + iterate
+Step 5: Re-baseline 2026-05-16 weekly sweep on new modellibs
+```
+Strict blocker = per-model timeout, because transformers 5.7+ adds models likely to be `large`/`very_large` tier (DeepseekV4 MoE etc.) — without per-model timeout the regular nightly's `--timeout 180` kills them silently.
 
 **Review policy (encoded 2026-05-10 14:00 ET per Peng directive):** low-level script designs (heuristic tables, tier thresholds, pipeline glue) go through adversary-review locally — Peng's attention is reserved for architecture-level questions (does the script need to exist at all? does it cross a privacy/external/irreversible boundary?). Design tasks below mark which gate they use.
 **Active workstreams:** 2 (cap). New workstreams go to Backlog until a slot opens.
@@ -41,7 +51,7 @@ The standard weekly process (per Peng spec 2026-05-10): launch sweep on Saturday
 
 - [ ] **Maintain `sweep/WEEKLY_SWEEP_WORKFLOW.md` — the standard weekly-sweep process spec.** Forward-looking process spec describing Steps 1-2d (run sweep → audit new errors → audit new models → walk dynamo issues → compose brief) plus Step 3 (learning + encoding), with for each step: what it does, what tool runs it (or which subagent/skill it delegates to), what gates exist, what manual interventions remain. PLAN.md is the task tracker; WEEKLY_SWEEP_WORKFLOW.md is the process spec the tools implement. Initial rewrite shipped 2026-05-10 12:30 ET (replaced the gap-analysis draft per Peng revisions; Step 2c/2d slimmed to reference subagents/file-issue + skills/weekly-sweep-brief, no duplication). Ongoing task: update whenever a new step or gate is added to the standard workflow, or when a step's tool-implementation lands and the spec needs to drop a "manual fallback" note.
 
-- [ ] **Per-model timeout propagation in `tools/run_experiment.py nightly`** — wire the existing `_timeout_for(name)` helper from `sweep/run_sweep.py:836-855` (deprecated entry point) through to the orchestrator from `tools/run_experiment.py` (current entry point). Add launch-side validation gate that refuses to launch if `large_models.json` is non-empty but `load_per_model_timeouts()` returns empty (catches future regression of this class). Design at `sweep/TIMEOUT_PROPAGATION_DESIGN.md`. **Awaiting Peng design review** — reminder cron `timeout-propagation-task-2026-05-10` fires Sunday 9 AM ET to surface design link to GChat for approve/modify/reject. Implementation only after explicit approval. After landing, remove BLT from `skip_models.json` and verify they run cleanly with 1620s timeout.
+- [x] **Per-model timeout propagation (BLOCKER for modellibs upgrade — DONE).** Shipped 2026-05-10 20:25 ET per Peng implicit approval 20:12 ET. New module `sweep/timeout_tiers.py` (DRY-d the tier-multiplier logic from `sweep/run_sweep.py:917`); both entry points now import from it. `tools/run_experiment.py::run_experiment` plumbs `timeout_overrides` through `run_pass()` calls (was hardcoded base timeout for all). Launch-side validation gate at BOTH entry points: refuses to launch if `large_models.json` is non-empty but no overrides emerge (catches the regression class where wiring breaks silently). Smoke-tested against real registry: 38 overrides emitted (29 large × 540s + 9 very_large × 1620s). 7/7 tests pass at `sweep/test_timeout_tiers.py`. NEXT: remove BLT from `skip_models.json` and verify next nightly run completes those models cleanly.
 
 #### New tasks surfaced by 2026-05-10 design pass (not yet prioritized)
 

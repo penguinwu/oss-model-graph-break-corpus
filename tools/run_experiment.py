@@ -521,6 +521,30 @@ def run_experiment(config, args):
     if hasattr(args, "timeout") and args.timeout is not None:
         timeout_s = args.timeout
 
+    # Per-model timeout overrides — sweep/timeout_tiers.py is the single
+    # source of truth (large=3×, very_large=9×). Without this, very_large
+    # tier models (BLT, Gemma3n, etc.) deterministically time out at 180s.
+    # Per sweep/TIMEOUT_PROPAGATION_DESIGN.md, approved 2026-05-10 20:12 ET.
+    sys.path.insert(0, str(REPO_ROOT / "sweep"))
+    from timeout_tiers import load_per_model_timeouts, summarize_overrides  # noqa: E402
+    timeout_overrides = load_per_model_timeouts(timeout_s)
+    print(summarize_overrides(timeout_overrides, timeout_s))
+    # Launch validation gate: if large_models.json is non-empty but no
+    # overrides emerged, the per-tier wiring is broken — refuse to launch.
+    large_models_path = REPO_ROOT / "sweep" / "large_models.json"
+    if large_models_path.exists():
+        with open(large_models_path) as f:
+            registry_size = len(json.load(f))
+        if registry_size > 0 and not timeout_overrides:
+            print(
+                f"FATAL: sweep/large_models.json has {registry_size} entries but "
+                f"load_per_model_timeouts returned NO overrides. The per-tier "
+                f"wiring is broken — refusing to launch (would deterministically "
+                f"time-out very_large-tier models at the base {timeout_s}s).",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+
     # Resolve python binary: CLI env var > config > system python
     python_bin = os.environ.get("SWEEP_PYTHON",
                                 settings.get("python_bin", sys.executable))
@@ -825,6 +849,7 @@ def run_experiment(config, args):
                 python_bin, pending_specs, pass_num=pass_num,
                 device=device, modes=modes, workers=workers,
                 timeout_s=timeout_s, dynamic=dynamic_arg,
+                timeout_overrides=timeout_overrides,
                 extra_worker_args=extra_args,
                 result_callback=_on_result,
             )
@@ -845,10 +870,16 @@ def run_experiment(config, args):
                             all_results[i] = exp_result
                             break
 
+                # Retry path: scale per-model overrides to the retry budget.
+                retry_overrides = (
+                    load_per_model_timeouts(timeout_retry_s)
+                    if timeout_overrides else {}
+                )
                 run_pass(
                     python_bin, timed_out_specs, pass_num=pass_num,
                     device=device, modes=modes, workers=workers,
                     timeout_s=timeout_retry_s, dynamic=dynamic_arg,
+                    timeout_overrides=retry_overrides,
                     extra_worker_args=extra_args,
                     result_callback=_on_retry_result,
                 )
