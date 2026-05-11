@@ -1,0 +1,33 @@
+{
+  "sweep_ref": "single-manual-file-2026-05-11-020100-issue125-udop-setitem",
+  "generated_at": "2026-05-11T02:15:00Z",
+  "clustering_method": "single_manual",
+  "total_failure_rows": 1,
+  "total_clustered_rows": 1,
+  "multi_root_cases": [],
+  "single_manual": true,
+  "clusters": [
+    {
+      "cluster_id": "single-file-2026-05-11-020100-issue125-udop-setitem",
+      "cluster_type": "single_manual",
+      "root_signal": {
+        "case_id": "file-2026-05-11-020100-issue125-udop-setitem"
+      },
+      "affected_cases": [
+        {
+          "case_id": "file-2026-05-11-020100-issue125-udop-setitem",
+          "role": "primary"
+        }
+      ],
+      "case_count": 1,
+      "representative_case": "file-2026-05-11-020100-issue125-udop-setitem",
+      "dup_candidates": [],
+      "action": "proceed-as-new"
+    }
+  ],
+  "peng_approval": {
+    "token": null,
+    "approved_at": null,
+    "approval_message_ref": null
+  }
+}
