@@ -128,6 +128,39 @@ def test_real_known_errors_file_passes():
     assert rc == 0, f"real known_errors.json should pass; got rc={rc}\n{err}"
 
 
+def test_tracking_issue_valid_format_passes():
+    rc, out, err = _run(fixture={"entries": [{
+        **_eager_entry(), "tracking_issue": "pytorch/pytorch#182339"
+    }]})
+    assert rc == 0, f"valid tracking_issue should pass; got rc={rc}\n{err}"
+
+
+def test_tracking_issue_null_passes():
+    rc, out, err = _run(fixture={"entries": [{**_eager_entry(), "tracking_issue": None}]})
+    assert rc == 0
+
+
+def test_tracking_issue_invalid_format_fails():
+    """Invalid format like '182339' (no org/repo prefix) → fail."""
+    rc, out, err = _run(fixture={"entries": [{**_eager_entry(), "tracking_issue": "182339"}]})
+    assert rc != 0
+    assert "tracking_issue" in err
+
+
+def test_tracking_issue_required_with_flag():
+    """--require-tracking-issue makes the field mandatory."""
+    rc, out, err = _run("--require-tracking-issue",
+                        fixture={"entries": [_eager_entry()]})  # no tracking_issue field
+    assert rc != 0
+    assert "tracking_issue" in err
+
+
+def test_tracking_issue_legacy_entries_pass_without_flag():
+    """Default: legacy entries without tracking_issue still pass (warning only)."""
+    rc, out, err = _run(fixture={"entries": [_eager_entry()]})  # no tracking_issue
+    assert rc == 0  # default: not required
+
+
 def main() -> int:
     tests = [(n, fn) for n, fn in globals().items() if n.startswith("test_") and callable(fn)]
     failures = []

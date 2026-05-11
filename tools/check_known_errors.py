@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -40,8 +41,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_PATH = REPO_ROOT / "sweep" / "known_errors.json"
 MIN_REASON_LEN = 30
 
+# Format: <org>/<repo>#<num> — e.g. "pytorch/pytorch#182339"
+TRACKING_ISSUE_RE = re.compile(r"^[a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+#\d+$")
 
-def validate_entry(entry: dict, *, allow_create_error_escape: bool, idx: int) -> list[str]:
+
+def validate_entry(entry: dict, *, allow_create_error_escape: bool, idx: int,
+                   require_tracking_issue: bool = False) -> list[str]:
     """Return list of violation messages for one entry. Empty list = OK."""
     violations = []
     model = entry.get("model", f"<entry #{idx}>")
@@ -55,6 +60,29 @@ def validate_entry(entry: dict, *, allow_create_error_escape: bool, idx: int) ->
             f"{model}: missing 'applies_to_versions' field. Per audit_new_errors design rev 2 gap #6, "
             f"missing field is no longer allowed (was 'discouraged'). Add the version list explicitly."
         )
+    # tracking_issue field: required by --require-tracking-issue (default False);
+    # warned if missing on legacy entries. Per Peng directive 2026-05-10 21:04 ET
+    # surfaced from MimiModel discovery: each known_errors entry should record
+    # the upstream issue tracking the bug, so weekly sweep can detect when the
+    # tracked issue closes (then the entry can be re-verified + removed).
+    if "tracking_issue" not in entry:
+        if require_tracking_issue:
+            violations.append(
+                f"{model}: missing 'tracking_issue' field. Per Peng directive "
+                f"2026-05-10 21:04 ET, every entry must record the upstream "
+                f"issue tracking the bug. Format: '<org>/<repo>#<num>' "
+                f"(e.g. 'pytorch/pytorch#182339') OR null with reason explaining "
+                f"why no issue exists yet."
+            )
+    else:
+        ti = entry["tracking_issue"]
+        if ti is not None:
+            if not isinstance(ti, str) or not TRACKING_ISSUE_RE.match(ti):
+                violations.append(
+                    f"{model}: invalid 'tracking_issue' format {ti!r}; "
+                    f"must be '<org>/<repo>#<num>' (e.g. 'pytorch/pytorch#182339') OR null"
+                )
+
     if status == "create_error":
         # Two-gate policy:
         # - LEGACY entries (created before this tool) are fine if they have a
@@ -138,6 +166,15 @@ def main() -> int:
                     help="Validate only entries added/modified vs the given git ref "
                          "(e.g. --diff HEAD). Pre-commit-friendly: doesn't fail on "
                          "legacy entries that pre-date the policy.")
+    ap.add_argument("--require-tracking-issue", action="store_true",
+                    help="Require every entry to have a 'tracking_issue' field "
+                         "(format '<org>/<repo>#<num>' OR null). Default: warn but pass.")
+    ap.add_argument("--check-tracking-status", action="store_true",
+                    help="For each entry with tracking_issue set, fetch the issue's "
+                         "current state from GitHub. Reports closed/updated tracking "
+                         "issues so the corresponding known_errors entry can be "
+                         "re-verified + removed. Per Peng directive 2026-05-10 21:04 ET. "
+                         "Requires github-access (sudo + fwdproxy + auth token).")
     args = ap.parse_args()
 
     path = Path(args.path).resolve()
@@ -181,9 +218,12 @@ def main() -> int:
     for idx, entry in enumerate(entries):
         if idx not in validate_indices:
             continue
-        violations = validate_entry(entry,
-                                    allow_create_error_escape=args.allow_create_error_escape,
-                                    idx=idx)
+        violations = validate_entry(
+            entry,
+            allow_create_error_escape=args.allow_create_error_escape,
+            idx=idx,
+            require_tracking_issue=args.require_tracking_issue,
+        )
         all_violations.extend(violations)
 
     if all_violations:
@@ -192,6 +232,83 @@ def main() -> int:
             print(f"  - {v}", file=sys.stderr)
         return 1
     print(f"OK: {len(validate_indices)} of {len(entries)} entries validated; no violations")
+
+    # Tracking-status check (separate from validation; informational + actionable)
+    if args.check_tracking_status:
+        return check_tracking_status(entries) or 0
+    return 0
+
+
+def check_tracking_status(entries: list) -> int:
+    """For each entry with tracking_issue set, fetch GitHub issue state.
+
+    Reports closed/updated issues so corresponding known_errors entries can
+    be re-verified + removed. Returns non-zero if any tracked issue is closed
+    (operator action required). Returns 0 if all tracked issues still open.
+
+    Per Peng directive 2026-05-10 21:04 ET — surfaced from MimiModel discovery
+    where pytorch/pytorch#182339 closed but our known_errors entry was unchanged.
+    """
+    import os as _os
+    fetch_pairs = []  # (entry, tracking_issue)
+    null_count = 0
+    legacy_count = 0
+    for e in entries:
+        ti = e.get("tracking_issue")
+        if ti is None:
+            null_count += 1
+        elif "tracking_issue" not in e:
+            legacy_count += 1
+        else:
+            fetch_pairs.append((e, ti))
+
+    print(f"\n=== tracking_issue status check ===")
+    print(f"Entries with tracking_issue: {len(fetch_pairs)} to fetch, "
+          f"{null_count} null (no issue), {legacy_count} legacy (no field)")
+    if not fetch_pairs:
+        return 0
+
+    # Lazy import — needs sudo + fwdproxy via the gh-access pattern
+    closed_count = 0
+    open_count = 0
+    error_count = 0
+    closed_entries = []
+    for entry, ti in fetch_pairs:
+        org_repo, num = ti.split("#")
+        url = f"https://api.github.com/repos/{org_repo}/issues/{num}"
+        cmd = [
+            "sudo", "bash", "-c",
+            f"HTTPS_PROXY=http://fwdproxy:8080 curl -s -u penguinwu:$(cat ~/.github_token 2>/dev/null) "
+            f"-H 'Accept: application/vnd.github+json' '{url}'"
+        ]
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+            data = json.loads(r.stdout) if r.returncode == 0 else None
+        except (json.JSONDecodeError, subprocess.TimeoutExpired):
+            data = None
+        if data is None or "state" not in data:
+            print(f"  ? {entry['model']:<45} {ti:<35} (fetch failed)")
+            error_count += 1
+            continue
+        state = data["state"]
+        title = data.get("title", "")[:60]
+        if state == "closed":
+            closed_count += 1
+            closed_entries.append((entry["model"], ti, data.get("closed_at"), title))
+            print(f"  ✗ {entry['model']:<45} {ti:<35} CLOSED ({data.get('closed_at')}): {title}")
+        else:
+            open_count += 1
+            print(f"  · {entry['model']:<45} {ti:<35} open: {title}")
+
+    print(f"\nSummary: {open_count} still open, {closed_count} CLOSED (action needed), "
+          f"{error_count} fetch failed")
+    if closed_count:
+        print(f"\nACTION REQUIRED: {closed_count} tracking issues are closed. "
+              f"For each, re-run the affected models against current torch nightly:")
+        for model, ti, closed_at, title in closed_entries:
+            print(f"  - {model} (tracking_issue={ti}, closed {closed_at}). "
+                  f"If it now compiles cleanly, remove the known_errors entry.")
+        return 1  # actionable signal
     return 0
 
 
