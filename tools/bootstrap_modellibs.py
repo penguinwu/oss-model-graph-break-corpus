@@ -52,7 +52,20 @@ def tree_path(pkg: str, ver: str) -> Path:
 
 
 def tree_is_ready(pkg: str, ver: str, python_bin: str, verbose: bool = False) -> bool:
-    """Returns True iff the tree exists AND `import <pkg>` from it returns ver."""
+    """Returns True iff the tree exists AND contains pkg at version ver,
+    importing FROM the tree (not from the python_bin's site-packages).
+
+    Uses sys.path.insert(0, target_dir) + import + dual-check on
+    `module.__version__` AND `module.__file__` is under target_dir. The
+    file-path check guards against the FALSE-POSITIVE failure mode
+    (encoded 2026-05-11 after live discovery during the transformers 5.8.0
+    install): an empty target dir lets `import pkg` fall through to the
+    venv's site-packages, which may have the same package version
+    independently — the version probe matches but the package is NOT
+    actually in the target dir. Without the file-path check, an empty
+    tree would be reported "ready" and bootstrap would silently skip the
+    install.
+    """
     path = tree_path(pkg, ver)
     if not path.exists():
         return False
@@ -60,17 +73,31 @@ def tree_is_ready(pkg: str, ver: str, python_bin: str, verbose: bool = False) ->
     probe = subprocess.run(
         [python_bin, "-c",
          f"import sys; sys.path.insert(0, '{path}'); "
-         f"import {pkg_import_name}; print({pkg_import_name}.__version__)"],
+         f"import {pkg_import_name}; "
+         f"print({pkg_import_name}.__version__); "
+         f"print({pkg_import_name}.__file__)"],
         capture_output=True, text=True, timeout=30,
     )
     if probe.returncode != 0:
         if verbose:
             print(f"    probe failed: {probe.stderr.strip()}", file=sys.stderr)
         return False
-    actual = probe.stdout.strip()
-    if actual != ver:
+    lines = probe.stdout.strip().splitlines()
+    if len(lines) < 2:
         if verbose:
-            print(f"    version mismatch: expected {ver}, got {actual}", file=sys.stderr)
+            print(f"    probe output malformed: {probe.stdout!r}", file=sys.stderr)
+        return False
+    actual_ver, actual_file = lines[0], lines[1]
+    if actual_ver != ver:
+        if verbose:
+            print(f"    version mismatch: expected {ver}, got {actual_ver}", file=sys.stderr)
+        return False
+    target_str = str(path)
+    if not actual_file.startswith(target_str):
+        if verbose:
+            print(f"    path mismatch: expected import from under {target_str}, "
+                  f"got {actual_file} (likely fell through to site-packages)",
+                  file=sys.stderr)
         return False
     return True
 
