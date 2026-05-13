@@ -1,0 +1,33 @@
+{
+  "sweep_ref": "single-manual-file-2026-05-13-204500-issue25-mre-fullgraph",
+  "generated_at": "2026-05-13T20:39:55Z",
+  "clustering_method": "single_manual",
+  "total_failure_rows": 1,
+  "total_clustered_rows": 1,
+  "multi_root_cases": [],
+  "single_manual": true,
+  "clusters": [
+    {
+      "cluster_id": "single-file-2026-05-13-204500-issue25-mre-fullgraph",
+      "cluster_type": "single_manual",
+      "root_signal": {
+        "case_id": "file-2026-05-13-204500-issue25-mre-fullgraph"
+      },
+      "affected_cases": [
+        {
+          "case_id": "file-2026-05-13-204500-issue25-mre-fullgraph",
+          "role": "primary"
+        }
+      ],
+      "case_count": 1,
+      "representative_case": "file-2026-05-13-204500-issue25-mre-fullgraph",
+      "dup_candidates": [],
+      "action": "proceed-as-new"
+    }
+  ],
+  "peng_approval": {
+    "token": "121d990f0027f2aced369607ccef702874bd329b72fa940bc83804669cf921c2",
+    "approved_at": "2026-05-13T20:50:14Z",
+    "approval_message_ref": "gchat space AAQANraxXE4 2026-05-13 16:49 ET"
+  }
+}
