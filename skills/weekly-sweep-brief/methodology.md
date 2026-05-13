@@ -83,9 +83,20 @@ Anything else — "covered by ?" / "needs check" / "investigation pending" — f
 
 The brief audience is the PT2 dynamo team. Internal corpus-side process corrections (auto-close-script bugs, revert flows, close-mode rev N catching errors, infra hygiene fixes) are NOISE for that audience. They live in PLAN.md, not in the brief.
 
-Mechanical gate: SKILL Step 5.5 Gate D scans §4.3 (Actionable this week) + §7 (Issues — actions taken) for corpus-side process-correction mentions and blocks publication if found.
+Mechanical gate: SKILL Step 5.5 Gate D scans §4.1c, §4.2c, §4.3 (per-team Actionable this week subsections) + §7 (Issues — actions taken) for corpus-side process-correction mentions and blocks publication if found.
 
 (Reason: 2026-05-10 brief §5 explained "the 3 issues that were closed earlier today (#21, #26, #27) were closed wrongly via a bypass-script that had a mode-collapse bug ... close-mode rev 3 catches this class". Peng's correction: "no need to talk about our internal glitches — too much information can be confusing to users." R11 encodes the principle.)
+
+### R12 — Distinguish (model, mode) pair-rows from distinct model classes (lesson encoded 2026-05-13 18:40 ET)
+
+When reporting scope numbers from the corpus's explain_results.json, the maintainer-meaningful unit is **distinct model classes** (`set(r['name'])` cardinality), NOT pair-rows (the row count, where each model has 1-2 rows for eval+train modes). A model with both eval+train modes failing counts as ONE class to a maintainer (single fix unblocks both modes).
+
+Bad (pair-row count): "195 models hit this bug" when really 129 model classes × 1.51 modes_per_class
+Good (model-class count + optional pair-row sub-detail): "129 model classes (195 (model, mode) pair-rows; 195 break_reasons of this class)"
+
+When uncertain, the brief / issue body should ALWAYS use the model-class count for click-decision signals (titles, headline counts) and may use pair-rows as a sub-detail for completeness. The "break_reasons of this class" count is a third distinct unit (one per per-model break_reason occurrence) and should be named explicitly when used.
+
+(Reason: 2026-05-13 dynamo triage table reported "#11: 11→22 models", "#24: 11→28 models", "#96: 103→195 models, 390 breaks" — when verified, ONLY #96 had a real scope change (103 → 129 model classes). The other two were just (model, mode) pair-row counts mistaken for class counts. #96's "390 breaks" conflated wrapper-text aggregation with this-class break count (true count is 195). Mode A on the #96 EDIT surfaced this and FIX 1 of the EDIT carries the corrected unit phrasing. R12 encodes the lesson so future scope-refresh triages don't repeat it.)
 
 ## Soft rules (judgment, no mechanical guard)
 
