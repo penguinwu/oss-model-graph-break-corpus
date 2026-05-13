@@ -76,7 +76,7 @@ Before Step 6 (self-check), walk this gate. ANY failure blocks publication.
 
 **Gate C — Definitive answer per new break-reason in §8.** Each break-reason listed in §8 must have one of: existing-issue # / newly-filed-this-sweep # / executed-TODO-with-#-now-cited. If any break-reason lacks a definitive answer, either execute the lookup/filing now and add the #, or remove the break-reason from §8 (it's not new-this-week) — do not ship with "covered by ?" wording.
 
-**Gate D — No internal corpus-side glitches in user-facing prose.** Scan §4.3 (Actionable this week) + §7 (Issues — actions taken) for mentions of corpus-side process corrections (e.g., "we accidentally closed via a buggy script", "reverted via revert script", "close-mode rev N caught this"). Such mentions belong in PLAN.md, not in the brief — Dynamo team isn't the audience for our internal infra hygiene. If found, delete or move to PLAN.md.
+**Gate D — No internal corpus-side glitches in user-facing prose.** Scan §4.1c, §4.2c, §4.3 (per-team Actionable subsections) + §7 (Issues — actions taken) for mentions of corpus-side process corrections (e.g., "we accidentally closed via a buggy script", "reverted via revert script", "close-mode rev N caught this"). Such mentions belong in PLAN.md, not in the brief — neither Dynamo nor Dynamic-shape team is the audience for our internal infra hygiene. If found, delete or move to PLAN.md. (Section numbering updated 2026-05-13: old §4.3 actionable list was Dynamo-only; new structure has per-team subsections §4.1c Dynamo / §4.2c Dynamic-shape / §4.3 Other-compile-issue.)
 
 If all four gates pass, proceed to Step 6.
 
