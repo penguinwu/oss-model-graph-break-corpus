@@ -1,6 +1,6 @@
 # PLAN.md — corpus project working plan
 
-**Last updated:** 2026-05-13 13:55 ET (Otter; PLAN.md cleanup + restructure per Peng directive — closed WS2 2026-05-09 cycle moved to Closed section; opened new WS2 "Dynamic shape: separate dynamo issues from dynamic-shape issues" with first task = triage all open `for:dynamo-team` open issues into {dynamo-only, dynamic-shape, both}. Stale duplicates resolved: per-model timeout propagation line 38 redirected to consolidated [x] entry at line 54; brief entry's "Target #2 still queued" sentence dropped (per Peng 2026-05-11 — Animesh + William already pinged on the post). WS1 unchanged; close-mode rev 4 v2.5 still BLOCKED on Peng's Q5 + 4 high-sev fixes.)
+**Last updated:** 2026-05-13 15:35 ET (Otter; WS2 first task DONE — 27 open `for:dynamo-team` issues triaged + 4 surfaced cases dispositioned by Peng + 4 capture-scalar-output candidates tested. Created 3 new labels (other-compile-issue, capture-scalar-output, dynamic-shape) + applied to #76, #14, #97 respectively. #28 stays in dynamo bucket (validation NEGATIVE for capture_scalar_outputs=True; Peng directive 15:26 ET). Bulk retag of 8 HIGH-confidence dyn-shape issues + #76 deeper investigation are next pending tasks. WS1 unchanged.)
 
 **Modellibs-upgrade sequence (approved by Peng 2026-05-10 20:12 ET):**
 ```
@@ -156,19 +156,35 @@ End-to-end walk of WS1 tools against 2026-05-09 sweep + 2026-05-03 baseline. 5 f
 
 The corpus currently labels all dynamo-related issues with `for:dynamo-team`. Some of those issues are actually dynamic-shape problems (e.g. #126 MimiModel `_pad1d` `PendingUnbackedSymbolNotFound` is unbacked-symbol territory, not classic dynamo tracing). Goal: surface the dynamic-shape sub-corpus as its own audit-able set so the dynamic-shape oncall (separate team / separate triage cadence per Peng 2026-05-13 13:54 ET) can act on it without filtering noise.
 
+### Done (this week)
+
+- [x] **Triage all open `for:dynamo-team` issues into {dynamo-only, dynamic-shape, both} — DONE 2026-05-13 14:05 ET.** 27 open issues walked. Triage table at `/tmp/dyn-shape-triage.md`. Counts: 15 dynamo-only HIGH (#10, #11, #12, #19, #21, #23, #24, #25, #26, #27, #92, #96, #98, #104, #125); 8 dynamic-shape HIGH (#16, #17, #55, #77, #78, #99, #122, #126); 3 surfaced-MED (#14, #28, #97); 1 surfaced-NEITHER (#76). Classification framework: which TEAM would actually fix it.
+
+- [x] **Peng dispositions on 4 surfaced cases — DONE 2026-05-13 15:30 ET.** Per Peng directives 14:01 ET + 15:26 ET:
+  - **#76** → new label `other-compile-issue` applied (compile-time perf/infra, not graph-break gap); `for:dynamo-team` retained pending dyn-team confirmation.
+  - **#14** → new label `capture-scalar-output` applied (Peng asserts passes with `capture_scalar_outputs=True`; first-pass MRE validation positive — flag eliminated graph break under `backend="eager"`).
+  - **#28** → validated `capture_scalar_outputs=True` does NOT solve (same `gb0208 "torch.* op returned non-Tensor"`); per Peng directive 15:26 ET, kept in dynamo bucket (no new label).
+  - **#97** → new label `dynamic-shape` applied (chain of gb0224 dyn-shape upstream + gb0007 dynamo source-debug downstream).
+
+- [x] **Created 3 new labels on corpus repo:** `other-compile-issue` (color d4c5f9), `capture-scalar-output` (c2e0c6), `dynamic-shape` (fef2c0). All POST returned 201.
+
+- [x] **Bulk capture-scalar-output candidate scan — DONE 2026-05-13 15:30 ET.** Per Peng directive "see if more dynamo or dynamic-shape issues can move to capture-scalar-output." Scanned 27 bodies for `.item()` / `.tolist()` / `_local_scalar_dense` / `numpy.array().item` patterns; 4 candidates beyond #14/#28: #16, #21, #25, #55. MREs extracted + tested baseline vs `capture_scalar_outputs=True` on `~/envs/torch-nightly-cu126`:
+  - **#16** ("Data-dependent branching") — flag does NOT solve (same error)
+  - **#21** ("unimplemented builtin op on tensor arguments") — flag does NOT solve (same error)
+  - **#25** — MRE passes both ways (bug already not reproducing on this nightly; `.tolist()` mention is incidental — actual gap is `function.__get__` descriptor)
+  - **#55** — flag does NOT solve (same data-dep expression error; the flag changes scalar→symfloat path but downstream guard-on-symfloat still fails — observed `zuf0` symbol in error)
+  Net: no new `capture-scalar-output` labels added; #14 stands as the only one.
+
 ### Pending (in priority order)
 
-- [ ] **Triage all open `for:dynamo-team` issues into {dynamo-only, dynamic-shape, both}.** Walk every open corpus issue with the `for:dynamo-team` label and classify by symptom + provenance signals (use the body's `## Pattern` / `## Break Reason` block + verbatim sweep stderr from validation files + pytorch trunk source link if cited):
-  - **dynamic-shape signals:** `PendingUnbackedSymbolNotFound`, `Pending unbacked symbols`, `unbacked symbol`, `data-dependent expression`, `GuardOnDataDependentSymNode`, `_check_is_size`, `Cannot statically know if`, `expects an integer / int constant from`, anything originating in `torch.fx.experimental.symbolic_shapes` or `torch._dynamo.utils.check_dynamic_dim`, `torch._check`, dynamic=True / mark_dynamic interactions.
-  - **dynamo-only signals:** graph break on opcode tracing, `BUILTIN(...)` unsupported, var-tracker construction errors, tensor subclass tracing issues with no symint involvement, `Failed to handle graph break gracefully`, classic dynamo guard-creation failures.
-  - **both:** a dynamic-shape gap that surfaces as a dynamo graph break or vice versa (overlap is real — record explicitly so we don't lose either signal).
-  Output: triage table at `/tmp/dyn-shape-triage.md` with columns `issue # | current title | classification | confidence (high/med/low) | one-line evidence (verbatim signal)`. Surface to Peng for review BEFORE any external label change. Estimated 1-2h depending on issue count.
+- [ ] **Investigate #76 further (Peng directive 2026-05-13 15:26 ET).** The `[timeout]` Gemma3n issue (4 work items, >1620s compile) was relabeled `other-compile-issue` but root cause is unknown. Investigation: (a) determine whether the timeout is in dynamo trace, dynamo guard creation, FX graph capture, or downstream inductor lowering; (b) check whether the model's structure (MoE depth, vocabulary size, attention pattern) explains the compile-time blow-up; (c) see whether `dynamic=True` shape specialization explodes; (d) confirm whether `for:dynamo-team` should remain on the issue or be replaced. Likely needs a TORCH_LOGS-instrumented run + maybe `TORCH_COMPILE_DEBUG=1` to capture stage timings. Estimated 2-3h.
 
-[Subsequent tasks (drafted, not committed — added after Peng reviews triage results):]
-- Introduce a `for:dynamic-shape` label on the corpus repo (External Engagement Approval gate)
-- Retag classified issues (batched per External Engagement gate)
-- Add dynamic-shape tracking to weekly brief Section 4 (per-team breakout)
-- Decide whether dynamic-shape issues deserve a separate sub-template in `subagents/file-issue/templates/` (different signal vocabulary)
+- [ ] **Bulk retag of HIGH-confidence dyn-shape issues — pending Peng go.** The 8 HIGH-confidence dyn-shape issues identified in triage (#16, #17, #55, #77, #78, #99, #122, #126) currently carry only `for:dynamo-team`. Proposal: apply `dynamic-shape` label to all 8 in one batch. Open question for Peng: should `for:dynamo-team` ALSO be removed from these (cleaner separation but dynamo team loses visibility), or kept (transition gentleness, dynamo team can filter)? Internal-to-corpus repo, not External Engagement gated. Awaiting Peng's call on the keep-vs-remove sub-question.
+
+- [ ] **Subsequent WS2 follow-ups (deferred, drafted):**
+  - Add dynamic-shape tracking to weekly brief Section 4 (per-team breakout)
+  - Decide whether dynamic-shape issues deserve a separate sub-template in `subagents/file-issue/templates/` (different signal vocabulary)
+  - Consider whether `capture-scalar-output` label should be auto-suggested by file-issue subagent's Mode A check when body cites `.item()` patterns (would force the validation Otter just ran on every new filing)
 
 ---
 
