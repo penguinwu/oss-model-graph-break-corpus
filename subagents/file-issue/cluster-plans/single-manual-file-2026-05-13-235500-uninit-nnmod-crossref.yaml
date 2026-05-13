@@ -1,0 +1,33 @@
+{
+  "sweep_ref": "single-manual-file-2026-05-13-235500-uninit-nnmod-crossref",
+  "generated_at": "2026-05-13T23:01:59Z",
+  "clustering_method": "single_manual",
+  "total_failure_rows": 1,
+  "total_clustered_rows": 1,
+  "multi_root_cases": [],
+  "single_manual": true,
+  "clusters": [
+    {
+      "cluster_id": "single-file-2026-05-13-235500-uninit-nnmod-crossref",
+      "cluster_type": "single_manual",
+      "root_signal": {
+        "case_id": "file-2026-05-13-235500-uninit-nnmod-crossref"
+      },
+      "affected_cases": [
+        {
+          "case_id": "file-2026-05-13-235500-uninit-nnmod-crossref",
+          "role": "primary"
+        }
+      ],
+      "case_count": 1,
+      "representative_case": "file-2026-05-13-235500-uninit-nnmod-crossref",
+      "dup_candidates": [],
+      "action": "proceed-as-new"
+    }
+  ],
+  "peng_approval": {
+    "token": "80ad1ca3bfd9a95d43102942abe50766a4a8a2859c344dd872a1864378e4a7ce",
+    "approved_at": "2026-05-13T23:02:00Z",
+    "approval_message_ref": "gchat 2026-05-13 18:50 ET (umbrella: \"(a)\" approval of Q2)"
+  }
+}
