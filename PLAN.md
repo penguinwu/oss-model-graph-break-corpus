@@ -223,6 +223,46 @@ The corpus currently labels all dynamo-related issues with `for:dynamo-team`. So
 
 - [ ] **Misread pattern lesson — encode "soft graph break ≠ no bug" check.** Twice today (#14 first-pass, #25 first-pass) I interpreted "MRE compiled with `backend="eager"` and printed OK" as "bug not reproducing" when actually the graph break IS firing — just not fatal because `fullgraph=True` is missing. The signal that should trigger re-validation is the `[__graph_breaks]` log line in stderr, regardless of exit code. Encode in persona Mode A check 2 (validation discipline) or as a new check.
 
+### WS2 task list — added 2026-05-13 19:55 ET (per Peng directive "add task lists to plan.md before next iteration")
+
+These are the concrete next-iteration WS2 tasks queued from today's work. Pending Peng decisions on Q3/Q4/Q5 (questions surfaced 2026-05-13 19:50 ET — see GChat space AAQANraxXE4 thread).
+
+**Pending Peng decisions (BLOCK certain tasks):**
+
+- [ ] **Q3 — Uninitialized nn.Module cross-ref path:** (a-revised) comment on #27 [requires SKILL `--comment` extension] | (b) amend check-13 with downstream-in-same-trace carve-out + re-walk #27 EDIT | (c) drop. **BLOCKS:** the BigBirdPegasus dual-manifestation work item.
+
+- [ ] **Q4 — Cycle-budget improvement:** integrate `tools/dedup_source_lines.py` into cluster-plan generation pipeline (`tools/cluster_failures.py` or `tools/dedup_search.py`) so source-line conflicts surface BEFORE Otter writes the body. Lean: yes. **UNBLOCKS:** prevents future "draft → discover dup at Mode A → wasted cycles" pattern (cost #112 dedup discovery today: ~1 cycle).
+
+- [ ] **Q5 — Methodology check:** when surfacing carve-out questions for Peng, pre-verify that the proposed-separate-filing has a clean MRE-isolation story BEFORE presenting paths as viable. Lean: yes. **PREVENTS:** the Q2(a) failure pattern (proposed path was structurally faulty).
+
+**Truly unblocked (independent of Q3/Q4/Q5):**
+
+- [ ] **Build `tools/file_issues.py corpus-issue --comment <issue_num>` mode** — Phase-2 SKILL extension flagged in RETROSPECTIVE.md from prior work. Implementing this UNBLOCKS Q3(a-revised). Estimated: 2-3 cycles (small CLI extension + Mode A + Mode B persona variants for comment-style content + tests). Adversary-review required.
+
+- [ ] **Apply count_breaks_per_pattern.py medium-sev gaps from earlier adversary review (commit `bdd8367`):**
+  - sample_models ordering by descending break_count (not alphabetical)
+  - CLI exit-code tests
+  - multi-field break_reasons text extraction (inspect real schema)
+  - graph_break_count cross-check flag (`--cross-check-graph-break-count`)
+  - fixture-based real-data regression test
+  - lift R12 marker constant to shared module (eliminate verify_repro / count_breaks_per_pattern drift risk per HIGH-2 from verify_repro adversary review)
+
+- [ ] **Apply verify_repro jsonl-greppable medium-sev gaps from adversary review (commit `b8ffa9d`):**
+  - sweep_age_days truth-telling (mtime-based; refuse if > STALENESS_DAYS_DEFAULT)
+  - dead `expected_signal` parameter cleanup OR refactor to share with classify path
+  - multi-GB explain_results.json size cap with clear error
+  - rename `sweep_path` → `evidence_path` in dataclass docstring (overload note)
+
+- [ ] **Awareness batch (3 truly UNTRACKED + 1 pending Q3 path):** Reformer torch.Generator.seed (1 model, 8 breaks; WONTFIX-class), Vits missing tp_iter (2 models, 4 breaks), Encodec RNN/GRU/LSTM (2 models, 2 breaks; allow_rnn=True workaround), Reformer manual_seed (1 model, 4 breaks). All single-model scope. Each is a NEW filing requiring full subagent walk + adversary check 12 dedup pre-check. Estimated: 4 walks (one each).
+
+- [ ] **#76 root-cause investigation** (carry-over). Determine where Gemma3n's `>1620s compile` time is spent: dynamo trace / guard creation / FX graph capture / inductor lowering. Needs TORCH_LOGS-instrumented run. Estimated 2-3 cycles.
+
+- [ ] **Investigate sweep validation script's "16 vs 8" semantic** — today's torch._check NEW filing's would-be cell-count discrepancy was rooted in counting suppressed-marker entries vs `graph_break_count` semantics. The validation script (`tools/cluster_failures.py` or whoever produces the underlying counts) should adopt the R12 + filter-suppressed semantic. Tracked from RETROSPECTIVE 2026-05-13.
+
+- [ ] **adversary-review case file write for verify_repro jsonl-greppable change (commit `b8ffa9d`)** — the case file mention in the commit body said "follow-up after this push"; write the full case file at `subagents/adversary-review/invocations/adv-2026-05-13-235000-verify-repro-jsonl-greppable.md` with verbatim Mode A output + disposition table for the 7 gaps.
+
+**Iteration ordering preference:** start with Q3/Q4/Q5 surface (Peng's call); execute (a-revised)/(b)/(c) per Q3; then `--comment` mode if needed; then awareness batch.
+
 ---
 
 ## Backlog (waiting for active workstream slot to open)
