@@ -87,16 +87,23 @@ Mechanical gate: SKILL Step 5.5 Gate D scans §4.1c, §4.2c, §4.3 (per-team Act
 
 (Reason: 2026-05-10 brief §5 explained "the 3 issues that were closed earlier today (#21, #26, #27) were closed wrongly via a bypass-script that had a mode-collapse bug ... close-mode rev 3 catches this class". Peng's correction: "no need to talk about our internal glitches — too much information can be confusing to users." R11 encodes the principle.)
 
-### R12 — Distinguish (model, mode) pair-rows from distinct model classes (lesson encoded 2026-05-13 18:40 ET)
+### R12 — Distinguish (model, mode) pair-rows from distinct model classes; filter duplicate-suppressed entries (lesson encoded 2026-05-13 18:40 ET; extended 2026-05-13 19:05 ET)
 
-When reporting scope numbers from the corpus's explain_results.json, the maintainer-meaningful unit is **distinct model classes** (`set(r['name'])` cardinality), NOT pair-rows (the row count, where each model has 1-2 rows for eval+train modes). A model with both eval+train modes failing counts as ONE class to a maintainer (single fix unblocks both modes).
+When reporting scope numbers from the corpus's explain_results.json, three units must be kept distinct:
+
+1. **Distinct model classes** (`set(r['name'])` cardinality) — the **maintainer-meaningful unit**. A model with both eval+train failing counts as ONE class to a maintainer (single fix unblocks both modes). Use this for headline / title counts.
+2. **(model, mode) pair-rows** (the row count) — internal harness unit. Useful as a sub-detail for completeness; NOT for click-decision signals.
+3. **Break_reasons of this class** — count of per-model break_reason occurrences in `break_reasons[]`. **MUST filter duplicate-suppressed entries** (`'suppressed due to duplicate graph break' in t`); these are dynamo's own dedupe-trace markers, not new distinct breaks. A model row may have 15 `break_reasons[]` entries with `graph_break_count: 3` because dynamo logs duplicates with `(user stack suppressed due to duplicate graph break)` markers — counting all 15 over-counts by ~5×.
+
+Pattern-precision also matters: aggregating on a LOOSE signature ("Reconstruction failure") yields a different count than aggregating on a SPECIFIC signature ("Reconstruction failure + DictItemsIterator OR cannot-resume-from + output_capturing.py:239"). Issue EDITs should refresh scope using the issue's own SPECIFIC pattern, not a loose wrapper-text signature.
 
 Bad (pair-row count): "195 models hit this bug" when really 129 model classes × 1.51 modes_per_class
-Good (model-class count + optional pair-row sub-detail): "129 model classes (195 (model, mode) pair-rows; 195 break_reasons of this class)"
+Bad (raw break_reasons count): "390 breaks of this class" when 50% are dynamo's duplicate-suppressed markers
+Good: "129 model classes (195 (model, mode) pair-rows; 195 distinct break_reasons of this class after filtering duplicate-suppressed)"
 
-When uncertain, the brief / issue body should ALWAYS use the model-class count for click-decision signals (titles, headline counts) and may use pair-rows as a sub-detail for completeness. The "break_reasons of this class" count is a third distinct unit (one per per-model break_reason occurrence) and should be named explicitly when used.
+(Reason: 2026-05-13 dynamo triage table reported "#11: 11→22 models", "#24: 11→28 models", "#96: 103→195 models, 390 breaks" — when verified, ONLY #96 had a real scope change (103 → 129 model classes). The other two were just (model, mode) pair-row counts mistaken for class counts. #96's "390 breaks" was a LOOSE-pattern count including non-#96-specific Reconstruction failures; the specific count is 195 (which #96 EDIT body now uses correctly). Mode A on the #96 EDIT surfaced unit conflation as FIX 1; subsequent investigation on the #27 16-vs-8 discrepancy surfaced the duplicate-suppressed counting bug. R12 encodes both lessons so future scope-refresh triages don't repeat them.)
 
-(Reason: 2026-05-13 dynamo triage table reported "#11: 11→22 models", "#24: 11→28 models", "#96: 103→195 models, 390 breaks" — when verified, ONLY #96 had a real scope change (103 → 129 model classes). The other two were just (model, mode) pair-row counts mistaken for class counts. #96's "390 breaks" conflated wrapper-text aggregation with this-class break count (true count is 195). Mode A on the #96 EDIT surfaced this and FIX 1 of the EDIT carries the corrected unit phrasing. R12 encodes the lesson so future scope-refresh triages don't repeat it.)
+**Future code-fix candidate:** add a helper `tools/count_breaks_per_pattern.py --pattern <regex> [--specific] [--filter-duplicate-suppressed]` that emits `(model_classes, pair_rows, distinct_breaks)` triples. Removes the manual scripting that surfaced the bug today. Pending; tracked in PLAN.md as a WS2 follow-up.
 
 ## Soft rules (judgment, no mechanical guard)
 
