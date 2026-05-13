@@ -111,3 +111,40 @@ After this commit lands, re-invoke Mode A on issue 77 with the amended persona. 
 - `tools/check_back_references.py` daily-brief integration (validates auto-link prevention rule is holding on issue 77)
 - `tools/audit_repo_side_orphans.py` (replaces dropped GitHub-side marker scan)
 - Auto-decision thresholds for dedup_search candidates — only design after enough real surfaces give us example data (per Peng "we will figure out a better system by examples")
+
+## 2026-05-13 — 3-invocation cadence trigger (#25 EDIT, #96 EDIT, #27 EDIT REJECTED)
+
+**Invocations since last retrospective:** 3
+- `file-2026-05-13-204500-issue25-mre-fullgraph` — EDIT shipped
+- `file-2026-05-13-220000-issue96-scope-refresh` — EDIT shipped
+- `file-2026-05-13-223000-issue27-uninit-nnmod-note` — EDIT REJECTED at Mode A
+
+**Recurring gap classes Mode A surfaced:**
+
+1. **Unit-conflation in scope numbers** (twice — surfaced on #96 EDIT Mode A FIX 1 and indirectly on #27 number discrepancy). The corpus aggregates break_reasons into "scope numbers" but distinguishing (a) distinct model classes / (b) (model, mode) pair-rows / (c) total break_reasons (including duplicate-suppressed) is critical. Maintainer-meaningful unit is model classes. Encoded as **methodology R12** in `skills/weekly-sweep-brief/methodology.md` (commit `f71232c`); persona check 2 (Symptom validity) implicitly enforces via validation file truth-source.
+
+2. **Soft-graph-break ≠ no-bug misread** (twice in one day — #14 and #25 first-pass). When MRE runs with `backend="eager"` only (no `fullgraph=True`), graph break is logged but compile completes — looks like success. I misread BOTH cases as "bug not reproducing." Encoded as persona Mode A check 2 subsection (commit `ee9033d`) requiring validation files for graph-break-class issues to capture BOTH soft-mode + fullgraph=True.
+
+3. **Step 2.5 verify_repro architectural mismatch** (surfaced on the queued `torch._check closure` NEW filing). Step 2.5 greps stderr for the expected_signal fragment, but the corpus sweep emits per-model graph_break_reasons to JSON files (`explain_results.json`), NOT stderr. Aggregate sweep-driven NEW filings cannot satisfy the gate without a code-fix. NO NEW corpus filing has gone through Step 2.5 end-to-end. Three resolution paths (a/b/c) surfaced to Peng; awaiting decision. New WS2 task in PLAN.md.
+
+4. **Check 13 HARD BLOCK on multiple GB reasons in one body — tension** (surfaced on #27 EDIT REJECTED today). Rule was written to prevent grouping distinct breaks that force maintainer triage. The #27 EDIT was the *inverse* — observational cross-reference helping a maintainer searching "Uninitialized nn.Module" land at the same-root-cause primary issue. Mode A correctly REJECTED per the strict text-presence rule, and surfaced the tension to Peng for path decision (strict + separate cross-ref issue, OR amend check 13 with downstream-in-same-trace carve-out).
+
+**What's working well:**
+
+- **Mode A as adversary-with-teeth pays off.** #27 EDIT would have shipped subtly-wrong content (number discrepancy + check-13 violation + dedup-not-run) without the Mode A pass. The Agent-spawn cost (one cycle) is tiny vs the cost of a contested or wrong issue body.
+- **Inlining Mode B for mechanical EDITs is fine.** #96 was a 45-word footer addendum + count refresh on a 700-word body; spawning a fresh Mode B Agent for that would have been disproportionate. Mode A's FIX list was clear enough to apply directly. Decision recorded in case file `mode_b_sha256: inline-otter-direct`.
+- **Surfacing rule tensions per persona NOTES guidance.** Mode A explicitly surfaced the check-13 tension with two paths instead of silently relaxing. This is the iteration loop the persona was designed for.
+
+**Persona amendments shipped this cycle:**
+
+- Check 15: dynamo↔dyn-shape exclusivity (commit `c9f40b7`) — 4-bucket label classifier with explicit signal vocabularies
+- Check 16: capture-scalar-output auto-suggest for `.item()` patterns (commit `d762e81`) — 2-MRE comparison required
+- Check 2 subsection: soft-graph-break ≠ no-bug discipline (commit `ee9033d`)
+- methodology R12: distinguish (model, mode) pair-rows from model classes (commit `f71232c`)
+
+**Action items surfaced for future invocations:**
+
+- Reconcile validation-script vs body de-duplication semantics for break_reason counting (the 16-vs-8 discrepancy from #27)
+- Resolve Step 2.5 architectural gap (Peng's path choice pending)
+- Resolve check-13 carve-out question (Peng's path choice pending)
+- Consider Mode A check 17 (numbering TBD): when a draft enumerates >1 distinct break_reason text but the second is ATTRIBUTED to the first as a downstream observation in the same trace, allow proceed-with-fixes (with strict shape requirements) rather than HARD REJECT. Defer encoding until Peng approves the carve-out.
