@@ -1,0 +1,33 @@
+{
+  "sweep_ref": "single-manual-file-2026-05-13-214000-torch-check-closure",
+  "generated_at": "2026-05-13T21:41:18Z",
+  "clustering_method": "single_manual",
+  "total_failure_rows": 1,
+  "total_clustered_rows": 1,
+  "multi_root_cases": [],
+  "single_manual": true,
+  "clusters": [
+    {
+      "cluster_id": "single-file-2026-05-13-214000-torch-check-closure",
+      "cluster_type": "single_manual",
+      "root_signal": {
+        "case_id": "file-2026-05-13-214000-torch-check-closure"
+      },
+      "affected_cases": [
+        {
+          "case_id": "file-2026-05-13-214000-torch-check-closure",
+          "role": "primary"
+        }
+      ],
+      "case_count": 1,
+      "representative_case": "file-2026-05-13-214000-torch-check-closure",
+      "dup_candidates": [],
+      "action": "proceed-as-new"
+    }
+  ],
+  "peng_approval": {
+    "token": "5ee2357e34b19a4517fe045ed6986d5b8ac48b23f141e29e666e43a03a74fa3b",
+    "approved_at": "2026-05-13T21:41:30Z",
+    "approval_message_ref": "gchat space AAQANraxXE4 2026-05-13 17:40 ET (umbrella: \"(b) and then update WS2 in PLAN.md, then go as far as you can\")"
+  }
+}
