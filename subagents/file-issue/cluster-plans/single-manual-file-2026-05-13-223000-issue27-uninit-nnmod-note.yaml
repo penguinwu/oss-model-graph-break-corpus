@@ -1,0 +1,33 @@
+{
+  "sweep_ref": "single-manual-file-2026-05-13-223000-issue27-uninit-nnmod-note",
+  "generated_at": "2026-05-13T22:20:46Z",
+  "clustering_method": "single_manual",
+  "total_failure_rows": 1,
+  "total_clustered_rows": 1,
+  "multi_root_cases": [],
+  "single_manual": true,
+  "clusters": [
+    {
+      "cluster_id": "single-file-2026-05-13-223000-issue27-uninit-nnmod-note",
+      "cluster_type": "single_manual",
+      "root_signal": {
+        "case_id": "file-2026-05-13-223000-issue27-uninit-nnmod-note"
+      },
+      "affected_cases": [
+        {
+          "case_id": "file-2026-05-13-223000-issue27-uninit-nnmod-note",
+          "role": "primary"
+        }
+      ],
+      "case_count": 1,
+      "representative_case": "file-2026-05-13-223000-issue27-uninit-nnmod-note",
+      "dup_candidates": [],
+      "action": "proceed-as-new"
+    }
+  ],
+  "peng_approval": {
+    "token": "9bfff4ff50f148e2557ba76006493d78fe19af761c23d0b35da1e92663b483fa",
+    "approved_at": "2026-05-13T22:20:47Z",
+    "approval_message_ref": "gchat 2026-05-13 17:40 ET (umbrella)"
+  }
+}
