@@ -382,6 +382,199 @@ def test_parse_model_mode_returns_none_when_absent():
 #  when persona.md / SKILL.md actually carry the new content.)
 
 
+# ── jsonl-greppable evidence source (Q1(a) approval 2026-05-13) ─────────────
+
+def test_jsonl_greppable_synthesizes_stderr_from_break_reasons():
+    """Per Q1(a): bypass cache+rerun; read explain_results.json; classify
+    against break_reasons text directly. Pins the happy path."""
+    sweep = {"results": [
+        {"name": "FooModel", "mode": "eval", "break_reasons": [
+            {"reason": "Graph break: Can't convert torch._check*() message closure"},
+        ]},
+        {"name": "BarModel", "mode": "train", "break_reasons": [
+            {"reason": "Graph break: some other reason"},
+        ]},
+    ]}
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        json.dump(sweep, f)
+        sweep_path = Path(f.name)
+    try:
+        result = verify_repro.run_original_via_jsonl_greppable(
+            explain_results_jsonl=sweep_path,
+            expected_signal={"kind": "stderr_contains",
+                             "fragment": "Can't convert torch._check"},
+        )
+        assert result["evidence_source"] == "jsonl-greppable"
+        assert result["exit_code"] == 0, "rows present → exit 0"
+        assert "Can't convert torch._check" in result["stderr"], \
+            f"break_reason text must appear in synthesized stderr; got: {result['stderr'][:300]}"
+        assert "[FooModel|eval]" in result["stderr"]
+        cls = verify_repro.classify(result["exit_code"], result["stdout"], result["stderr"],
+                                    {"kind": "stderr_contains", "fragment": "Can't convert torch._check"})
+        assert cls == "reproduces"
+    finally:
+        sweep_path.unlink()
+
+
+def test_jsonl_greppable_filters_duplicate_suppressed_per_R12():
+    """Methodology R12: suppressed entries are dynamo's own dedupe-trace
+    markers, not new breaks. Filter them out before greppable synthesis."""
+    sweep = {"results": [
+        {"name": "FooModel", "mode": "eval", "break_reasons": [
+            {"reason": "Real break: pattern X"},
+            {"reason": "Graph break (user stack suppressed due to duplicate graph break) — pattern X"},
+            {"reason": "Graph break (user stack suppressed due to duplicate graph break) — pattern X"},
+        ]},
+    ]}
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        json.dump(sweep, f)
+        sweep_path = Path(f.name)
+    try:
+        result = verify_repro.run_original_via_jsonl_greppable(
+            explain_results_jsonl=sweep_path,
+            expected_signal={"kind": "stderr_contains", "fragment": "pattern X"},
+        )
+        body_lines = [ln for ln in result["stderr"].split("\n") if ln.startswith("[FooModel|eval]")]
+        assert len(body_lines) == 1, \
+            f"only the non-suppressed break_reason should appear; got {len(body_lines)}: {body_lines}"
+    finally:
+        sweep_path.unlink()
+
+
+def test_jsonl_greppable_missing_file_returns_does_not_reproduce_with_clear_error():
+    """Missing file is a recoverable error class, not a crash."""
+    result = verify_repro.run_original_via_jsonl_greppable(
+        explain_results_jsonl=Path("/tmp/definitely-does-not-exist-12345.json"),
+        expected_signal={"kind": "stderr_contains", "fragment": "X"},
+    )
+    assert result["evidence_source"] == "jsonl-greppable"
+    assert result["exit_code"] == 1
+    assert "file not found" in result["stderr"]
+
+
+def test_jsonl_greppable_malformed_json_returns_clear_error():
+    """JSON parse error → exit_code 1 with diagnostic, not crash."""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        f.write("this is not valid json {")
+        sweep_path = Path(f.name)
+    try:
+        result = verify_repro.run_original_via_jsonl_greppable(
+            explain_results_jsonl=sweep_path,
+            expected_signal={"kind": "stderr_contains", "fragment": "X"},
+        )
+        assert result["exit_code"] == 1
+        assert "JSON parse error" in result["stderr"]
+    finally:
+        sweep_path.unlink()
+
+
+def test_jsonl_greppable_filters_unrelated_break_reasons_per_expected_signal():
+    """Adversary MEDIUM-4 regression: function MUST filter break_reasons to those
+    actually containing expected_signal.fragment. v1 dumped EVERY non-suppressed
+    break_reason — any substring "reproduces" — exactly the false-confidence class
+    R12 was created to prevent. Pin: unrelated breaks don't contribute false matches."""
+    sweep = {"results": [
+        {"name": "FooModel", "mode": "eval", "break_reasons": [
+            {"reason": "Graph break: torch._check usage in trace"},  # contains "torch._check" but NOT "closure"
+            {"reason": "Graph break: BUILD_STRING type error"},     # totally unrelated
+        ]},
+        {"name": "BarModel", "mode": "train", "break_reasons": [
+            {"reason": "Graph break: Cannot guard on data-dependent"},  # also unrelated
+        ]},
+    ]}
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        json.dump(sweep, f)
+        sweep_path = Path(f.name)
+    try:
+        result = verify_repro.run_original_via_jsonl_greppable(
+            explain_results_jsonl=sweep_path,
+            expected_signal={"kind": "stderr_contains",
+                             "fragment": "Can't convert torch._check*() message closure"},
+        )
+        assert result["exit_code"] == 1, "no break_reason matches the SPECIFIC fragment → exit 1"
+        cls = verify_repro.classify(result["exit_code"], result["stdout"], result["stderr"],
+                                    {"kind": "stderr_contains",
+                                     "fragment": "Can't convert torch._check*() message closure"})
+        assert cls == "does-not-reproduce", \
+            f"unrelated break_reasons must NOT classify as reproduces; got {cls}"
+        # The unrelated "torch._check usage in trace" break must NOT appear in stderr
+        assert "torch._check usage" not in result["stderr"], \
+            "unrelated break_reason leaked into synthesized stderr"
+    finally:
+        sweep_path.unlink()
+
+
+def test_jsonl_greppable_empty_fragment_returns_clear_error():
+    """If expected_signal.fragment is empty, fail loudly rather than match-everything."""
+    sweep = {"results": [{"name": "X", "mode": "eval", "break_reasons": [{"reason": "anything"}]}]}
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        json.dump(sweep, f)
+        sweep_path = Path(f.name)
+    try:
+        result = verify_repro.run_original_via_jsonl_greppable(
+            explain_results_jsonl=sweep_path,
+            expected_signal={"kind": "stderr_contains", "fragment": ""},
+        )
+        assert result["exit_code"] == 1
+        assert "fragment is empty" in result["stderr"]
+    finally:
+        sweep_path.unlink()
+
+
+def test_explain_results_json_rejects_with_evidence_type_mre():
+    """Adversary HIGH-1 regression: --explain-results-json passed with
+    --evidence-type mre must raise ValueError, not silently ignore."""
+    body = (
+        "**Repro status:** Reproduces.\n\n"
+        "## Original failure report\n\n<!-- original_command: python x.py --models foo --modes eval -->\n\n"
+        "<details><summary>Verification signal (original)</summary>\n\n"
+        "`{\"kind\": \"stderr_contains\", \"fragment\": \"X\"}`\n</details>\n\n"
+        "## Minimal reproducer (MRE)\n\n```python repro=true\nimport torch\nprint('ok')\n```\n\n"
+        "<details><summary>Verification signal (MRE)</summary>\n\n"
+        "`{\"kind\": \"stderr_contains\", \"fragment\": \"X\"}`\n</details>\n"
+    )
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as bf:
+        bf.write(body)
+        body_path = Path(bf.name)
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as jf:
+        json.dump({"results": []}, jf)
+        jsonl_path = Path(jf.name)
+    try:
+        try:
+            verify_repro.verify(
+                target="corpus", evidence_type="mre", venv_name="current",
+                venv_path=Path("/usr/bin/python3"), case_id="t",
+                body_path=body_path, explain_results_jsonl=jsonl_path,
+                skip_venv_probe=True,
+            )
+            assert False, "expected ValueError on --explain-results-json + --evidence-type mre"
+        except ValueError as e:
+            assert "--explain-results-json" in str(e)
+            assert "original" in str(e)
+    finally:
+        body_path.unlink()
+        jsonl_path.unlink()
+
+
+def test_jsonl_greppable_empty_results_classifies_does_not_reproduce():
+    """Empty rows / no matching break_reasons → exit_code 1 + does-not-reproduce."""
+    sweep = {"results": []}
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        json.dump(sweep, f)
+        sweep_path = Path(f.name)
+    try:
+        result = verify_repro.run_original_via_jsonl_greppable(
+            explain_results_jsonl=sweep_path,
+            expected_signal={"kind": "stderr_contains", "fragment": "X"},
+        )
+        assert result["exit_code"] == 1, "no rows = no matches = exit 1"
+        cls = verify_repro.classify(result["exit_code"], result["stdout"], result["stderr"],
+                                    {"kind": "stderr_contains", "fragment": "X"})
+        assert cls == "does-not-reproduce"
+    finally:
+        sweep_path.unlink()
+
+
 # ── Runner ──────────────────────────────────────────────────────────────────
 
 def main() -> int:
