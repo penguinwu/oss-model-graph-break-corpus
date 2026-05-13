@@ -1,0 +1,33 @@
+{
+  "sweep_ref": "single-manual-file-2026-05-13-220000-issue96-scope-refresh",
+  "generated_at": "2026-05-13T22:11:47Z",
+  "clustering_method": "single_manual",
+  "total_failure_rows": 1,
+  "total_clustered_rows": 1,
+  "multi_root_cases": [],
+  "single_manual": true,
+  "clusters": [
+    {
+      "cluster_id": "single-file-2026-05-13-220000-issue96-scope-refresh",
+      "cluster_type": "single_manual",
+      "root_signal": {
+        "case_id": "file-2026-05-13-220000-issue96-scope-refresh"
+      },
+      "affected_cases": [
+        {
+          "case_id": "file-2026-05-13-220000-issue96-scope-refresh",
+          "role": "primary"
+        }
+      ],
+      "case_count": 1,
+      "representative_case": "file-2026-05-13-220000-issue96-scope-refresh",
+      "dup_candidates": [],
+      "action": "proceed-as-new"
+    }
+  ],
+  "peng_approval": {
+    "token": "f3a1b70e3a6a655ca81b1e92a3c2b02c2ba086b3b32f63ffa5210f6a5c0a7804",
+    "approved_at": "2026-05-13T22:11:48Z",
+    "approval_message_ref": "gchat 2026-05-13 17:40 ET (umbrella: \"Use agent time. Do not stop. Keep on going.\")"
+  }
+}
