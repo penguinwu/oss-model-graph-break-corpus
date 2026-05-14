@@ -304,121 +304,6 @@ def _parse_model_mode(original_command: str) -> tuple[str | None, str | None]:
     return model, mode
 
 
-def run_original_via_jsonl_greppable(
-    *,
-    explain_results_jsonl: Path,
-    expected_signal: dict,
-) -> dict:
-    """Read explain_results.json directly; synthesize stderr from break_reasons text.
-
-    This evidence source exists for sweep-driven aggregate filings where the bug
-    is a graph-break-class pattern that fires on N>1 models from the same
-    transformers helper / source line. Such filings cannot satisfy the
-    cache-or-rerun gate (the sweep tool emits per-model break_reasons to
-    explain_results.json, NOT to stderr; stderr only has the run_sweep banner).
-    Per Peng directive 2026-05-13 18:50 ET ("(a)" approval of Q1 surfaced
-    architectural-mismatch question).
-
-    Behavior: read the JSON, dump every non-suppressed break_reason text to
-    synthesized stderr (one per line, prefixed by name|mode for traceability),
-    feed to existing classify(). The expected_signal.fragment grep then matches
-    against actual break_reason content rather than against run_sweep banner
-    output.
-
-    Filter "(suppressed due to duplicate graph break)" entries per
-    methodology R12 — they are dynamo's own dedupe-trace markers, not new
-    distinct breaks.
-    """
-    if not explain_results_jsonl.exists():
-        return {
-            "evidence_source": "jsonl-greppable",
-            "sweep_path": str(explain_results_jsonl),
-            "sweep_age_days": 0,
-            "exit_code": 1,
-            "stdout": "",
-            "stderr": f"[verify_repro] jsonl-greppable: file not found: {explain_results_jsonl}",
-            "elapsed_s": 0.0,
-        }
-    start = time.time()
-    try:
-        data = json.loads(explain_results_jsonl.read_text())
-    except json.JSONDecodeError as e:
-        return {
-            "evidence_source": "jsonl-greppable",
-            "sweep_path": str(explain_results_jsonl),
-            "sweep_age_days": 0,
-            "exit_code": 1,
-            "stdout": "",
-            "stderr": f"[verify_repro] jsonl-greppable: JSON parse error: {e}",
-            "elapsed_s": time.time() - start,
-        }
-    rows = data.get("results", data) if isinstance(data, dict) else data
-    if not isinstance(rows, list):
-        return {
-            "evidence_source": "jsonl-greppable",
-            "sweep_path": str(explain_results_jsonl),
-            "sweep_age_days": 0,
-            "exit_code": 1,
-            "stdout": "",
-            "stderr": f"[verify_repro] jsonl-greppable: expected list of result rows in {explain_results_jsonl}",
-            "elapsed_s": time.time() - start,
-        }
-    # Per adversary review 2026-05-13 MEDIUM-4: actually USE expected_signal to filter
-    # break_reasons. Without this filter, the synthesized stderr is "every break_reason
-    # in the file" and any substring "reproduces" — exactly the false-confidence class
-    # R12 was created to prevent. With the filter, matched_rows is the proof: count of
-    # break_reasons that ACTUALLY contain the fragment.
-    fragment = expected_signal.get("fragment", "")
-    if not fragment:
-        return {
-            "evidence_source": "jsonl-greppable",
-            "sweep_path": str(explain_results_jsonl),
-            "sweep_age_days": 0,
-            "exit_code": 1,
-            "stdout": "",
-            "stderr": "[verify_repro] jsonl-greppable: expected_signal.fragment is empty",
-            "elapsed_s": time.time() - start,
-        }
-    SUPPRESSED_MARKER = "suppressed due to duplicate graph break"
-    stderr_lines = [f"[verify_repro] jsonl-greppable: {explain_results_jsonl}"]
-    matched_rows = 0
-    scanned_rows = 0
-    suppressed_skipped = 0
-    for r in rows:
-        if not isinstance(r, dict):
-            continue
-        name = r.get("name") or "<unknown>"
-        mode = r.get("mode") or "<unknown>"
-        for br in r.get("break_reasons") or []:
-            text = br.get("reason", "") if isinstance(br, dict) else str(br)
-            scanned_rows += 1
-            if SUPPRESSED_MARKER in text:
-                suppressed_skipped += 1
-                continue
-            # Only emit break_reasons that ACTUALLY contain the expected fragment.
-            # This is the load-bearing change vs the v1 implementation: matched_rows
-            # is now a real verification signal, not a "did we find any noise" check.
-            if fragment not in text:
-                continue
-            stderr_lines.append(f"[{name}|{mode}] {text}")
-            matched_rows += 1
-    elapsed = time.time() - start
-    stderr_text = "\n".join(stderr_lines)
-    return {
-        "evidence_source": "jsonl-greppable",
-        "sweep_path": str(explain_results_jsonl),
-        "sweep_age_days": 0,
-        "exit_code": 0 if matched_rows > 0 else 1,
-        "stdout": (
-            f"[verify_repro] jsonl-greppable: scanned {scanned_rows} break_reasons, "
-            f"matched {matched_rows} on fragment {fragment!r}, "
-            f"skipped {suppressed_skipped} suppressed-marker entries (R12)"
-        ),
-        "stderr": stderr_text,
-        "elapsed_s": elapsed,
-    }
-
-
 def run_original_via_lookup_or_rerun(
     *,
     original_command: str,
@@ -517,7 +402,6 @@ def verify(
     expected_signal_json: Path | None = None,
     timeout_s: int = 600,
     skip_venv_probe: bool = False,
-    explain_results_jsonl: Path | None = None,
 ) -> VerificationResult:
     """Top-level library API. CLI is a thin wrapper.
 
@@ -540,16 +424,6 @@ def verify(
         raise ValueError("--script required when --target upstream")
     if target == "upstream" and expected_signal_json is None:
         raise ValueError("--expected-signal-json required when --target upstream")
-    # Adversary GAP HIGH-1: --explain-results-json must only be used with
-    # --target corpus --evidence-type original. Silent-ignore is a foot-gun:
-    # operator passes it for the MRE cell, sees evidence_source=rerun, doesn't
-    # realize the JSON was never read.
-    if explain_results_jsonl is not None and (target != "corpus" or evidence_type != "original"):
-        raise ValueError(
-            "--explain-results-json is only valid with --target corpus "
-            "--evidence-type original (this is a sweep-driven aggregate-filing escape "
-            "valve; for MRE cells use the standard run-MRE path)"
-        )
 
     body_text = body_path.read_text() if body_path else None
 
@@ -600,22 +474,6 @@ def verify(
         evidence_source = "rerun"
         sweep_path = None
         sweep_age_days = None
-    elif explain_results_jsonl is not None:
-        # jsonl-greppable mode: bypass cache+rerun; read explain_results.json
-        # directly and synthesize stderr from break_reasons text. For
-        # sweep-driven aggregate filings where the bug is a graph-break-class
-        # pattern firing on N>1 models from the same source line.
-        run_result = run_original_via_jsonl_greppable(
-            explain_results_jsonl=explain_results_jsonl,
-            expected_signal=expected_signal,
-        )
-        evidence_source = run_result["evidence_source"]
-        sweep_path = run_result.get("sweep_path")
-        sweep_age_days = run_result.get("sweep_age_days")
-        exit_code = run_result["exit_code"]
-        stdout = run_result["stdout"]
-        stderr = run_result["stderr"]
-        elapsed = run_result["elapsed_s"]
     else:
         run_result = run_original_via_lookup_or_rerun(
             original_command=extracted, venv_name=venv_name, venv_path=venv_path,
@@ -673,16 +531,6 @@ def main() -> int:
     parser.add_argument("--output", type=Path, default=None,
                         help="Write JSON output here (default: "
                              "/tmp/file-issue-<case-id>-repro-<venv>-<type>.json)")
-    parser.add_argument("--explain-results-json", type=Path, default=None,
-                        dest="explain_results_jsonl",
-                        help="When set with --evidence-type original, bypass "
-                             "cache+rerun and read this explain_results.json "
-                             "directly; emit only break_reasons that contain "
-                             "the expected_signal.fragment to synthesized "
-                             "stderr. For sweep-driven aggregate filings where "
-                             "the gap is a graph-break-class pattern firing on "
-                             "N>1 models. Per Peng directive 2026-05-13 "
-                             "Q1(a) approval.")
     args = parser.parse_args()
 
     try:
@@ -692,7 +540,6 @@ def main() -> int:
             body_path=args.body, script_path=args.script,
             expected_signal_json=args.expected_signal_json,
             case_id=args.case_id, timeout_s=args.timeout_s,
-            explain_results_jsonl=args.explain_results_jsonl,
         )
     except Exception as e:
         print(f"ERROR: {e}", file=sys.stderr)
