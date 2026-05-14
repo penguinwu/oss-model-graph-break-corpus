@@ -52,25 +52,11 @@ If transformers / diffusers versions are NOT RECORDED for either side, surface t
 
 Status counts on the common-pair set are by definition byte-identical UNLESS Dynamo behavior changed. Total-GB delta is the load-bearing apple-to-apple metric.
 
-## 4. Per-team focus — top-5 lists + actionable this week (per Peng directives 2026-05-11 15:39 + 15:50 ET; per-team breakout added 2026-05-13 per WS2 dyn-shape↔dynamo split)
+## 4. Dynamo focus — top-5 lists + actionable this week (per Peng directives 2026-05-11 15:39 + 15:50 ET)
 
-This section is the "if you read nothing else, read this" surface for each compiler team. Following the 2026-05-13 label exclusivity rule (`for:dynamo-team` and `dynamic-shape` are mutually exclusive buckets routing to different oncalls), §4 now has per-team subsections.
+This section is the "if you read nothing else, read this" surface for the Dynamo team. Three lenses on the same question — what should we focus on?
 
-**§4.0 Per-team summary (one-liner per team):**
-
-| Team label | Open issue count | This week's net delta (closed − new − scope-expanded) | Actionable this week (count from §4.x.3) |
-|---|---:|---:|---:|
-| `for:dynamo-team` | {{N}} | {{Δ}} | {{N actionable}} |
-| `dynamic-shape` | {{N}} | {{Δ}} | {{N actionable}} |
-| `other-compile-issue` | {{N}} | {{Δ}} | {{N actionable}} |
-
-(Auxiliary labels like `capture-scalar-output` are SECONDARY signals layered on the team labels — counted in their primary team's row.)
-
----
-
-### 4.1 — Dynamo team
-
-#### 4.1a Top 5 Dynamo issues by blast radius (model count × break count)
+### 4.1 Top 5 Dynamo issues by blast radius (model count × break count)
 
 | # | Symptom | Scope |
 |---|---|---|
@@ -79,59 +65,25 @@ This section is the "if you read nothing else, read this" surface for each compi
 
 Pull from the open `[dynamo]` issue list, ranked by `model_count × break_count` (or by other agreed-upon load-bearing metric). Refresh weekly; numbers move as patterns get fixed or new issues land.
 
-#### 4.1b Top 5 Dynamo easy fixes (narrow scope, specific symptom, MRE-anchored)
+### 4.2 Top 5 easy fixes (narrow scope, specific symptom, MRE-anchored)
 
 | # | Symptom | Scope | Why easy |
 |---|---|---|---|
 | {{issue}} | {{symptom}} | {{N models, N modes}} | {{specific reason — has MRE, narrow code path, etc.}} |
 | ... | ... | ... | ... |
 
-Curated list of `for:dynamo-team` issues where the path-to-fix is narrow + has a verified live MRE in the issue body. The "Why easy" column is the load-bearing signal — without it, this list is just a smaller version of §4.1a.
+Curated list of issues where the path-to-fix is narrow + has a verified live MRE in the issue body. The "Why easy" column is the load-bearing signal — without it, this list is just a smaller version of §4.1.
 
-#### 4.1c Dynamo — actionable this week
+### 4.3 Actionable this week
 
 Bulleted, 5±2 items. Each item must:
 - Name the issue # (or filable item) directly
 - State the leverage (how many breaks / models cleared if the action lands)
-- Be specific enough that the PT2 Dynamo team can act on it without further triage from us
+- Be specific enough that the PT2 team can act on it without further triage from us
 
-Higher-leverage items first. If 0 items: state explicitly "Nothing actionable for Dynamo team this week." Do NOT mention internal corpus-side workstreams.
+Higher-leverage items first. If 0 items: state explicitly "Nothing actionable for PT2 team this week." Do NOT mention internal corpus-side workstreams (they live in PLAN.md, not the brief). Per Peng directive 2026-05-10 20:56 ET: corpus-side work is not of Dynamo team's interest.
 
-(Items in §4.1c may overlap with §4.1a / §4.1b — §4.1a is "biggest patterns we should track", §4.1b is "narrow wins available", §4.1c is "what landed THIS week or what's most ripe for action NOW.")
-
----
-
-### 4.2 — Dynamic-shape team
-
-#### 4.2a Top 5 Dynamic-shape issues by blast radius
-
-| # | Symptom | Scope |
-|---|---|---|
-| {{issue}} | {{symptom}} | {{N models, N breaks}} |
-| ... | ... | ... |
-
-Pull from open `dynamic-shape`-labeled issues, ranked by `model_count × break_count`. Same methodology as §4.1a; different bucket.
-
-#### 4.2b Top 5 Dynamic-shape easy fixes
-
-| # | Symptom | Scope | Why easy |
-|---|---|---|---|
-| {{issue}} | {{symptom}} | {{N models, N modes}} | {{specific reason — has MRE, narrow shape-graph, etc.}} |
-| ... | ... | ... | ... |
-
-#### 4.2c Dynamic-shape — actionable this week
-
-Same shape as §4.1c but addressed to the dynamic-shape oncall. If 0 items: state explicitly "Nothing actionable for Dynamic-shape team this week."
-
----
-
-### 4.3 — Other-compile-issue (timeout / perf / infra)
-
-If the open `other-compile-issue` set is non-empty, list the top items with model + measured impact (compile time, recompile count, etc.). If empty, omit this subsection entirely (do NOT emit a "0 items" placeholder — keeps the brief concise).
-
-| # | Symptom | Scope | Measured impact |
-|---|---|---|---|
-| {{issue}} | {{symptom (timeout / OOM / recompile churn)}} | {{N models, N modes}} | {{compile_time s / mem MB / recompile count}} |
+(Items in §4.3 may overlap with §4.1 / §4.2 — that's expected; §4.1 is "biggest patterns we should track", §4.2 is "narrow wins available", §4.3 is "what landed THIS week or what's most ripe for action NOW.")
 
 ## 5. Cohort changes (per Peng directive 2026-05-11 17:19 ET — folded old §5.2 into this section)
 
