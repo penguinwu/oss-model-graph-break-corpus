@@ -93,9 +93,18 @@ The clusterer enforces: `total_clustered_rows == sum(cluster.case_count)`. Mutua
 **Step 0b — Dedup search (every cluster, no thresholds).**
 
 ```
+# Title/keyword dedup (always)
 python3 tools/dedup_search.py --plan <plan.yaml>
+
+# Source-line dedup (when source line(s) are known at cluster-plan time)
+# Per Peng directive 2026-05-14 14:17 ET (Q4 approved — dedup as early as possible)
+python3 tools/dedup_search.py --plan <plan.yaml> \
+    --source-lines "transformers/.../foo.py:NNN,transformers/.../bar.py:MMM"
 ```
-Writes `dup_candidates: [...]` into each cluster, where each candidate has `decision: needs_peng_review`. **Per Peng directive:** the tool DOES NOT auto-decide based on overlap %. ANY candidate triggers human review. We will design auto-thresholds later, after enough real surfaces have given us examples to learn from.
+
+Writes `dup_candidates: [...]` (title/keyword overlap) and, when `--source-lines` is set, also `source_line_overlaps: [...]` (body source-line overlap) into the plan. **Per Peng directive:** the tool DOES NOT auto-decide based on overlap %. ANY candidate triggers human review.
+
+**Critical:** if `source_line_overlaps` is non-empty, STOP — an existing issue likely covers this scope. Surface to Peng before drafting; do NOT proceed to body draft + verify_repro cells (those cycles are wasted if the filing is a duplicate). The 2026-05-13 torch._check NEW filing was abandoned at Mode A check 12 because dedup_source_lines hit #112 — running it at Step 0b would have saved the wasted cycles. We will design auto-thresholds later, after enough real surfaces have given us examples to learn from.
 
 **Step 0c — Surface the cluster plan to Peng for approval.**
 

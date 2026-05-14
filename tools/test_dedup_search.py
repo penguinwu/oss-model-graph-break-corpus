@@ -156,6 +156,225 @@ def test_dry_run_does_not_modify_plan():
         plan_path.unlink(missing_ok=True)
 
 
+def test_source_lines_arg_writes_overlaps_field_when_match_found():
+    """Q4 (Peng 2026-05-14 14:17 ET): --source-lines must write
+    plan['source_line_overlaps'] when matches found, surfacing source-line
+    conflicts at cluster-plan time (Step 0b) instead of Mode A (Step 5)."""
+    plan = {
+        "schema_version": 1, "sweep_ref": "test-q4",
+        "clustering_method": "single_manual",
+        "total_failure_rows": 1, "total_clustered_rows": 1,
+        "multi_root_cases": [], "single_manual": True,
+        "clusters": [{
+            "cluster_id": "c1", "cluster_type": "single_manual",
+            "root_signal": {"case_id": "test"},
+            "affected_cases": [{"case_id": "test", "role": "primary"}],
+            "case_count": 1, "representative_case": "test",
+            "dup_candidates": [], "action": "proceed-as-new",
+        }],
+        "peng_approval": {"approved_at": None, "approval_message_ref": None},
+    }
+    fake_issues = [
+        {"number": 999, "title": "[dynamo] some existing tracker",
+         "body": "cited at transformers/foo/bar.py:42 (existing tracker)",
+         "labels": []},
+    ]
+    import dedup_search as ds
+    orig_fetch = ds.fetch_open_issues
+    ds.fetch_open_issues = lambda: fake_issues
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            plan_path = Path(td) / "plan.yaml"
+            plan_path.write_text(json.dumps(plan))
+            sys.argv = ["dedup_search.py", "--plan", str(plan_path),
+                        "--source-lines", "transformers/foo/bar.py:42"]
+            ds.main()
+            written = json.loads(plan_path.read_text())
+            assert "source_line_overlaps" in written, \
+                f"plan must include source_line_overlaps; got: {list(written)}"
+            assert len(written["source_line_overlaps"]) == 1
+            o = written["source_line_overlaps"][0]
+            assert o["issue_num"] == 999
+            assert o["source_line"] == "transformers/foo/bar.py:42"
+            assert o["match_type"] in ("exact", "loose-path")
+    finally:
+        ds.fetch_open_issues = orig_fetch
+
+
+def test_source_lines_exit_code_2_on_overlap():
+    """Adversary HIGH-1: source-line overlap must exit 2 (machine-readable
+    STOP) — not just print stderr prose. Matches dedup_source_lines.py
+    standalone contract."""
+    plan = {
+        "schema_version": 1, "sweep_ref": "test-q4-exit2",
+        "clustering_method": "single_manual",
+        "total_failure_rows": 1, "total_clustered_rows": 1,
+        "multi_root_cases": [], "single_manual": True,
+        "clusters": [{
+            "cluster_id": "c1", "cluster_type": "single_manual",
+            "root_signal": {"case_id": "test"},
+            "affected_cases": [{"case_id": "test", "role": "primary"}],
+            "case_count": 1, "representative_case": "test",
+            "dup_candidates": [], "action": "proceed-as-new",
+        }],
+        "peng_approval": {"approved_at": None, "approval_message_ref": None},
+    }
+    fake_issues = [
+        {"number": 999, "title": "[dynamo] tracker",
+         "body": "cited at transformers/foo/bar.py:42", "labels": []},
+    ]
+    import dedup_search as ds
+    orig_fetch = ds.fetch_open_issues
+    orig_argv = sys.argv
+    ds.fetch_open_issues = lambda: fake_issues
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            plan_path = Path(td) / "plan.yaml"
+            plan_path.write_text(json.dumps(plan))
+            sys.argv = ["dedup_search.py", "--plan", str(plan_path),
+                        "--source-lines", "transformers/foo/bar.py:42"]
+            rc = ds.main()
+            assert rc == 2, f"overlap must exit 2 (machine STOP signal); got {rc}"
+    finally:
+        ds.fetch_open_issues = orig_fetch
+        sys.argv = orig_argv
+
+
+def test_source_lines_dry_run_does_not_mutate_plan_file():
+    """Adversary HIGH-2: dry-run must be truly read-only — no source_line_overlaps
+    written to the plan file."""
+    import hashlib
+    plan = {
+        "schema_version": 1, "sweep_ref": "test-q4-dryrun",
+        "clustering_method": "single_manual",
+        "total_failure_rows": 1, "total_clustered_rows": 1,
+        "multi_root_cases": [], "single_manual": True,
+        "clusters": [{
+            "cluster_id": "c1", "cluster_type": "single_manual",
+            "root_signal": {"case_id": "test"},
+            "affected_cases": [{"case_id": "test", "role": "primary"}],
+            "case_count": 1, "representative_case": "test",
+            "dup_candidates": [], "action": "proceed-as-new",
+        }],
+        "peng_approval": {"approved_at": None, "approval_message_ref": None},
+    }
+    fake_issues = [
+        {"number": 999, "title": "[dynamo] tracker",
+         "body": "cited at transformers/foo/bar.py:42", "labels": []},
+    ]
+    import dedup_search as ds
+    orig_fetch = ds.fetch_open_issues
+    orig_argv = sys.argv
+    ds.fetch_open_issues = lambda: fake_issues
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            plan_path = Path(td) / "plan.yaml"
+            plan_path.write_text(json.dumps(plan))
+            before_sha = hashlib.sha256(plan_path.read_bytes()).hexdigest()
+            sys.argv = ["dedup_search.py", "--plan", str(plan_path),
+                        "--source-lines", "transformers/foo/bar.py:42",
+                        "--dry-run"]
+            ds.main()
+            after_sha = hashlib.sha256(plan_path.read_bytes()).hexdigest()
+            assert before_sha == after_sha, \
+                "dry-run with --source-lines must not mutate plan file"
+    finally:
+        ds.fetch_open_issues = orig_fetch
+        sys.argv = orig_argv
+
+
+def test_source_lines_empty_or_whitespace_errors():
+    """Adversary MEDIUM-4: empty/whitespace-only --source-lines must NOT
+    silently pass as 'clean' (false-positive)."""
+    plan_min = {"schema_version": 1, "clusters": [],
+                "peng_approval": {}}
+    import dedup_search as ds
+    orig_fetch = ds.fetch_open_issues
+    orig_argv = sys.argv
+    ds.fetch_open_issues = lambda: []
+    try:
+        for bad_input in ["", "   ", "  ,  ,"]:
+            with tempfile.TemporaryDirectory() as td:
+                plan_path = Path(td) / "plan.yaml"
+                plan_path.write_text(json.dumps(plan_min))
+                sys.argv = ["dedup_search.py", "--plan", str(plan_path),
+                            "--source-lines", bad_input]
+                try:
+                    ds.main()
+                    raise AssertionError(
+                        f"empty input {bad_input!r} should sys.exit; did not"
+                    )
+                except SystemExit as e:
+                    assert e.code != 0, \
+                        f"empty input must exit non-zero; got {e.code}"
+    finally:
+        ds.fetch_open_issues = orig_fetch
+        sys.argv = orig_argv
+
+
+def test_source_lines_malformed_citation_errors():
+    """Adversary MEDIUM-5: malformed source-line citations must be rejected,
+    not silently treated as zero-match clean."""
+    plan_min = {"schema_version": 1, "clusters": [],
+                "peng_approval": {}}
+    import dedup_search as ds
+    orig_fetch = ds.fetch_open_issues
+    orig_argv = sys.argv
+    ds.fetch_open_issues = lambda: []
+    try:
+        for bad in ["not_a_path", "transformers/foo/bar.py 42",
+                    "transformers/foo/bar.py:", "random/foo.py:42"]:
+            with tempfile.TemporaryDirectory() as td:
+                plan_path = Path(td) / "plan.yaml"
+                plan_path.write_text(json.dumps(plan_min))
+                sys.argv = ["dedup_search.py", "--plan", str(plan_path),
+                            "--source-lines", bad]
+                try:
+                    ds.main()
+                    raise AssertionError(
+                        f"malformed citation {bad!r} should sys.exit; did not"
+                    )
+                except SystemExit as e:
+                    assert e.code != 0, \
+                        f"malformed {bad!r} must exit non-zero; got {e.code}"
+    finally:
+        ds.fetch_open_issues = orig_fetch
+        sys.argv = orig_argv
+
+
+def test_source_lines_arg_clean_when_no_match():
+    """No source-line overlap → plan still gets the field, with empty list."""
+    plan = {
+        "schema_version": 1, "sweep_ref": "test-q4-clean",
+        "clustering_method": "single_manual",
+        "total_failure_rows": 1, "total_clustered_rows": 1,
+        "multi_root_cases": [], "single_manual": True,
+        "clusters": [{
+            "cluster_id": "c1", "cluster_type": "single_manual",
+            "root_signal": {"case_id": "test"},
+            "affected_cases": [{"case_id": "test", "role": "primary"}],
+            "case_count": 1, "representative_case": "test",
+            "dup_candidates": [], "action": "proceed-as-new",
+        }],
+        "peng_approval": {"approved_at": None, "approval_message_ref": None},
+    }
+    import dedup_search as ds
+    orig_fetch = ds.fetch_open_issues
+    ds.fetch_open_issues = lambda: []
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            plan_path = Path(td) / "plan.yaml"
+            plan_path.write_text(json.dumps(plan))
+            sys.argv = ["dedup_search.py", "--plan", str(plan_path),
+                        "--source-lines", "transformers/foo/nowhere.py:1"]
+            ds.main()
+            written = json.loads(plan_path.read_text())
+            assert "source_line_overlaps" in written
+            assert written["source_line_overlaps"] == []
+    finally:
+        ds.fetch_open_issues = orig_fetch
+
+
 def main() -> int:
     tests = [(name, fn) for name, fn in globals().items()
              if name.startswith("test_") and callable(fn)]

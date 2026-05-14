@@ -149,6 +149,16 @@ def main() -> int:
                         help="Path to cluster plan YAML/JSON")
     parser.add_argument("--dry-run", action="store_true",
                         help="Print findings; do NOT modify the plan file")
+    parser.add_argument(
+        "--source-lines", default=None,
+        help="Comma-separated list of `path/to/file.py:NNN` source-line "
+             "citations the planned filing will reference. When set, also runs "
+             "source-line dedup (via dedup_source_lines.find_overlapping_issues) "
+             "against open [dynamo]-titled issue bodies and writes results to "
+             "plan['source_line_overlaps']. Per Peng directive 2026-05-14 14:17 ET "
+             "(dedup as early as possible) — surfaces source-line conflicts at "
+             "cluster-plan time instead of at Mode A check 12.",
+    )
     args = parser.parse_args()
 
     if not args.plan.is_file():
@@ -191,10 +201,64 @@ def main() -> int:
             "before posting."
         )
 
+    # Source-line dedup (Peng directive 2026-05-14 14:17 ET — Q4 approved).
+    # Adversary review HIGH gaps fixed here:
+    # - Exit 2 on overlap (matches standalone dedup_source_lines.py contract;
+    #   makes the STOP signal machine-readable, not just stderr prose)
+    # - Validate input is non-empty AND well-shaped (path/to/file.py:NNN);
+    #   silent "0 valid citations = clean" was a false-positive risk
+    overlap_exit_code = 0
+    if args.source_lines is not None:
+        from dedup_source_lines import find_overlapping_issues, SOURCE_LINE_RE  # noqa: E402
+        source_lines = [s.strip() for s in args.source_lines.split(",") if s.strip()]
+        if not source_lines:
+            sys.exit(
+                f"ERROR: --source-lines was set but parsed to 0 valid citations "
+                f"after splitting on ','. Got: {args.source_lines!r}. "
+                f"Expected: comma-separated `path/to/file.py:NNN` entries."
+            )
+        # Shape-check each entry per dedup_source_lines.SOURCE_LINE_RE
+        bad = [s for s in source_lines if not SOURCE_LINE_RE.fullmatch(s)]
+        if bad:
+            sys.exit(
+                f"ERROR: --source-lines entries malformed (not matching "
+                f"`path/to/file.py:NNN`): {bad}"
+            )
+        print(f"\nSource-line dedup against {len(source_lines)} cited line(s):",
+              file=sys.stderr)
+        for sl in source_lines:
+            print(f"  - {sl}", file=sys.stderr)
+        overlaps = find_overlapping_issues(source_lines, all_issues, dynamo_only=True)
+        if overlaps:
+            print(f"\n⚠️  SOURCE-LINE OVERLAPS FOUND ({len(overlaps)}):")
+            for o in overlaps:
+                print(f"  #{o['issue_num']} ({o['match_type']}) "
+                      f"@ {o['source_line']}: {o['title'][:80]}")
+            print(
+                "\nSource-line overlap at cluster-plan time means STOP — an "
+                "existing issue likely covers this scope. Surface to Peng "
+                "before drafting; do NOT proceed to body draft + verify cells."
+            )
+            overlap_exit_code = 2
+        else:
+            print(f"\n✓ Source-line dedup clean (0 overlaps); proceed to draft.")
+        # Plan mutation deferred until AFTER dry-run guard so dry-run is
+        # truly read-only (adversary HIGH-2).
+    else:
+        overlaps = None  # flag not passed; field stays absent from plan
+
     if args.dry_run:
+        # Print what WOULD be written (so dry-run is informative) but do not
+        # mutate the in-memory dict OR the file.
+        if overlaps is not None:
+            print(f"\n[DRY-RUN] would write source_line_overlaps={len(overlaps)} "
+                  f"entr(y/ies) to plan; not modifying.", file=sys.stderr)
         print(f"\n[DRY-RUN] plan {args.plan} NOT modified.", file=sys.stderr)
         return 0
 
+    # Mutate plan ONLY here, after dry-run guard (adversary HIGH-2)
+    if overlaps is not None:
+        plan["source_line_overlaps"] = overlaps
     args.plan.write_text(json.dumps(plan, indent=2, default=str) + "\n")
     print(f"\nUpdated {args.plan}", file=sys.stderr)
     print(
@@ -202,7 +266,9 @@ def main() -> int:
         f"Re-surface to Peng for fresh approval (new sha256).",
         file=sys.stderr,
     )
-    return 0
+    # Return non-zero (2) on source-line overlap so callers can mechanically
+    # detect STOP-condition (adversary HIGH-1; matches dedup_source_lines.py).
+    return overlap_exit_code
 
 
 if __name__ == "__main__":
