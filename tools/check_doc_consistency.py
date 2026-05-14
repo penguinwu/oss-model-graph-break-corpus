@@ -516,6 +516,34 @@ def rule_no_github_autolinks_in_subagents() -> list[Violation]:
     return violations
 
 
+def rule_persona_check_15_dyn_shape_exclusivity_present() -> list[Violation]:
+    """Mode A check 15 (dyn-shape↔dynamo exclusivity) must remain in
+    persona.md with at least 3 dyn-shape vocabulary anchors. Catches
+    accidental deletion of the rule body during persona refactors.
+
+    Per Peng directive 2026-05-13T16:06 ET (label exclusivity rule).
+    """
+    persona = REPO_ROOT / "subagents/file-issue/persona.md"
+    if not persona.is_file():
+        return []
+    text = persona.read_text()
+    required_anchors = (
+        "Dynamo↔dynamic-shape exclusivity",  # check 15 header
+        "PendingUnbackedSymbolNotFound",       # core dyn-shape vocab
+        "GuardOnDataDependentSymNode",         # core dyn-shape vocab
+        "_local_scalar_dense",                 # core dyn-shape vocab
+        "recommended_labels",                  # the verdict-block field
+    )
+    missing = [a for a in required_anchors if a not in text]
+    if missing:
+        return [
+            f"subagents/file-issue/persona.md: Mode A check 15 missing "
+            f"required anchors: {missing}. Restore from git history if "
+            f"deleted unintentionally."
+        ]
+    return []
+
+
 RULES: dict[str, RuleFn] = {
     "cohort_codes": rule_cohort_codes,
     "apply_modes": rule_apply_modes,
@@ -526,6 +554,7 @@ RULES: dict[str, RuleFn] = {
     "subagent_paths_migrated": rule_subagent_paths_migrated,
     "no_fix_suggestions_in_templates": rule_no_fix_suggestions_in_templates,
     "no_github_autolinks_in_subagents": rule_no_github_autolinks_in_subagents,
+    "persona_check_15_dyn_shape_exclusivity_present": rule_persona_check_15_dyn_shape_exclusivity_present,
 }
 
 
