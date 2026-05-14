@@ -103,7 +103,7 @@ Good: "129 model classes (195 (model, mode) pair-rows; 195 distinct break_reason
 
 (Reason: 2026-05-13 dynamo triage table reported "#11: 11→22 models", "#24: 11→28 models", "#96: 103→195 models, 390 breaks" — when verified, ONLY #96 had a real scope change (103 → 129 model classes). The other two were just (model, mode) pair-row counts mistaken for class counts. #96's "390 breaks" was a LOOSE-pattern count including non-#96-specific Reconstruction failures; the specific count is 195 (which #96 EDIT body now uses correctly). Mode A on the #96 EDIT surfaced unit conflation as FIX 1; subsequent investigation on the #27 16-vs-8 discrepancy surfaced the duplicate-suppressed counting bug. R12 encodes both lessons so future scope-refresh triages don't repeat them.)
 
-**Future code-fix candidate:** add a helper `tools/count_breaks_per_pattern.py --pattern <regex> [--specific] [--filter-duplicate-suppressed]` that emits `(model_classes, pair_rows, distinct_breaks)` triples. Removes the manual scripting that surfaced the bug today. Pending; tracked in PLAN.md as a WS2 follow-up.
+**Future code-fix candidate (deferred):** a helper that emits `(model_classes, pair_rows, distinct_breaks)` triples mechanically would prevent this class of error. An initial implementation was built 2026-05-13 then torn down 2026-05-14 as overbuild — the rule R12 itself plus careful counting at triage time is sufficient for current scale. Rebuild demand-driven if/when manual triages start hitting this bug class repeatedly.
 
 ## Soft rules (judgment, no mechanical guard)
 
