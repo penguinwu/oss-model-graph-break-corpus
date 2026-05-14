@@ -219,8 +219,6 @@ The corpus currently labels all dynamo-related issues with `for:dynamo-team`. So
 
 - [TORN DOWN 2026-05-14] **Brief template Section 4 per-team breakout — built 2026-05-13 (commit `7749d95`); torn down per Peng directive 2026-05-14 13:11 ET.** Restructured the next-brief template to anticipate per-team views before any brief actually used the structure. Premature. Rebuild from real-brief evidence if/when a future brief actually wants per-team breakouts.
 
-- [ ] **Sub-template for dynamic-shape issues in `subagents/file-issue/templates/`.** Different signal vocabulary, different validation recipe (e.g., explicit `dynamic=True` reproduction, `_check_is_size` hint cataloguing). Phase-2 file-issue work; deferred until templates infrastructure ships.
-
 - [ ] **Misread pattern lesson — encode "soft graph break ≠ no bug" check.** Twice today (#14 first-pass, #25 first-pass) I interpreted "MRE compiled with `backend="eager"` and printed OK" as "bug not reproducing" when actually the graph break IS firing — just not fatal because `fullgraph=True` is missing. The signal that should trigger re-validation is the `[__graph_breaks]` log line in stderr, regardless of exit code. Encode in persona Mode A check 2 (validation discipline) or as a new check.
 
 ### WS2 task list — added 2026-05-13 19:55 ET (per Peng directive "add task lists to plan.md before next iteration")
