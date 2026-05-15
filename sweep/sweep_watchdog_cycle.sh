@@ -35,16 +35,111 @@
 
 set -euo pipefail
 
+DEFAULT_INTERVAL_MIN=15
+DEFAULT_GCHAT_SPACE="spaces/AAQANraxXE4"
+
+usage() {
+    cat <<EOF
+Usage: sweep_watchdog_cycle.sh <SWEEP_DATE> [options]
+
+One watchdog cycle for a nightly sweep. Reads sweep state, posts a
+heartbeat / alert / completion message to GChat, and triggers auto-resume
+on DEAD. Designed to be invoked repeatedly by cron — the script itself is
+single-shot.
+
+Positional:
+  SWEEP_DATE              Sweep identifier, e.g. 2026-05-15. Locates the
+                          sweep dir at sweep_results/nightly/<SWEEP_DATE>/.
+
+Options:
+  --interval-min N        Caller's cron interval, in minutes. Default: ${DEFAULT_INTERVAL_MIN}.
+                          The interval is the cadence at which YOUR cron
+                          invokes this script. The script itself is
+                          single-shot. This flag is passed in so the
+                          heartbeat message can tell the reviewer "next
+                          check in ~Nmin", so a missing-heartbeat is
+                          recognizable as broken-watchdog without
+                          guessing the schedule.
+  --gchat-space SPACE     GChat space to post to. Default: ${DEFAULT_GCHAT_SPACE}.
+  -h, --help              Show this help and exit.
+
+Environment variables:
+  REPO_ROOT                          Corpus repo root. Default: /home/pengwu/projects/oss-model-graph-break-corpus
+  NIGHTLY_PYTHON                     Python for auto-resume (nightly venv).
+  TORCH211_PYTHON                    Python for the observer script.
+  SWEEP_WATCHDOG_STARTUP_GRACE_MIN   Minutes of silence for MISSING_STATE
+                                     when sweep dir is fresh. Default: 10.
+  SWEEP_WATCHDOG_HEARTBEAT_SUPPRESS  Set to 1 to silence the ALIVE
+                                     heartbeat (echoes a stderr breadcrumb
+                                     so the suppression is visible).
+
+Exit codes:
+  0    posted / silent (no resume launched)
+  1    auto-resume launched
+  2    setup error (missing SWEEP_DATE, sweep dir not found, bad arg)
+  99   sweep complete (caller should disable cron)
+
+Examples:
+  # Default 15-min cadence:
+  sweep_watchdog_cycle.sh 2026-05-15
+
+  # Faster 5-min cadence for a short sample sweep:
+  sweep_watchdog_cycle.sh 2026-05-15 --interval-min 5
+
+  # Post to a different space:
+  sweep_watchdog_cycle.sh 2026-05-15 --gchat-space spaces/OTHER
+
+EOF
+}
+
+# ── Arg parsing ─────────────────────────────────────────────────────────
+# First positional is SWEEP_DATE (required, kept as positional for back-
+# compat with existing cron entries). Remaining args are named flags.
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    usage
+    exit 0
+fi
+
 SWEEP_DATE="${1:-}"
 if [ -z "$SWEEP_DATE" ]; then
     echo "ERROR: SWEEP_DATE required (e.g. 2026-05-09)" >&2
+    echo "Run with --help for usage." >&2
     exit 2
 fi
+shift
 
-GCHAT_SPACE="spaces/AAQANraxXE4"
-if [ "${2:-}" = "--gchat-space" ] && [ -n "${3:-}" ]; then
-    GCHAT_SPACE="$3"
-fi
+GCHAT_SPACE="$DEFAULT_GCHAT_SPACE"
+INTERVAL_MIN=$DEFAULT_INTERVAL_MIN
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --gchat-space)
+            if [ -z "${2:-}" ]; then
+                echo "ERROR: --gchat-space requires an argument" >&2
+                exit 2
+            fi
+            GCHAT_SPACE="$2"
+            shift 2
+            ;;
+        --interval-min)
+            if [ -z "${2:-}" ] || ! [[ "$2" =~ ^[0-9]+$ ]]; then
+                echo "ERROR: --interval-min requires a positive integer" >&2
+                exit 2
+            fi
+            INTERVAL_MIN="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "ERROR: unknown argument: $1" >&2
+            echo "Run with --help for usage." >&2
+            exit 2
+            ;;
+    esac
+done
 
 REPO_ROOT="${REPO_ROOT:-/home/pengwu/projects/oss-model-graph-break-corpus}"
 RESULTS_DIR="$REPO_ROOT/sweep_results/nightly/$SWEEP_DATE"
@@ -187,7 +282,7 @@ EOF
         if [ "${SWEEP_WATCHDOG_HEARTBEAT_SUPPRESS:-0}" = "1" ]; then
             echo "heartbeat suppressed by SWEEP_WATCHDOG_HEARTBEAT_SUPPRESS=1" >&2
         else
-            gchat send "$GCHAT_SPACE" "[🦦 watchdog] $WATCHDOG_OUT" --as-bot || true
+            gchat send "$GCHAT_SPACE" "[🦦 watchdog] $WATCHDOG_OUT (next check in ~${INTERVAL_MIN}min)" --as-bot || true
         fi
         exit 0
         ;;
