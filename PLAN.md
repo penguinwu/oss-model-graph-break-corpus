@@ -213,13 +213,13 @@ The corpus currently labels all dynamo-related issues with `for:dynamo-team`. So
 
 - [x] **Encode dynamo↔dyn-shape exclusivity into file-issue subagent Mode A — DONE 2026-05-13 18:05 ET.** Added Mode A check 15 to `subagents/file-issue/persona.md`. Encodes 4-bucket label-recommendation classifier: dynamic-shape vocabulary (PendingUnbackedSymbolNotFound, GuardOnDataDependentSymNode, _local_scalar_dense, etc.); dynamo-only vocabulary (BUILTIN, var-tracker, opcode-tracing, Python-primitive interop); other-compile-issue (timeout, recompile churn without root-cause); capture-scalar-output (secondary label, layered on the team label, validated by 2-MRE comparison). Mode A produces a `recommended_labels` field; Mode B carries to LABELS line. Hard REFRAME if draft has both for:dynamo-team + dynamic-shape (violates exclusivity) or routes a dyn-shape symptom to for:dynamo-team. Pinned to the 2026-05-13 triage's 9-misrouted finding as motivation.
 
-- [ ] **Test that pins Mode A check 15.** `tools/test_file_issues.py::test_mode_a_rejects_dynamo_dynshape_label_collision` — assert a draft citing `PendingUnbackedSymbolNotFound` with proposed `for:dynamo-team` triggers `reframe`. Currently persona-only enforcement; add a tools-side smoke test.
+- [x] **Test that pins Mode A check 15 — DONE 2026-05-14 (commit `7875d7e`).** Added `rule_persona_check_15_dyn_shape_exclusivity_present` to `tools/check_doc_consistency.py`. Asserts 5 anchors (header text + dyn-shape vocabulary + recommended_labels field) remain in persona.md.
 
 - [x] **Encode `capture-scalar-output` auto-suggestion for `.item()` patterns — DONE 2026-05-13 18:15 ET.** Added Mode A check 16. When draft body / cited stack frames contain `.item()` / `.tolist()` / `_local_scalar_dense` / `numpy.array().item()`, Mode A surfaces a NOTES item recommending pre-filing 2-MRE comparison (baseline vs `capture_scalar_outputs=True`); Otter must run before Mode B. Three outcomes encoded: flag-on resolves → ADD `capture-scalar-output` label + workaround note in body; flag-on changes class but still fails → no label, note in Repro status; flag-on no effect → no label. Cautionary tale captured: 4 of 5 candidates today (#16, #21, #25, #55) were NOT resolved by the flag despite matching the pattern; #14 was. Without this check, the validation gets skipped at first-filing time.
 
 - [TORN DOWN 2026-05-14] **Brief template Section 4 per-team breakout — built 2026-05-13 (commit `7749d95`); torn down per Peng directive 2026-05-14 13:11 ET.** Restructured the next-brief template to anticipate per-team views before any brief actually used the structure. Premature. Rebuild from real-brief evidence if/when a future brief actually wants per-team breakouts.
 
-- [ ] **Misread pattern lesson — encode "soft graph break ≠ no bug" check.** Twice today (#14 first-pass, #25 first-pass) I interpreted "MRE compiled with `backend="eager"` and printed OK" as "bug not reproducing" when actually the graph break IS firing — just not fatal because `fullgraph=True` is missing. The signal that should trigger re-validation is the `[__graph_breaks]` log line in stderr, regardless of exit code. Encode in persona Mode A check 2 (validation discipline) or as a new check.
+- [x] **"Soft graph break ≠ no bug" check — DONE 2026-05-13 (commit `ee9033d`); duplicate entry of completed work.** Encoded as persona Mode A check 2 subsection. See line 202 above for the canonical entry.
 
 ### WS2 task list — added 2026-05-13 19:55 ET (per Peng directive "add task lists to plan.md before next iteration")
 
@@ -227,21 +227,21 @@ These are the concrete next-iteration WS2 tasks queued from today's work. Pendin
 
 **Pending Peng decisions (BLOCK certain tasks):**
 
-- [ ] **Q3 — Uninitialized nn.Module cross-ref path:** (a-revised) comment on #27 [requires SKILL `--comment` extension] | (b) amend check-13 with downstream-in-same-trace carve-out + re-walk #27 EDIT | (c) drop. **BLOCKS:** the BigBirdPegasus dual-manifestation work item.
+- [x] **Q3 — DROPPED 2026-05-14 13:39 ET per Peng directive.** BigBirdPegasus dual-manifestation cross-ref skipped entirely (option (c)).
 
-- [ ] **Q4 — Cycle-budget improvement:** integrate `tools/dedup_source_lines.py` into cluster-plan generation pipeline (`tools/cluster_failures.py` or `tools/dedup_search.py`) so source-line conflicts surface BEFORE Otter writes the body. Lean: yes. **UNBLOCKS:** prevents future "draft → discover dup at Mode A → wasted cycles" pattern (cost #112 dedup discovery today: ~1 cycle).
+- [x] **Q4 — DONE 2026-05-14 (commit `4273cd2`).** `tools/dedup_search.py --source-lines` flag added; integrates source-line dedup at cluster-plan time. 6 new tests + 3 adversary-fix regressions. Exit code 2 on overlap for mechanical STOP signal.
 
-- [ ] **Q5 — Methodology check:** when surfacing carve-out questions for Peng, pre-verify that the proposed-separate-filing has a clean MRE-isolation story BEFORE presenting paths as viable. Lean: yes. **PREVENTS:** the Q2(a) failure pattern (proposed path was structurally faulty).
+- [x] **Q5 — DONE 2026-05-14.** Encoded in local CLAUDE.md as "Pre-verify viability before surfacing carve-out paths" rule. Process commitment, no code change.
 
 **Truly unblocked (independent of Q3/Q4/Q5):**
 
-- [ ] **Build `tools/file_issues.py corpus-issue --comment <issue_num>` mode** — Phase-2 SKILL extension flagged in RETROSPECTIVE.md from prior work. Implementing this UNBLOCKS Q3(a-revised). Estimated: 2-3 cycles (small CLI extension + Mode A + Mode B persona variants for comment-style content + tests). Adversary-review required.
+- [DROPPED 2026-05-14] `--comment` mode for file_issues.py — was the unblocker for Q3(a-revised); Q3 dropped per Peng directive (option (c)), so this is moot. If a future cross-ref need surfaces, rebuild demand-driven.
 
 - [DROPPED 2026-05-14] count_breaks_per_pattern.py medium-sev gaps — tool torn down; gaps moot.
 
 - [DROPPED 2026-05-14] verify_repro jsonl-greppable medium-sev gaps — mode torn down; gaps moot.
 
-- [ ] **#76 root-cause investigation** (carry-over). Determine where Gemma3n's `>1620s compile` time is spent: dynamo trace / guard creation / FX graph capture / inductor lowering. Needs TORCH_LOGS-instrumented run. Estimated 2-3 cycles.
+- [x] **#76 investigation — DONE 2026-05-14 21:10 ET; closed as not-reproduced.** See entry above (line 212). 20-run reproducibility test; closed via state_reason=not_planned. Side-cleanup 2026-05-15: stale Gemma3n entries removed from skip_models.json (commit `cce469a`).
 
 - [DROPPED 2026-05-14] adversary-review case file for verify_repro change — mode torn down; case file moot.
 
