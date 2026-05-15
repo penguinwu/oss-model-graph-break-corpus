@@ -44,16 +44,6 @@
     "follow_up_task": "Investigate with FastVlmForConditionalGeneration; remove together once root cause documented.",
     "added": "2026-04-20"
   },
-  "Gemma3nForConditionalGeneration": {
-    "reason": "Gemma3n family — was hitting compile-time issues that exceeded the default 180s timeout. Originally categorized as very_large but skipped pending per-model timeout wiring. With per-model timeout now shipped (2026-05-10), may be removable; needs verification.",
-    "follow_up_task": "Verify Gemma3n runs cleanly on next nightly with per-model timeout (1620s); same status as BLT.",
-    "added": "2026-04-22"
-  },
-  "Gemma3nModel": {
-    "reason": "Same as Gemma3nForConditionalGeneration — Gemma3n family timeout issue. Per-model timeout now ships; needs verification before removal.",
-    "follow_up_task": "Same as Gemma3nForConditionalGeneration — verify on next nightly.",
-    "added": "2026-04-22"
-  },
   "PeAudioVideoModel": {
     "reason": "Stable eager_error in pure-eager forward (KeyError(None) per known_errors.json). Skipped at the sweep level (in addition to known_errors.json gating) to avoid running the failed eager pass at all.",
     "follow_up_task": "Remove from skip_models.json IF the known_errors entry is removed; otherwise keep skipped.",
