@@ -14,7 +14,7 @@ Tier-aware progress threshold (NOT cron interval) handles the very_large model c
 |---|---|---|
 | Observer | `sweep/sweep_watchdog.py` | Stateless one-shot read; prints state; exits with code |
 | Cycle script | `sweep/sweep_watchdog_cycle.sh` | Cron wrapper; auto-resume on DEAD; writes resume marker |
-| Cron | jobs table `sweep-watchdog-<DATE>` | 15-min interval (was 10) |
+| Cron | jobs table `sweep-watchdog-<DATE>` | Interval is caller-controlled via `interval_seconds`. Nightly default: 900s (15 min). Shorter for short-running experiments (e.g. sample sweeps at 600s). |
 
 ## State files
 
@@ -72,8 +72,40 @@ case "$observer_out" in
         post_to_gchat "$observer_out"   # no auto-action; surface to Peng
         exit 0
         ;;
-    *ALIVE*|*COMPLETE*|"")
-        exit 0   # silent
+    *ALIVE*|"")
+        # Post the observer line as heartbeat every cycle. Silence is
+        # indistinguishable from a broken watchdog, so default is loud.
+        # Suppress with env SWEEP_WATCHDOG_HEARTBEAT_SUPPRESS=1 (script
+        # echoes a stderr breadcrumb so the suppression is visible).
+        if [ "${SWEEP_WATCHDOG_HEARTBEAT_SUPPRESS:-0}" = "1" ]; then
+            echo "heartbeat suppressed by SWEEP_WATCHDOG_HEARTBEAT_SUPPRESS=1" >&2
+        else
+            post_to_gchat "$observer_out"
+        fi
+        exit 0
+        ;;
+    *MISSING_STATE*)
+        # Silent during sweep dir's startup grace window
+        # (SWEEP_WATCHDOG_STARTUP_GRACE_MIN, default 10min). After grace
+        # expires, post — sweep dir is misconfigured or state file deleted.
+        dir_age_min=$(dir_age_minutes "$RESULTS_DIR")
+        if (( dir_age_min < ${SWEEP_WATCHDOG_STARTUP_GRACE_MIN:-10} )); then
+            : # silent
+        else
+            post_to_gchat "$observer_out (dir age ${dir_age_min}min)"
+        fi
+        exit 0
+        ;;
+    *COMPLETE*)
+        post_to_gchat "Sweep $SWEEP_DATE COMPLETE; cron disabled."
+        disable_cron
+        exit 99
+        ;;
+    *)
+        # Unknown output — observer may have crashed. ⚠️ prefix makes
+        # this visually distinct from the heartbeat stream.
+        post_to_gchat "⚠️ UNEXPECTED OUTPUT — sweep $SWEEP_DATE observer returned: $observer_out"
+        exit 0
         ;;
     *)
         # Observer crashed/unknown output — page Peng, NO auto-action

@@ -10,11 +10,26 @@
 #   3. Run observer, dispatch on output:
 #        DEAD → check death-spiral, write marker, launch resume.
 #        STALLED → post observer message, no auto-action.
-#        ALIVE / COMPLETE / "" → silent.
-#        anything else → page Peng "watchdog returned unexpected output" — no auto-action.
+#        COMPLETE → post completion, disable cron.
+#        ALIVE → post observer line as heartbeat EVERY cycle (silence is
+#                indistinguishable from a broken watchdog; per-cycle posts
+#                are the liveness signal). Suppress with env
+#                SWEEP_WATCHDOG_HEARTBEAT_SUPPRESS=1 if you really want
+#                quiet (script echoes a breadcrumb to stderr so the
+#                suppression is visible in cron logs).
+#        MISSING_STATE → silent during a startup grace window
+#                (sweep dir < SWEEP_WATCHDOG_STARTUP_GRACE_MIN old);
+#                post once per cycle after that.
+#        "" → post verbatim line (treated as unhealthy observer).
+#        anything else → page Peng "⚠️ UNEXPECTED OUTPUT" — no auto-action.
+#                The ⚠️ prefix makes the page visually distinct from
+#                heartbeats so habituation doesn't dull the alarm.
+#
+# Interval is caller-controlled: set `interval_seconds` on the cron job that
+# invokes this script. The script itself is single-shot.
 #
 # Exit codes:
-#   0  — silent / alerted (no resume launched)
+#   0  — posted / silent (no resume launched)
 #   1  — auto-resume launched
 #   99 — sweep complete (caller disables cron)
 
@@ -38,6 +53,7 @@ TORCH211_PYTHON="${TORCH211_PYTHON:-/home/pengwu/envs/torch211/bin/python}"
 
 MARKER="$RESULTS_DIR/.resume_in_flight"
 MARKER_GRACE_MIN=20   # how long after auto-resume to defer DEAD declaration
+STARTUP_GRACE_MIN="${SWEEP_WATCHDOG_STARTUP_GRACE_MIN:-10}"   # MISSING_STATE silence window after sweep dir created
 
 if [ ! -d "$RESULTS_DIR" ]; then
     echo "ERROR: sweep dir not found: $RESULTS_DIR" >&2
@@ -156,25 +172,51 @@ EOF
         gchat send "$GCHAT_SPACE" "[🦦 watchdog] Sweep $SWEEP_DATE COMPLETE; cron disabled." --as-bot || true
         exit 99
         ;;
-    *ALIVE*|*MISSING_STATE*|"")
-        # Healthy or sweep-not-yet-started. Post a heartbeat ONLY when
-        # progress was made this cycle (observer line contains
-        # "+N since last check"). Silent on no-progress ALIVE — those
-        # cycles add nothing for the reviewer, and STALLED has its own arm.
-        # Reason: the reviewer is actively waiting for completion during
-        # explain phase; per-cycle progress (e.g. done=73/1474 +5) is the
-        # heartbeat. Phase-agnostic so it covers identify too.
-        case "$WATCHDOG_OUT" in
-            *"since last check"*)
-                gchat send "$GCHAT_SPACE" "[🦦 watchdog] $WATCHDOG_OUT" --as-bot || true
-                ;;
-        esac
+    *ALIVE*|"")
+        # Healthy. Post the observer line EVERY cycle as the heartbeat
+        # (silence is indistinguishable from a broken watchdog — the
+        # reviewer can't tell "fine" from "cron stopped firing" if ALIVE
+        # is silent). The observer line itself carries the progress
+        # signal ("+N since last check" or "no progress for Mmin"), so
+        # the heartbeat doubles as a progress report.
+        # Suppress with env SWEEP_WATCHDOG_HEARTBEAT_SUPPRESS=1 — script
+        # echoes a stderr breadcrumb so the suppression is visible in
+        # cron logs (silent suppression would be the same anti-pattern
+        # this whole change is fixing).
+        # Peng directive 2026-05-15: silent-on-ALIVE is the anti-pattern.
+        if [ "${SWEEP_WATCHDOG_HEARTBEAT_SUPPRESS:-0}" = "1" ]; then
+            echo "heartbeat suppressed by SWEEP_WATCHDOG_HEARTBEAT_SUPPRESS=1" >&2
+        else
+            gchat send "$GCHAT_SPACE" "[🦦 watchdog] $WATCHDOG_OUT" --as-bot || true
+        fi
+        exit 0
+        ;;
+    *MISSING_STATE*)
+        # sweep_state.json not yet written. Two cases:
+        #   (a) sweep just launched — orchestrator hasn't written state
+        #       yet. Normal startup window. Silent for STARTUP_GRACE_MIN
+        #       to avoid spamming "MISSING_STATE" every cycle from launch.
+        #   (b) sweep dir is misconfigured / state file was deleted —
+        #       legitimately broken; surface to reviewer.
+        # Discriminate by sweep dir mtime (proxy for "how long ago was
+        # this sweep launched"). If dir is newer than the grace window,
+        # silent; otherwise post.
+        dir_age_sec=$(( $(date +%s) - $(stat -c %Y "$RESULTS_DIR" 2>/dev/null || echo 0) ))
+        dir_age_min=$(( dir_age_sec / 60 ))
+        if [ "$dir_age_min" -lt "$STARTUP_GRACE_MIN" ]; then
+            echo "MISSING_STATE suppressed: sweep dir age ${dir_age_min}min < ${STARTUP_GRACE_MIN}min grace" >&2
+        else
+            gchat send "$GCHAT_SPACE" "[🦦 watchdog] $WATCHDOG_OUT (dir age ${dir_age_min}min)" --as-bot || true
+        fi
         exit 0
         ;;
     *)
-        # Unknown output — observer may have crashed. Page Peng, NO auto-action.
+        # Unknown output — observer may have crashed. Page Peng, NO
+        # auto-action. The ⚠️ prefix makes this visually distinct from
+        # the heartbeat stream so habituation to ~96 heartbeats/day
+        # doesn't dull this alarm.
         gchat send "$GCHAT_SPACE" \
-            "[🦦 watchdog] Sweep $SWEEP_DATE: observer returned unexpected output, taking no action: ${WATCHDOG_OUT:0:200}" \
+            "[🦦 watchdog] ⚠️ UNEXPECTED OUTPUT — sweep $SWEEP_DATE observer returned: ${WATCHDOG_OUT:0:200}" \
             --as-bot || true
         exit 0
         ;;
