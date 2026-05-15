@@ -46,24 +46,38 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 def parse_filter_predicate(expr: str):
     """Parse a filter expression into a callable predicate(record) -> bool.
 
-    Same grammar as sweep/run_sweep.py:_parse_filter_predicate. Kept in sync
-    by convention; if the sweep grammar grows, mirror the change here.
+    Grammar (extended 2026-05-15 per Peng directive — generalized from
+    `status`-only to any field name; needed for `numeric_status == divergence`
+    NGB triage workflow):
+        <field> in v1,v2,...   →  record.get(<field>) in {v1, v2, ...}
+        <field> == val         →  record.get(<field>) == val
+        <field> != val         →  record.get(<field>) != val
+
+    `<field>` is `[A-Za-z_][A-Za-z0-9_]*`. Predicate caller is responsible for
+    checking field presence (see main() for typo-detection guard).
+
+    Same grammar as sweep/run_sweep.py:_parse_filter_predicate (status-only).
+    Kept in sync by convention; if sweep grammar gets the same generalization,
+    mirror the change here.
     """
     s = expr.strip()
-    m = re.match(r'^status\s+in\s+(.+)$', s)
+    m = re.match(r'^([A-Za-z_][A-Za-z0-9_]*)\s+in\s+(.+)$', s)
     if m:
-        values = {v.strip() for v in m.group(1).split(',') if v.strip()}
+        field = m.group(1)
+        values = {v.strip() for v in m.group(2).split(',') if v.strip()}
         if not values:
             sys.exit(f"ERROR: --filter {expr!r} has empty value list")
-        return lambda r: r.get('status') in values
-    m = re.match(r'^status\s*(==|!=)\s*(.+)$', s)
+        return field, (lambda r: r.get(field) in values)
+    m = re.match(r'^([A-Za-z_][A-Za-z0-9_]*)\s*(==|!=)\s*(.+)$', s)
     if m:
-        op, val = m.group(1), m.group(2).strip()
-        return (lambda r: r.get('status') == val) if op == '==' else \
-               (lambda r: r.get('status') != val)
+        field, op, val = m.group(1), m.group(2), m.group(3).strip()
+        if op == '==':
+            return field, (lambda r: r.get(field) == val)
+        return field, (lambda r: r.get(field) != val)
     sys.exit(
         f"ERROR: --filter {expr!r} is not a supported expression. "
-        f"Supported: 'status in foo,bar,...', 'status == foo', 'status != foo'."
+        f"Supported: '<field> in foo,bar,...', '<field> == foo', '<field> != foo'. "
+        f"Field is any [A-Za-z_][A-Za-z0-9_]* (e.g. 'status', 'numeric_status')."
     )
 
 
@@ -112,6 +126,25 @@ def _load_sibling_versions(path: Path) -> dict:
 
 
 REQUIRED_VERSION_KEYS = ("torch", "transformers", "diffusers")
+LARGE_MODELS_PATH = REPO_ROOT / "sweep" / "large_models.json"
+
+
+def load_large_models() -> set:
+    """Return set of model names listed in sweep/large_models.json (any tier).
+    File missing → return empty set (fail-soft for partial checkouts).
+    File present but corrupted → sys.exit (per adversary gap 7: corruption is
+    more dangerous than absence and silent fail-soft hides bugs).
+    """
+    if not LARGE_MODELS_PATH.is_file():
+        return set()
+    try:
+        return set(json.loads(LARGE_MODELS_PATH.read_text()).keys())
+    except Exception as e:
+        sys.exit(
+            f"ERROR: {LARGE_MODELS_PATH} exists but is unparseable: {e}\n"
+            f"  Fix the file or remove it. Do NOT silently default to "
+            f"'include all large models' — that would burn sweep time."
+        )
 
 
 def main() -> int:
@@ -146,6 +179,16 @@ def main() -> int:
                    help='Allow generating a cohort whose source has only some of '
                         'torch/transformers/diffusers in metadata.versions. Default: REFUSED '
                         '(cross-version mismatches in the unchecked library silently corrupt results).')
+    # Sample-and-exclude flags (added 2026-05-15 per Peng directive — avoid one-off scripts for sample sweeps).
+    p.add_argument('--n', type=int, default=None, metavar='N',
+                   help='Random-sample N rows after filter + large-exclude. Deterministic given --seed. '
+                        'If N >= matching count, takes all (no error).')
+    p.add_argument('--seed', type=int, default=42,
+                   help='Sampling seed (default: 42). Pass an explicit value for reproducible cohorts.')
+    p.add_argument('--include-large', action='store_true',
+                   help='Include models listed in sweep/large_models.json (any tier). Default: EXCLUDE '
+                        'them (sample-sweep workflows usually want fast turnaround). Set this for '
+                        'experiments that specifically need large/very_large coverage.')
     args = p.parse_args()
 
     if args.output.exists() and not args.force:
@@ -178,9 +221,31 @@ def main() -> int:
             )
         print(f"  WARNING: no source_versions found in metadata or sibling versions.json (--allow-empty-versions set)")
 
-    predicate = parse_filter_predicate(args.filter_expr)
+    field, predicate = parse_filter_predicate(args.filter_expr)
+    # Typo guard: if field is absent from EVERY non-metadata row, reject early.
+    field_seen = sum(1 for r in results if field in r)
+    if field_seen == 0:
+        sys.exit(
+            f"ERROR: --filter field {field!r} not present in any of the "
+            f"{len(results)} source rows. Likely typo. Sample row keys: "
+            f"{sorted(results[0].keys()) if results else '<no rows>'}"
+        )
     matching_names = {r['name'] for r in results if predicate(r) and 'name' in r}
     print(f"Filter: {args.filter_expr!r} → {len(matching_names)} matching model names")
+
+    # Large-model exclusion (default ON). Per Peng directive 2026-05-15:
+    # sample-sweep workflows usually want fast turnaround; skip the large/very_large
+    # tier unless --include-large is set.
+    if not args.include_large:
+        large = load_large_models()
+        before_excl = len(matching_names)
+        matching_names = {n for n in matching_names if n not in large}
+        excluded = before_excl - len(matching_names)
+        if excluded > 0:
+            print(f"  excluded {excluded} large-tier model(s) (sweep/large_models.json) "
+                  f"— pass --include-large to keep them")
+    else:
+        print(f"  --include-large set; keeping any large-tier models in cohort")
 
     seen = set()
     specs = []
@@ -196,6 +261,35 @@ def main() -> int:
                 spec[k] = r[k]
         specs.append(spec)
 
+    # Random-sample (deterministic given --seed). Sort first so input order
+    # doesn't affect output across machines/runs.
+    if args.n is not None:
+        if args.n <= 0:
+            sys.exit(f"ERROR: --n must be positive (got {args.n})")
+        specs.sort(key=lambda s: s['name'])
+        if args.n >= len(specs):
+            print(f"  --n {args.n} >= {len(specs)} candidates; taking all "
+                  f"(no error, but may indicate too-strict filter)")
+        else:
+            import random
+            rng = random.Random(args.seed)
+            specs = sorted(rng.sample(specs, args.n), key=lambda s: s['name'])
+            print(f"  --n {args.n} sampled (seed={args.seed}; deterministic)")
+
+    # Per adversary gap 5: empty cohort after filter+exclude is almost certainly
+    # a mistake. Fail loud at generation time instead of letting downstream
+    # sweep launch produce a confusing "no models matched" error.
+    if len(specs) == 0:
+        sys.exit(
+            f"ERROR: cohort is EMPTY after filter + large-exclude.\n"
+            f"  Filter matched {len(matching_names)} name(s); large-exclude removed "
+            f"{0 if args.include_large else 'some'}; final cohort 0 models.\n"
+            f"  Loosen the filter, or pass --include-large if exclusion is the cause."
+        )
+
+    # Adversary gap 3: distinguish user-pinned seed from default-accepted seed
+    # so future audits can trace cohort provenance correctly.
+    seed_was_default = ('--seed' not in sys.argv)
     payload = {
         '_metadata': {
             'derived_from': str(args.source.resolve().relative_to(REPO_ROOT))
@@ -204,6 +298,16 @@ def main() -> int:
             'derived_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
             'source_versions': source_versions,
             'filter': args.filter_expr,
+            'sample_n': args.n,
+            'sample_seed': args.seed if args.n is not None else None,
+            'sample_seed_was_default': seed_was_default if args.n is not None else None,
+            # Adversary gap 6: cross-Python-version determinism not guaranteed by
+            # CPython for random.sample; record the runtime version so audits
+            # know which Python produced the sample.
+            'sample_python_version': (
+                f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+                if args.n is not None else None),
+            'large_excluded': not args.include_large,
             'model_count': len(specs),
             'generated_by': 'tools/generate_cohort.py',
         },

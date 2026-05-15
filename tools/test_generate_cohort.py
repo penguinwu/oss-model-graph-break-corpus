@@ -32,10 +32,13 @@ def _make_source(rows, tmp: Path, with_versions: bool = True) -> Path:
     return source
 
 
-def _run(source: Path, filter_expr: str, output: Path, force: bool = False) -> subprocess.CompletedProcess:
+def _run(source: Path, filter_expr: str, output: Path, force: bool = False,
+         extra_args: list = None) -> subprocess.CompletedProcess:
     cmd = [sys.executable, str(TOOL), "--from", str(source), "--filter", filter_expr, "--output", str(output)]
     if force:
         cmd.append("--force")
+    if extra_args:
+        cmd.extend(extra_args)
     return subprocess.run(cmd, capture_output=True, text=True)
 
 
@@ -258,13 +261,27 @@ def test_force_overwrites():
 
 
 def test_invalid_filter_exits_nonzero():
-    """Unsupported filter expressions fail loudly, not silently."""
+    """Syntactically malformed filter expressions fail loudly, not silently.
+    Updated 2026-05-15 (Task 0.5): grammar generalized to any field name;
+    the original "name == A" example is now valid (filters by name field).
+    Test now uses an expression that doesn't match the field-op-value regex."""
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
         source = _make_source([{"name": "A", "source": "hf", "status": "ok"}], tmp)
         out = tmp / "cohort.json"
-        r = _run(source, "name == A", out)  # name field not supported
+        r = _run(source, "this is not a valid filter expression", out)
         assert r.returncode != 0
+
+
+def test_filter_on_unknown_field_exits_nonzero():
+    """Per Task 0.5 typo guard: filter field absent from EVERY source row → exit nonzero."""
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        source = _make_source([{"name": "A", "source": "hf", "status": "ok"}], tmp)
+        out = tmp / "cohort.json"
+        r = _run(source, "numric_status == divergence", out)  # typo: numric not numeric
+        assert r.returncode != 0
+        assert "not present in any" in r.stderr or "not present in any" in r.stdout
 
 
 def test_missing_source_exits_nonzero():
@@ -327,7 +344,9 @@ def test_regression_2026_05_06_real_explain_pass():
                 "results": [{"name": n, "source": "hf", "status": "ok"} for n in expected_names],
             }))
             out = tmp / "cohort.json"
-            r = _run(synthetic_source, "status == ok", out)
+            # Pass --include-large to preserve the original-cohort regression assertion;
+            # this test predates the Task 0.5 default-large-exclude.
+            r = _run(synthetic_source, "status == ok", out, extra_args=["--include-large"])
             assert r.returncode == 0, f"exited {r.returncode}: {r.stderr}"
             data = json.loads(out.read_text())
             assert data["_metadata"]["model_count"] == expected_count, \
@@ -366,6 +385,238 @@ def test_regression_2026_05_06_real_explain_pass():
 
 
 # Runner ────────────────────────────────────────────────────────────────────
+
+def test_filter_on_generalized_field():
+    """Task 0.5: filter grammar generalizes from 'status'-only to any field."""
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        rows = [
+            {"name": "A", "source": "hf", "status": "ok", "numeric_status": "match"},
+            {"name": "B", "source": "hf", "status": "ok", "numeric_status": "divergence"},
+            {"name": "C", "source": "hf", "status": "ok", "numeric_status": "divergence"},
+        ]
+        source = _make_source(rows, tmp)
+        out = tmp / "cohort.json"
+        r = _run(source, "numeric_status == divergence", out, extra_args=["--include-large"])
+        assert r.returncode == 0, f"exited {r.returncode}: {r.stderr}"
+        data = json.loads(out.read_text())
+        names = {m["name"] for m in data["models"]}
+        assert names == {"B", "C"}, f"expected {{B, C}}, got {names}"
+
+
+def test_sample_n_deterministic():
+    """Task 0.5: --n + --seed produces same output across two runs."""
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        rows = [{"name": f"M{i:02d}", "source": "hf", "status": "ok"} for i in range(20)]
+        source = _make_source(rows, tmp)
+        out_a = tmp / "a.json"; out_b = tmp / "b.json"
+        ra = _run(source, "status == ok", out_a, extra_args=["--n", "5", "--seed", "7", "--include-large"])
+        rb = _run(source, "status == ok", out_b, extra_args=["--n", "5", "--seed", "7", "--include-large"])
+        assert ra.returncode == 0 and rb.returncode == 0
+        names_a = sorted(m["name"] for m in json.loads(out_a.read_text())["models"])
+        names_b = sorted(m["name"] for m in json.loads(out_b.read_text())["models"])
+        assert names_a == names_b, f"non-deterministic: {names_a} != {names_b}"
+        assert len(names_a) == 5
+
+
+def test_sample_n_different_seed_yields_different_set():
+    """Task 0.5: different --seed should generally yield different sample (smoke test)."""
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        rows = [{"name": f"M{i:02d}", "source": "hf", "status": "ok"} for i in range(20)]
+        source = _make_source(rows, tmp)
+        out_a = tmp / "a.json"; out_b = tmp / "b.json"
+        _run(source, "status == ok", out_a, extra_args=["--n", "5", "--seed", "1", "--include-large"])
+        _run(source, "status == ok", out_b, extra_args=["--n", "5", "--seed", "2", "--include-large"])
+        names_a = sorted(m["name"] for m in json.loads(out_a.read_text())["models"])
+        names_b = sorted(m["name"] for m in json.loads(out_b.read_text())["models"])
+        assert names_a != names_b, "seeds 1 and 2 happened to produce identical samples; pick different seeds in test"
+
+
+def test_sample_n_larger_than_population_takes_all():
+    """Task 0.5: --n > available population takes all (no error)."""
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        rows = [{"name": f"M{i}", "source": "hf", "status": "ok"} for i in range(3)]
+        source = _make_source(rows, tmp)
+        out = tmp / "cohort.json"
+        r = _run(source, "status == ok", out, extra_args=["--n", "10", "--include-large"])
+        assert r.returncode == 0, f"exited {r.returncode}: {r.stderr}"
+        models = json.loads(out.read_text())["models"]
+        assert len(models) == 3
+
+
+def test_sample_n_negative_or_zero_errors():
+    """Task 0.5: --n must be positive."""
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        source = _make_source([{"name": "A", "source": "hf", "status": "ok"}], tmp)
+        out = tmp / "cohort.json"
+        r = _run(source, "status == ok", out, extra_args=["--n", "0", "--include-large"])
+        assert r.returncode != 0
+
+
+def test_default_excludes_large_models():
+    """Task 0.5: default behavior excludes models in sweep/large_models.json."""
+    # Use actual large_models.json — pick a name from it that we KNOW is in the file
+    with open(REPO_ROOT / "sweep" / "large_models.json") as f:
+        large_names = list(json.load(f).keys())
+    if not large_names:
+        return  # can't test without real large models
+    real_large = large_names[0]
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        rows = [
+            {"name": real_large, "source": "hf", "status": "ok"},
+            {"name": "TinyTestModelXYZ", "source": "hf", "status": "ok"},
+        ]
+        source = _make_source(rows, tmp)
+        out = tmp / "cohort.json"
+        r = _run(source, "status == ok", out)  # no --include-large
+        assert r.returncode == 0
+        names = {m["name"] for m in json.loads(out.read_text())["models"]}
+        assert real_large not in names, f"large model {real_large} should be excluded by default"
+        assert "TinyTestModelXYZ" in names
+
+
+def test_include_large_keeps_listed_models():
+    """Task 0.5: --include-large flips the default to keep large models."""
+    with open(REPO_ROOT / "sweep" / "large_models.json") as f:
+        large_names = list(json.load(f).keys())
+    if not large_names:
+        return
+    real_large = large_names[0]
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        rows = [
+            {"name": real_large, "source": "hf", "status": "ok"},
+            {"name": "TinyTestModelXYZ", "source": "hf", "status": "ok"},
+        ]
+        source = _make_source(rows, tmp)
+        out = tmp / "cohort.json"
+        r = _run(source, "status == ok", out, extra_args=["--include-large"])
+        assert r.returncode == 0
+        names = {m["name"] for m in json.loads(out.read_text())["models"]}
+        assert real_large in names, f"large model {real_large} should be included with --include-large"
+
+
+def test_filter_then_large_exclude_then_sample_n_order():
+    """Adversary gap 1: pin order-of-ops filter → large-exclude → sample-N.
+    Real-large-name in source + filter that matches it + --n → sampled cohort
+    must NEVER include the large name (would happen if sample ran first)."""
+    with open(REPO_ROOT / "sweep" / "large_models.json") as f:
+        large_names = list(json.load(f).keys())
+    if len(large_names) < 3:
+        return
+    # Pick 3 real large names + 12 synthetic
+    real_large = large_names[:3]
+    synth = [f"Synth{i:02d}" for i in range(12)]
+    rows = [{"name": n, "source": "hf", "status": "ok"} for n in real_large + synth]
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        source = _make_source(rows, tmp)
+        out = tmp / "cohort.json"
+        # No --include-large; filter status=ok matches all 15
+        r = _run(source, "status == ok", out, extra_args=["--n", "5", "--seed", "42"])
+        assert r.returncode == 0, f"exited {r.returncode}: {r.stderr}"
+        names = {m["name"] for m in json.loads(out.read_text())["models"]}
+        assert len(names) == 5, f"expected 5 sampled; got {len(names)}"
+        for ln in real_large:
+            assert ln not in names, \
+                f"large model {ln} leaked into sample (order swap?); got {names}"
+
+
+def test_metadata_records_task05_fields():
+    """Adversary gap 2 + gap 3 + gap 6: pin new metadata fields are recorded
+    correctly when --n is set vs not set."""
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        rows = [{"name": f"Synth{i:02d}", "source": "hf", "status": "ok"} for i in range(10)]
+        source = _make_source(rows, tmp)
+        # Run 1: --n 3 with explicit --seed 99
+        out_1 = tmp / "with_n.json"
+        r = _run(source, "status == ok", out_1, extra_args=["--n", "3", "--seed", "99", "--include-large"])
+        assert r.returncode == 0
+        meta_1 = json.loads(out_1.read_text())["_metadata"]
+        assert meta_1["sample_n"] == 3
+        assert meta_1["sample_seed"] == 99
+        assert meta_1["sample_seed_was_default"] is False
+        assert meta_1["large_excluded"] is False
+        assert meta_1["sample_python_version"] is not None
+        # Run 2: no --n → all sample_* fields None
+        out_2 = tmp / "no_n.json"
+        r = _run(source, "status == ok", out_2, extra_args=["--include-large"])
+        assert r.returncode == 0
+        meta_2 = json.loads(out_2.read_text())["_metadata"]
+        assert meta_2["sample_n"] is None
+        assert meta_2["sample_seed"] is None
+        assert meta_2["sample_seed_was_default"] is None
+        assert meta_2["sample_python_version"] is None
+        # Run 3: default seed (no --seed) → sample_seed_was_default True
+        out_3 = tmp / "default_seed.json"
+        r = _run(source, "status == ok", out_3, extra_args=["--n", "3", "--include-large"])
+        assert r.returncode == 0
+        meta_3 = json.loads(out_3.read_text())["_metadata"]
+        assert meta_3["sample_seed"] == 42
+        assert meta_3["sample_seed_was_default"] is True
+
+
+def test_filter_field_partial_presence():
+    """Adversary gap 4: filter on field present in some rows, absent in others.
+    Pin current behavior: rows lacking the field are silently skipped."""
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        # 10 rows: 5 have numeric_status, 5 don't
+        rows = (
+            [{"name": f"M{i}", "source": "hf", "status": "ok",
+              "numeric_status": "divergence" if i < 3 else "match"} for i in range(5)] +
+            [{"name": f"N{i}", "source": "hf", "status": "ok"} for i in range(5)]
+        )
+        source = _make_source(rows, tmp)
+        out = tmp / "cohort.json"
+        r = _run(source, "numeric_status == divergence", out, extra_args=["--include-large"])
+        assert r.returncode == 0
+        names = {m["name"] for m in json.loads(out.read_text())["models"]}
+        assert names == {"M0", "M1", "M2"}, f"expected only M0/M1/M2; got {names}"
+
+
+def test_empty_population_after_filter_exits_nonzero():
+    """Adversary gap 5: empty cohort after filter+exclude → exit nonzero
+    (was previously silent 0-model cohort)."""
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        rows = [{"name": "A", "source": "hf", "status": "ok"}]
+        source = _make_source(rows, tmp)
+        out = tmp / "cohort.json"
+        r = _run(source, "status == graph_break", out, extra_args=["--include-large"])
+        assert r.returncode != 0
+        assert "EMPTY" in r.stderr or "EMPTY" in r.stdout
+
+
+def test_corrupted_large_models_json_fails_loud(monkeypatch=None):
+    """Adversary gap 7: corrupted large_models.json → sys.exit (not silent
+    fail-soft). Patches LARGE_MODELS_PATH to a bad file."""
+    import importlib
+    sys.path.insert(0, str(REPO_ROOT / "tools"))
+    import generate_cohort as gc
+    importlib.reload(gc)
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        bad = tmp / "bad_large_models.json"
+        bad.write_text("{not valid json")
+        # Monkey-patch the module-level path
+        original = gc.LARGE_MODELS_PATH
+        gc.LARGE_MODELS_PATH = bad
+        try:
+            try:
+                gc.load_large_models()
+                raise AssertionError("expected sys.exit on corrupted JSON")
+            except SystemExit as e:
+                assert e.code != 0
+        finally:
+            gc.LARGE_MODELS_PATH = original
+
 
 def main() -> int:
     tests = [(name, fn) for name, fn in globals().items() if name.startswith("test_") and callable(fn)]
