@@ -152,7 +152,25 @@ End-to-end walk of WS1 tools against 2026-05-09 sweep + 2026-05-03 baseline. 5 f
 4. **audit_new_errors output validates 8 cat-6 stable failures** — HiggsAudio×2 (fixture-bug per substring), PI0Model×2 (upstream-bug per AttributeError), Rwkv*×4 (tier-upgrade per timeout). All correctly classified, marker emitted for fixture-bug. Behaves correctly: in degraded mode emitted them as candidates; with compare-vs-baseline.json it correctly excludes them as cat 6.
 5. **audit_new_models reports REMOVED=146 (130 cat5 + 16 skip-listed)** — all are HF-only-switch artifacts, not real removals. Tool correctly classified the 16 as `intentional-skip`; the 130 land in `unexpected-removal` (technically wrong because they're suite-excluded, not transformers-refactor-removed). Need a refinement: distinguish "suite-excluded by config change" from "transformers-refactor removal." Lower priority — informational, doesn't gate WS2.
 
-## WS2 — Dynamic shape: separate dynamo issues from dynamic-shape issues
+## WS2 — NGB report finalization + issue filing
+
+Pulled out of Backlog 2026-05-15. The Nested Graph Break (NGB) experiment ran identify (2026-05-03) + explain NGB-OFF baseline (2026-05-05) + verify NGB-ON (2026-05-07). Report at https://docs.google.com/document/d/1qDcd-q4qZZMVIMfMCJt2aFfpcE0-D0P-V0lhP59bIgk/edit was generated 2026-05-06 against just the explain pass; needs (a) audit against current report conventions, (b) augmentation with verify-pass numeric-correctness data, (c) actual issue filing for the patterns the report surfaces. Three sweep files all on the same stack (torch 2.13.0.dev20260502+cu126 + tx 5.6.2 + diffusers 0.38.0).
+
+### Pending (priority order)
+
+- [ ] **Task 1 item 3:** apply count-disambiguation wording fix to NGB doc (every count → state explicitly whether it's model-classes or (model, mode) pair-rows). Independent of other tasks; can ship now.
+
+- [ ] **Task 1 items 1 + 2 (DELAYED until Tasks 3+4 land):** rewrite "## Asks" section into a "## Tracking" pointer to filed issue numbers. Also link Issue A (weakref on dict) + Issue B (FX node failure) to the actual issue numbers. Both depend on Task 4 producing the issues.
+
+- [ ] **Task 2:** augment NGB doc with verify-pass numeric-correctness data. Today the doc covers only graph_break / full_graph behavior. The verify run (`experiments/results/ngb-verify-2026-05-07-20260507-181621/`) produced numeric_status data: 276 match / 100 divergence / 4 None across 380 (model, mode) pair-rows. New section needed: "Numeric correctness under NGB=True" — what diverges, by how much, which models.
+
+- [ ] **Task 3:** plan NGB issue filing — list count + types of issues to file, present to Peng for review BEFORE filing.
+
+- [ ] **Task 4:** walk file-issue subagent workflow for the approved issues (cluster plan → dedup_search --source-lines → Mode A → Mode B → post). Update doc per Task 1 items 1+2 once issue numbers exist.
+
+### Done (this week — prior WS2 cycle "Dynamic shape", closed before WS2 pivot 2026-05-15 16:26 ET)
+
+- [x] Prior WS2 cycle (dynamic-shape / dynamo split) closed 2026-05-15. See git log + PLAN.md history below for the 18 retag ops + #25 EDIT + #96 EDIT + persona checks 15/16/2-soft-graph-break + methodology R12 + #76 closed. Retained as historical entries below.
 
 The corpus currently labels all dynamo-related issues with `for:dynamo-team`. Some of those issues are actually dynamic-shape problems (e.g. #126 MimiModel `_pad1d` `PendingUnbackedSymbolNotFound` is unbacked-symbol territory, not classic dynamo tracing). Goal: surface the dynamic-shape sub-corpus as its own audit-able set so the dynamic-shape oncall (separate team / separate triage cadence per Peng 2026-05-13 13:54 ET) can act on it without filtering noise.
 
