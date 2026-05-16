@@ -77,6 +77,19 @@ For parameter changes (workers, timeouts):
 
 ## 4. Sweep Execution Strategy
 
+### 4.0 Operating discipline (apply to EVERY sweep launch)
+
+**Background, watchdog, responsiveness — non-negotiable.** Any sweep MUST run in the background (nohup or daemonized). Watchdog is mandatory (see "Watchdog" subsection below). After launching, Otter MUST NOT foreground-wait for the sweep. If a turn ends after a sweep launch, the next thing Otter says is whatever the user is asking — NOT "the sweep is running, give me a minute" and NOT a status check Otter could just defer to the watchdog. The watchdog heartbeats are the sweep's voice; Otter's voice is for the user.
+
+**Continuation task queue — record TWO follow-ups BEFORE the launch.** Before launching ANY sweep that will outlive the current turn, Otter MUST add two entries to PLAN.md (or the project's persistent task tracker):
+
+- **(A) Mid-sweep failure handler:** "If sweep `<name>` fires DEAD or STALLED through watchdog, investigate per `<recipe>`."
+- **(B) Completion handler:** "When sweep `<name>` reaches COMPLETE, do `<the downstream task that motivated launching the sweep>`."
+
+Without (B), the downstream task — which IS the reason the sweep was launched — gets silently forgotten when the sweep finishes hours later (often across an Otter context boundary). This is a repeating failure mode. The completion entry is not optional; it's the bookkeeping that makes the sweep useful.
+
+**Apples-to-apples discipline when comparing two runs.** When the question is "does flag X cause behavior Y," you MUST hold ALL OTHER variables constant. Same compile_kwargs, same dynamo_flags, same stack (torch/transformers/diffusers versions), same cohort. Before reporting "flag X causes N divergences," name the baseline run explicitly and verify only ONE variable differs from the test run. A "100 divergences under NGB=True" claim is meaningless if the baseline was at fullgraph=True (the verify run's actual gap; cautionary tale from 2026-05-15).
+
 ### Pre-flight
 - [ ] Enumerate scope and state it explicitly
 - [ ] Confirm settings match baseline (4 workers, 180s/600s)
@@ -84,6 +97,7 @@ For parameter changes (workers, timeouts):
 - [ ] Verify torch/transformers versions
 - [ ] **If your cohort came from a different sweep**, use `--models-from <source.json> --filter '<expr>'` (NOT `--models <flat.json>`). The launcher reads the source's torch/transformers/diffusers versions and refuses launch on mismatch — protects against the "I derived from torch-nightly-cu126 baseline but launched on torch211" failure mode (cautionary tale: 2026-05-06, this caused 25 spurious "regressions" because transformers 5.6.2 → 5.5.3 doesn't have the newer model `*Config` classes). Override only with `--allow-version-mismatch` and only when you mean it.
 - [ ] **If using --models <flat.json>** (no provenance, e.g. a hand-built cohort file), explicitly identify the venv + version stack the cohort was derived from, and verify your launch flags match. The harness emits a `WARNING: --models was a flat list; cannot detect version mismatches` line — read it and act on it. Do NOT rationalize past it.
+- [ ] **Hand-built cohort JSON MUST include the full `_metadata` block.** The launcher refuses cohorts missing `derived_from`, `filter`, `model_count`, `source_versions`. If you don't have provenance, use `tools/generate_cohort.py` to build the cohort properly rather than hand-rolling a JSON file (cautionary tale 2026-05-15: a hand-rolled cohort missing 4 metadata keys caused the gate-5 launch to refuse twice before I added them).
 - [ ] **Run the sample-sweep gate** (see "Sample-sweep gate — mandatory before any full launch" below). Skipping requires Peng's written approval.
 - [ ] **Install the watchdog cron** (see "Watchdog — mandatory for any non-trivial sweep" below)
 - [ ] **If you are bumping a model library version, installing a new library, or adding new corpus sources** — read `skills/sweep_sanity_check.md` (Cohort expansion runs section) before launching. This is a cohort-expansion run, not a regular sweep. The triage step is mandatory output: the run isn't done when the sweep finishes — it's done when known_errors.json + skip_models.json are updated and a re-run sample shows 0 untriaged errors. **Pre-existing models that regress under the new library version are NOT triage-able — they are real bugs and must be fixed or filed.**
@@ -204,6 +218,12 @@ When adding new models (new HF release, custom models, etc.):
 | Running both modes at once | Doubles wait time before first signal | Run eval first, check, then train |
 | Incomplete model specs in re-run | Missing hf_config/variant causes config resolution to fail silently | Always build re-run specs from `enumerate_all()`, never from checkpoint data |
 
+## 7.5 Where the verify (numeric correctness) field lives
+
+`numeric_status`, `numeric_max_diff`, `numeric_severity_ratio`, `numeric_noise_floor_dominant` are populated ONLY by the IDENTIFY pass (`worker.py:3793-3822`). The EXPLAIN pass does NOT populate them — explain uses a counting backend that produces no real compiled output to compare against eager. There is no plan to add verify to explain (counting backend semantics make it impossible without a separate compile pass).
+
+If you need verify data at a non-default compile config (e.g., `fullgraph=False`, or with specific `dynamo_flags`), launch IDENTIFY with `--compile-kwargs '{"fullgraph": false}'` and the desired `--dynamo-config`. Do NOT search existing baselines' explain_results.json for verify fields — they will never be there (cautionary tale 2026-05-15: ~30 min spent searching nightly explain outputs for `numeric_status` before realizing the field is identify-only).
+
 ## 8. Post-Sweep Due Diligence
 
 After every sweep completes, do this BEFORE reporting results to Peng:
@@ -241,6 +261,8 @@ Report should include:
 4. **Action items:** new issues to file, things to investigate
 
 Don't just dump numbers. Lead with what's **different** from last time.
+
+**Reporting discipline — raw data first, no headlines, no conclusions.** When surfacing comparison results to Peng: show the row-level table FIRST, then counts, then anomalies. Do NOT lead with "the test confirms X" or "flag Y causes Z" or any other framing that draws the conclusion for the reader. Let Peng draw conclusions from the raw data. If the data doesn't make sense (results inconsistent with prior expectations, etc.), explicitly say so and PROPOSE next investigation steps — do not hypothesize causes from a single data point. Cautionary tale 2026-05-15: I led with "17 of 18 reproduce divergence under apples-to-apples" framed as a conclusion before showing the raw table; Peng had to ask for the table separately and then catch a misclaim I'd buried in the headline.
 
 ### Step 5: Update documentation and artifacts
 After the sweep is validated and results are final:
@@ -332,6 +354,7 @@ Without this step, feedback only lives in Otter's session memory (which expires)
 | 2026-05-06 | Added smoke pre-flight subsection (§4) + flat-list provenance check | NGB correctness sweeps #1 and #2 same day burned 2h41m + 11min on wrong version stack (torch211 + transformers 5.5.3) when explain pass had run on torch-nightly + transformers 5.6.2. Smoke including BartModel + BlenderbotModel + BambaModel would have aborted both before launch. Also includes the "provenance vs status" pitfall in criterion design (initial criterion-5 confused cohort provenance with result status). |
 | 2026-05-07 | Replaced 6-fixed smoke with 20-random sample-sweep gate; added APPLY-D cohort-expansion trigger; added §8 Step 0 sanity-check gate. New skill `skills/sweep_sanity_check.md` v2.1 holds the invariants (families A-G) + four apply contexts. Library-bump rule encoded: pre-existing models that regress are real bugs, not triage-able. *(Note: sanity-check skill v3 simplified the four apply contexts to three modes — Pre-launch sample / Mid-sweep peek / Post-completion + Cohort expansion runs. Cross-refs in this skill updated 2026-05-08.)* | NGB verify 2026-05-06: 6-fixed smoke passed but full sweep surfaced 22 create_error + 4 eager_error from cohort contamination + custom-model loader regression that the fixed picks didn't overlap. Random 20-from-cohort is the right design. Peng's directive: "infra solid > moving fast" + skill-form-not-script (different sweep types have different invariants — judgment over enforcement). |
 | 2026-05-08 | Updated APPLY-A/C/D cross-references to v3 mode names (Pre-launch sample / Post-completion / Cohort expansion runs section); 4 stale refs fixed in §4 Pre-flight, §4 Sample-sweep gate, §8 Step 0. | Adversary review case 2026-05-07-190947-doc-vs-impl, gap #1 — `skills/sweep_sanity_check.md` v3 deleted the four named apply contexts but cross-refs in `skills/sweep.md` weren't updated atomically. |
+| 2026-05-15 | Added §4.0 Operating discipline (background+watchdog+responsiveness, continuation task queue with mid-fail + completion handlers, apples-to-apples comparison rule); §4 pre-flight `_metadata` block requirement for hand-built cohorts; §7.5 "Where the verify field lives" (identify-only); §8 Step 4 reporting discipline (raw data first, no headlines, no conclusions). | 2026-05-15 NGB sample-sweep + watchdog v4 thread. Peng prompted ~6 separate times on: foreground vs background launch, watchdog install, post-sweep continuation forgetting, apples-to-apples for NGB question, searching wrong place for verify fields, leading with conclusions instead of raw data. All 5 additions are encoded specifically to make these prompts unnecessary next time. Peng directive 2026-05-15 22:04 ET: "anything else you suggest to add to SWEEP skill, especially if it helps to reduce prompting from me." |
 
 ---
 
