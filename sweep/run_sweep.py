@@ -613,6 +613,7 @@ def run_sweep(args):
         "output_dir": str(output_dir),
         "started": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "args": sys.argv[1:],
+        "launcher_python": sys.executable,
         "restart_count": 0,
     }
     # Preserve restart_count from previous state if resuming

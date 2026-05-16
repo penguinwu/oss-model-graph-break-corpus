@@ -1,4 +1,8 @@
-# Sweep Watchdog — Simple Design (v3, 2026-05-10)
+# Sweep Watchdog — Simple Design (v4, 2026-05-15)
+
+> **Note:** the pseudo-code in "Decision tree" section below is **v3 historical reference** — kept for design-rationale context but does NOT reflect current code. For current behavior, read `sweep/sweep_watchdog_cycle.sh` and `sweep/sweep_watchdog.py` directly. The "v4 (2026-05-15)" section in the Components table below summarizes the v3→v4 deltas.
+
+# Sweep Watchdog — Simple Design (v3, 2026-05-10 origin)
 
 **Status:** Approved scope per Peng directive 2026-05-10 10:38 ET ("WatchDog is such a small script, don't make it into a big multi-week project ... fix watchdog today, test right away").
 
@@ -12,15 +16,25 @@ Tier-aware progress threshold (NOT cron interval) handles the very_large model c
 
 | Component | Path | Role |
 |---|---|---|
-| Observer | `sweep/sweep_watchdog.py` | Stateless one-shot read; prints state; exits with code |
-| Cycle script | `sweep/sweep_watchdog_cycle.sh` | Cron wrapper; auto-resume on DEAD; writes resume marker |
-| Cron | jobs table `sweep-watchdog-<DATE>` | Interval is caller-controlled via `interval_seconds`. Nightly default: 900s (15 min). Shorter for short-running experiments (e.g. sample sweeps at 600s). |
+| Observer | `sweep/sweep_watchdog.py` | Stateless one-shot read; prints state; exits with code. Pure stdlib — any `python3` works (no torch needed). |
+| Cycle script | `sweep/sweep_watchdog_cycle.sh` | Cron wrapper; auto-resume on DEAD (replays `state["args"]` + `--resume` via `state["launcher_python"]` — works for any sweep subcommand). Two modes: nightly (positional SWEEP_DATE → `sweep_results/nightly/<DATE>`) and generic (`--results-dir DIR` + `--cron-job-id ID`). |
+| Cron | jobs table (`sweep-watchdog-<DATE>` for nightly; arbitrary id for generic) | Interval is caller-controlled via `interval_seconds`. Nightly default: 900s (15 min). Shorter for short-running experiments. |
+
+## v4 (2026-05-15): generalized + env-var-free
+
+The cycle script no longer hardcodes nightly paths or specific venvs:
+
+- **REPO_ROOT** derived from script location (`$(dirname $0)/..`); no env var.
+- **Observer python** is just `python3` (observer is pure stdlib).
+- **Resume python** read from `sweep_state.json::launcher_python` (recorded by `run_sweep.py` at sweep launch via `sys.executable`); the cycle script falls back to system `python3` with a warning if the field is missing (old state files). No `NIGHTLY_PYTHON` env var.
+- **Auto-resume** replays `state["args"]` (full launcher argv captured at sweep start) + `--resume` if not already present. Works for `sweep`, `nightly`, `run` subcommands uniformly.
+- **--results-dir / --run-label / --cron-job-id** flags let the same CLI watch ad-hoc sweep dirs (e.g. `/tmp/ngb-sample/ngb-on`). Nightly mode is preserved for back-compat with existing cron entries.
 
 ## State files
 
 | File | Owner | Purpose |
 |---|---|---|
-| `sweep_state.json` | orchestrator | pid, phase, total_work_items |
+| `sweep_state.json` | orchestrator | pid, phase, total_work_items, **args**, **launcher_python** |
 | `identify_streaming.jsonl` (and per-phase equivalents) | orchestrator | progress = line count |
 | `.resume_in_flight` | cycle script | Marker: "auto-resume just launched, give grace until orchestrator writes its first work-item" |
 | `.watchdog_resume_state` | cycle script | Death-spiral guard (preserved as-is) |

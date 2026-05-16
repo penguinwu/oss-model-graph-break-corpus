@@ -111,15 +111,26 @@ def main():
     total = state.get("total_work_items", 0)
 
     fname, label = PHASE_FILES.get(phase, ("identify_streaming.jsonl", phase))
-    if fname is None:  # report/done phase
-        done = 0
+    if fname is None:
+        # report/done phases have no per-phase progress file. Fall back to
+        # identify_streaming.jsonl as the count of work items actually
+        # processed by the sweep. Without this, COMPLETE reads "done=0/N"
+        # which looks like a failure at first glance.
+        done = line_count(sweep_dir / "identify_streaming.jsonl")
     else:
         done = line_count(sweep_dir / fname)
 
     # Check for completion BEFORE process aliveness.
     sweep_status = state.get("status", "")
     if sweep_status == "done" or phase == "done":
-        msg = f"COMPLETE pid={pid} phase={label} done={done}/{total}"
+        # On COMPLETE, pin done=total/total so the message reads as
+        # success rather than partial-progress. Empty sweeps (total=0,
+        # e.g. filter matched 0 models) get a distinct framing so
+        # "done=0/0" isn't ambiguous with "broken sweep, never started."
+        if total == 0:
+            msg = f"COMPLETE pid={pid} phase={label} (empty sweep — 0 work items)"
+        else:
+            msg = f"COMPLETE pid={pid} phase={label} done={total}/{total}"
         print(msg)
         if args.post_to:
             post_gchat(args.post_to, f"[🦦 watchdog] {msg}")
