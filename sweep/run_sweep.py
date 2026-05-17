@@ -1107,6 +1107,9 @@ def run_sweep(args):
         sys.exit(3)
 
     # ── Auto-retry: re-run timed-out models with extended timeout ──
+    # timeout_large was removed from local scope by 1aaf112 (refactor to
+    # timeout_tiers.py) but the auto-retry block still needs it.
+    timeout_large = args.timeout * 3  # "large" tier multiplier, matches timeout_tiers.py
     timeout_results = [r for r in identify_results if r.get("status") == "timeout"]
     # Only retry models that aren't already using the large timeout
     new_timeouts = [r for r in timeout_results if r["name"] not in large_registry]
