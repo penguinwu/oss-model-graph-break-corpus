@@ -1,0 +1,36 @@
+{
+  "_comment": "NGB-OFF baseline (2026-05-15): identify pass at fullgraph=false with NGB DISABLED on the same 190-model cohort that ngb-verify-2026-05-07 ran with NGB=true. This is the apples-to-apples baseline for the NGB-causality question — only the nested_graph_breaks flag differs from verify. Per Peng directive 2026-05-15 21:41 ET. Anchored on the same source as verify: nested-gb-2026-05-05-2026-05-05/explain_results.json status=ok subset (sha256-pinned).",
+
+  "name": "ngb-baseline-2026-05-15",
+  "description": "Apples-to-apples NGB-OFF baseline for ngb-verify-2026-05-07. Same cohort, same stack, NGB flag OFF.",
+
+  "models": {
+    "_comment": "Identical source to ngb-verify-2026-05-07.json — same explain pass, same status filter, same sha256 pin. Required so version validation pins this run to the same cohort verify used.",
+    "source": "corpus_filter",
+    "from": "sweep_results/experiments/nested-gb-2026-05-05-2026-05-05/explain_results.json",
+    "status": "ok",
+    "source_sha256": "a96d3e1ed5c30b26e223031a99b5968479109b714754cfbe61d8784e33dfbf2b"
+  },
+
+  "configs": [
+    {
+      "_comment": "Same compile_kwargs as verify (fullgraph=false) but NO dynamo_flags — NGB defaults to False. This is the ONE-VARIABLE-DIFFERENT baseline.",
+      "name": "baseline",
+      "compile_kwargs": {"fullgraph": false}
+    }
+  ],
+
+  "settings": {
+    "device": "cuda",
+    "modes": ["eval", "train"],
+    "workers": 4,
+    "timeout_s": 180,
+    "pass_num": 1,
+    "python_bin": "/home/pengwu/envs/torch-nightly-cu126/bin/python",
+    "modellib_pins": {
+      "transformers": "5.6.2",
+      "diffusers": "0.38.0"
+    },
+    "_comment_pass": "pass_num=1 (identify) — only pass that populates numeric_status. Identical settings to verify config so any difference in results is attributable to the dynamo flag, not the harness."
+  }
+}
