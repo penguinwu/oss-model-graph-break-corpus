@@ -3631,6 +3631,20 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
         model.train()
     else:
         model.eval()
+    # HF bitwise patch (NON-STANDARD, OFF by default): in train mode, zero
+    # stochastic LayerDrop/dropout/SpecAugment so eager and compiled paths are
+    # RNG-deterministic and the bitwise comparison is apples-to-apples (M2 /
+    # issue #130). Stamps the result so patched rows are self-identifying.
+    try:
+        from sweep import hf_bitwise_patch
+    except ImportError:
+        import hf_bitwise_patch
+    if hf_bitwise_patch.is_enabled():
+        # M2 determinism (train-mode only). Result stamping (marker + M1 fire
+        # count) is done at the main() chokepoint so EVERY pass and every
+        # early-return row is self-identifying, not just this one.
+        result["hf_bitwise_patch_detail"] = hf_bitwise_patch.apply_model_determinism(model, mode)
+
     ctx = torch.no_grad() if mode == "eval" else torch.enable_grad()
 
     # Step 1: Eager baseline
@@ -4459,6 +4473,17 @@ def main():
 
     spec = json.loads(args.model_json)
 
+    # HF bitwise-equivalence patch (NON-STANDARD env, OFF by default).
+    # Enabled via CORPUS_HF_BITWISE_PATCH=1; applies M1 (SDPA causal-mask
+    # shortcut under compile) globally here, M2 (train-mode LayerDrop/dropout
+    # determinism) per-model in run_identify. See sweep/hf_bitwise_patch.py.
+    try:
+        from sweep import hf_bitwise_patch
+    except ImportError:
+        import hf_bitwise_patch
+    if hf_bitwise_patch.is_enabled():
+        hf_bitwise_patch.apply_global_patches()
+
     # Apply dynamo config flags if provided
     if args.dynamo_flags:
         dynamo_flags = json.loads(args.dynamo_flags)
@@ -4522,6 +4547,17 @@ def main():
         # equivalent to pass 2 (legacy behavior).
         result = run_explain(spec, args.device, args.mode,
                              dynamic=dynamic_val, compile_kwargs=compile_kwargs)
+
+    # Stamp EVERY result row when the bitwise patch is active — covers all passes
+    # AND all early-return paths (e.g. create_error), so no patched row is ever
+    # unmarked. Merge the M1 fire count as proof the SDPA shortcut actually fired
+    # (a zero count means M1 was a no-op and any equivalence is NOT attributable
+    # to the patch).
+    if hf_bitwise_patch.is_enabled():
+        result.update(hf_bitwise_patch.marker())
+        _patch_det = result.get("hf_bitwise_patch_detail") or {}
+        _patch_det["m1_shortcut_fired"] = hf_bitwise_patch.m1_fire_count()
+        result["hf_bitwise_patch_detail"] = _patch_det
 
     # Output single JSON line to stdout
     print(json.dumps(result))
