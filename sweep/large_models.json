@@ -62,6 +62,20 @@
     "timeout_tier": "large",
     "wall_time_s": 570.02
   },
+  "Exaone4_5_ForConditionalGeneration": {
+    "discovered": "2026-05-16",
+    "resolved_status": "eager_error",
+    "source": "hf",
+    "timeout_tier": "large",
+    "wall_time_s": 84.78
+  },
+  "Exaone4_5_Model": {
+    "discovered": "2026-05-16",
+    "resolved_status": "eager_error",
+    "source": "hf",
+    "timeout_tier": "large",
+    "wall_time_s": 80.0
+  },
   "Florence2ForConditionalGeneration": {
     "discovered": "2026-04-28",
     "resolved_status": "graph_break",
