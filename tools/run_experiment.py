@@ -1797,8 +1797,14 @@ def build_corpus(args):
     results_dir = Path(args.results_dir).resolve()
     results_file = results_dir / "results.jsonl"
     if not results_file.exists():
-        print(f"ERROR: {results_file} not found")
-        sys.exit(1)
+        # sweep subcommand writes identify_results.json (JSONL format, same schema)
+        alt = results_dir / "identify_results.json"
+        if alt.exists():
+            print(f"Note: results.jsonl not found, falling back to {alt.name}")
+            results_file = alt
+        else:
+            print(f"ERROR: {results_file} not found")
+            sys.exit(1)
 
     # Load and normalize results
     raw_results = []
@@ -1809,6 +1815,8 @@ def build_corpus(args):
                 continue
             try:
                 r = json.loads(line)
+                if r.get("_record_type") == "metadata":
+                    continue  # skip provenance/metadata header records
                 if "model" in r and "name" not in r:
                     r["name"] = r.pop("model")
                 raw_results.append(r)
@@ -1857,6 +1865,8 @@ def build_corpus(args):
                     continue
                 try:
                     r = json.loads(line)
+                    if r.get("_record_type") == "metadata":
+                        continue  # skip provenance/metadata header records
                     if "model" in r and "name" not in r:
                         r["name"] = r.pop("model")
                     explain_results.append(r)
