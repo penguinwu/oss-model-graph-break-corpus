@@ -87,6 +87,17 @@ def m1_fire_count() -> int:
     return _M1_FIRE_COUNT
 
 
+# Number of times the M3 Reformer-LSH deterministic rotation draw actually fired.
+# Surfaced in the stamp so a Reformer row PROVES M3 was active (a zero count means
+# the deterministic draw never ran and any equivalence is NOT attributable to M3).
+_M3_FIRE_COUNT = 0
+
+
+def m3_fire_count() -> int:
+    """How many times the M3 Reformer-LSH deterministic rotation draw fired."""
+    return _M3_FIRE_COUNT
+
+
 def is_enabled() -> bool:
     """True when the bitwise patch is requested via the env var."""
     return os.environ.get(PATCH_ENV, "") not in ("", "0", "false", "False")
@@ -174,8 +185,92 @@ def apply_global_patches() -> list:
 
     if applied:
         _log("M1 applied (SDPA causal-mask shortcut under compile): " + ", ".join(applied))
+
+    # M3 (Reformer-gated): make LSH rotation draws deterministic.
+    applied += _apply_reformer_lsh_determinism()
+
     _GLOBAL_PATCHES_APPLIED = applied
     return applied
+
+
+# Fixed seed for Reformer LSH rotations (any constant works — the goal is for the
+# eager and compiled paths to draw IDENTICAL rotations, not a specific value).
+_REFORMER_HASH_SEED = 42
+
+
+def _apply_reformer_lsh_determinism() -> list:
+    """M3 (Reformer-only): make `LSHSelfAttention._hash_vectors` draw its random
+    rotations from an explicit local `torch.Generator`, instead of the global RNG.
+
+    Reformer's LSH hashing draws `random_rotations = torch.randn(...)` from the
+    GLOBAL RNG. Under torch.compile, dynamo substitutes its own RNG, so the
+    rotations — and therefore the LSH bucket assignment — diverge from eager,
+    producing O(1) output divergence. HF's built-in determinism hook
+    (`config.hash_seed` -> `torch.manual_seed`) does NOT help, because dynamo does
+    not honor an in-graph global `manual_seed`. An explicit `torch.Generator`
+    seeded with a fixed value is state-independent of the global RNG, so the same
+    rotations are produced on both paths. Re-seeded per call so every call is
+    deterministic. Only touches Reformer (LSHSelfAttention); no-op for any other
+    model. Idempotent.
+
+    SCOPE (adversary gap 1): validated for `backend="eager"` — the backend the
+    corpus bitwise sweep uses. The mechanism relies on the compiled path executing
+    the Python-level `torch.randn` rebind; the per-process `m3_reformer_rotation_fired`
+    count in the result stamp proves the deterministic draw actually ran (a zero
+    count means M3 was a no-op). NOT validated under `backend="inductor"` (not used
+    by the sweep); inductor's functionalized RNG may behave differently.
+
+    Re-seeding to the same value every call means every LSH layer/round draws
+    IDENTICAL rotations — this degrades LSH hash quality but is correct for the
+    sweep's equivalence-measurement purpose (we measure eager-vs-compile divergence,
+    not model quality). Do not "fix" the re-seed without understanding this."""
+    try:
+        import transformers.models.reformer.modeling_reformer as rm
+    except Exception:
+        return []  # Reformer not present on this version — nothing to patch
+    import torch
+
+    cls = getattr(rm, "LSHSelfAttention", None)
+    orig = getattr(cls, "_hash_vectors", None) if cls is not None else None
+    if orig is None or getattr(orig, "_corpus_bitwise_patched", False):
+        return []
+
+    def patched_hash(self, vectors, num_hashes, attention_mask, *args, **kwargs):
+        global _M3_FIRE_COUNT
+        real_randn = torch.randn
+        gen = torch.Generator(device=vectors.device)
+        gen.manual_seed(_REFORMER_HASH_SEED)
+
+        def det_randn(*a, **k):
+            global _M3_FIRE_COUNT
+            _M3_FIRE_COUNT += 1
+            k.pop("generator", None)
+            return real_randn(*a, generator=gen, **k)
+
+        # NOTE: the `torch.randn` rebind is process-global and assumes a
+        # single-threaded worker (one model per worker process); a concurrent
+        # thread calling torch.randn during this window would get `gen` (adversary
+        # gap 4 — accepted under the one-model-per-process invariant).
+        #
+        # gap 2 (residual global-RNG mutation from orig()'s conditional
+        # `torch.manual_seed(self.hash_seed)` at modeling_reformer.py ~L715):
+        # NOT mitigated by snapshotting global RNG state here, because
+        # `torch.cuda.get_rng_state_all()` is not traceable under dynamo (raises
+        # "source must be provided in options"). It is a non-issue in practice:
+        # `config.hash_seed` defaults to None, so that manual_seed never runs in
+        # our sweep. If a config DOES set hash_seed, a residual downstream-RNG
+        # divergence could remain — documented limitation, revisit only if such a
+        # config enters the corpus.
+        torch.randn = det_randn
+        try:
+            return orig(self, vectors, num_hashes, attention_mask, *args, **kwargs)
+        finally:
+            torch.randn = real_randn
+
+    patched_hash._corpus_bitwise_patched = True
+    cls._hash_vectors = patched_hash
+    _log("M3 applied (Reformer LSH rotation determinism via local Generator)")
+    return ["reformer.LSHSelfAttention._hash_vectors"]
 
 
 def _iter_configs(model):
@@ -217,7 +312,8 @@ def apply_model_determinism(model, mode: str) -> dict:
     (`orchestrator.spawn_worker`), so there is no cross-model reuse within a
     process. Do not rely on this function inside a multi-model loop in one
     process without re-creating models between calls."""
-    summary = {"configs_zeroed": 0, "dropout_modules_zeroed": 0}
+    summary = {"configs_zeroed": 0, "dropout_modules_zeroed": 0,
+               "cached_dropout_floats_zeroed": 0}
     if mode != "train":
         return summary
 
@@ -238,9 +334,27 @@ def apply_model_determinism(model, mode: str) -> dict:
             summary["configs_zeroed"] += 1
 
     for _, m in model.named_modules():
+        # (a) nn.Dropout modules
         if isinstance(m, torch.nn.Dropout) and getattr(m, "p", 0) > 0:
             m.p = 0.0
             summary["dropout_modules_zeroed"] += 1
+        # (b) Cached dropout PROBABILITIES stored as float attrs at __init__ and
+        # used via nn.functional.dropout (e.g. ReformerModel: self.dropout =
+        # config.*_dropout_prob). These have no nn.Dropout module to zero and the
+        # config attr was already copied at init, so config-zeroing above misses
+        # them — they are a real RNG-divergence source in train mode under compile.
+        # LIMITATION (adversary gap 3): this matches only an attr literally named
+        # `dropout`. Reformer names all of them `dropout`, but a future model that
+        # caches a functional-dropout prob under a different attr name (e.g.
+        # `self.drop_p`) would NOT be caught here and could show residual train-mode
+        # divergence under the patch. Kept conservative (no name-substring scan) to
+        # avoid zeroing unrelated floats; extend the attr list if such a model
+        # appears. (`self.dropout = nn.Dropout(...)` modules are correctly skipped —
+        # an nn.Module is not an int/float — and handled by branch (a) above.)
+        _cached = getattr(m, "dropout", None)
+        if isinstance(_cached, (int, float)) and not isinstance(_cached, bool) and _cached > 0:
+            m.dropout = 0.0
+            summary["cached_dropout_floats_zeroed"] += 1
 
     return summary
 
@@ -251,7 +365,8 @@ def marker() -> dict:
         "hf_bitwise_patched": True,
         "hf_bitwise_patch_note": (
             "NON-STANDARD transformers: M1 SDPA causal-mask shortcut under compile "
-            "(#129) + M2 train-mode LayerDrop/dropout determinism (#130). "
-            "Not comparable to stock-HF corpus numbers."
+            "(#129) + M2 train-mode LayerDrop/dropout determinism incl. cached "
+            "functional-dropout floats (#130) + M3 Reformer LSH rotation "
+            "determinism. Not comparable to stock-HF corpus numbers."
         ),
     }

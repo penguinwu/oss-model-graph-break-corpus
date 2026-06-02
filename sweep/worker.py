@@ -4557,6 +4557,7 @@ def main():
         result.update(hf_bitwise_patch.marker())
         _patch_det = result.get("hf_bitwise_patch_detail") or {}
         _patch_det["m1_shortcut_fired"] = hf_bitwise_patch.m1_fire_count()
+        _patch_det["m3_reformer_rotation_fired"] = hf_bitwise_patch.m3_fire_count()
         result["hf_bitwise_patch_detail"] = _patch_det
 
     # Output single JSON line to stdout
