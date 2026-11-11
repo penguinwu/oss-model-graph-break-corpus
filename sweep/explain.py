@@ -21,6 +21,72 @@ import torch
 import torch._dynamo
 
 
+_RECOMPILE_REASONS_CAP = 20
+_RECOMPILE_REASON_CHARS = 300
+_METRICS_LIMIT = 10_000
+
+
+def _metrics_api():
+    """Return torch._dynamo.utils if it exposes the compilation-metrics API, else None."""
+    try:
+        import torch._dynamo.utils as dyn_utils
+    except Exception:
+        return None
+    if not (hasattr(dyn_utils, "get_compilation_metrics")
+            and hasattr(dyn_utils, "clear_compilation_metrics")):
+        return None
+    return dyn_utils
+
+
+def clear_dynamo_state():
+    """Reset Dynamo caches, compilation metrics and counters.
+
+    Safe on any torch version: missing APIs are skipped. Called before every
+    model run so earlier models (or calls) cannot affect recompile counts.
+    """
+    try:
+        torch._dynamo.reset()
+    except Exception:
+        pass
+    try:
+        import torch._dynamo.utils as dyn_utils
+    except Exception:
+        return
+    clear_metrics = getattr(dyn_utils, "clear_compilation_metrics", None)
+    if clear_metrics is not None:
+        try:
+            clear_metrics()
+        except Exception:
+            pass
+    counters = getattr(dyn_utils, "counters", None)
+    if counters is not None:
+        try:
+            counters.clear()
+        except Exception:
+            pass
+    set_limit = getattr(dyn_utils, "set_compilation_metrics_limit", None)
+    if set_limit is not None:
+        try:
+            set_limit(_METRICS_LIMIT)
+        except Exception:
+            pass
+
+
+def _read_metrics():
+    """Return the list of CompilationMetrics, or None if unavailable."""
+    api = _metrics_api()
+    if api is None:
+        return None
+    try:
+        return list(api.get_compilation_metrics())
+    except Exception:
+        return None
+
+
+def _recompile_entries(metrics):
+    return [m for m in metrics if getattr(m, "recompile_reason", None)]
+
+
 class _BreakCollector:
     """Logging handler that captures graph break messages from TORCH_LOGS."""
 
@@ -89,6 +155,63 @@ class _BreakCollector:
         return reasons
 
 
+def _record_recompiles(result, call):
+    """Add recompile fields to `result`. `call` re-runs the compiled fn (call 2).
+
+    Never raises: failures become None fields / recompile_steady_error.
+    """
+    try:
+        result["recompile_limit"] = getattr(torch._dynamo.config, "recompile_limit", None)
+    except Exception:
+        result["recompile_limit"] = None
+
+    metrics1 = _read_metrics()
+    if metrics1 is None:
+        result["recompile_metrics_source"] = "unavailable"
+        result["frame_compile_count"] = None
+        result["recompile_count"] = None
+        result["recompile_count_steady"] = None
+        result["recompile_reasons"] = None
+        return
+    result["recompile_metrics_source"] = "compilation_metrics"
+    rc1 = _recompile_entries(metrics1)
+    result["frame_compile_count"] = len(metrics1)
+    result["recompile_count"] = len(rc1)
+
+    rc2 = []
+    try:
+        call()
+    except Exception as e:
+        result["recompile_steady_error"] = f"{type(e).__name__}: {str(e)[:500]}"
+        result["recompile_count_steady"] = None
+    else:
+        metrics2 = _read_metrics()
+        if metrics2 is None:
+            result["recompile_count_steady"] = None
+        else:
+            # The metrics store is append-only (capped deque; limit raised in
+            # clear_dynamo_state), so entries past len(metrics1) are call 2's.
+            rc2 = _recompile_entries(metrics2[len(metrics1):])
+            result["recompile_count_steady"] = len(rc2)
+
+    reasons, seen, truncated = [], set(), False
+    for call_num, entries in ((1, rc1), (2, rc2)):
+        for m in entries:
+            co_name = getattr(m, "co_name", None)
+            reason = str(m.recompile_reason)[:_RECOMPILE_REASON_CHARS]
+            key = (co_name, reason, call_num)
+            if key in seen:
+                continue
+            seen.add(key)
+            if len(reasons) >= _RECOMPILE_REASONS_CAP:
+                truncated = True
+                break
+            reasons.append({"co_name": co_name, "reason": reason, "call": call_num})
+    result["recompile_reasons"] = reasons
+    if truncated:
+        result["recompile_reasons_truncated"] = True
+
+
 def run_graph_break_analysis(model, inputs, mode="eval",
                               dynamic=False, compile_kwargs=None):
     """Analyze graph breaks using TORCH_LOGS + counting backend.
@@ -118,6 +241,16 @@ def run_graph_break_analysis(model, inputs, mode="eval",
             compile_times: list of compile time per subgraph
             explain_time_s: total wall time
             effective_compile_kwargs: the kwargs actually passed to torch.compile()
+            frame_compile_count: Dynamo frame compiles during call 1 (None if
+                the compilation-metrics API is unavailable)
+            recompile_count: recompiles (guard failures) during call 1
+            recompile_count_steady: recompiles during a 2nd same-input call
+                (expected 0; >0 means unstable guards)
+            recompile_reasons: deduped [{co_name, reason, call}] (cap 20)
+            recompile_reasons_truncated?: True when the cap was hit
+            recompile_limit: torch._dynamo.config.recompile_limit in effect
+            recompile_metrics_source: "compilation_metrics" or "unavailable"
+            recompile_steady_error?: error from call 2 (call-1 fields intact)
             error?: error message if status is "explain_error"
     """
     result = {}
@@ -135,7 +268,7 @@ def run_graph_break_analysis(model, inputs, mode="eval",
         compile_times.append(round(time.perf_counter() - start_t, 3))
         return gm.forward
 
-    torch._dynamo.reset()
+    clear_dynamo_state()
     ctx = torch.no_grad() if mode == "eval" else contextlib.nullcontext()
     start = time.perf_counter()
 
@@ -163,6 +296,19 @@ def run_graph_break_analysis(model, inputs, mode="eval",
 
     try:
         compiled = torch.compile(model, **effective_kwargs)
+
+        def _call():
+            with ctx:
+                if isinstance(inputs, dict):
+                    compiled(**inputs)
+                elif isinstance(inputs, tuple):
+                    compiled(*inputs)
+                else:
+                    compiled(inputs)
+
+        # Call 1 is inlined (not via _call) so graph-break stack traces keep
+        # the same frame depth as before; break_reasons are capped at 2000
+        # chars, so an extra harness frame would shift what gets truncated.
         with ctx:
             if isinstance(inputs, dict):
                 compiled(**inputs)
@@ -171,12 +317,16 @@ def run_graph_break_analysis(model, inputs, mode="eval",
             else:
                 compiled(inputs)
 
+        # Snapshot call-1 results BEFORE call 2: a recompile in call 2 would
+        # append to ops_per_graph/compile_times and the break-log collector.
         result["graph_count"] = len(ops_per_graph)
         result["graph_break_count"] = max(0, len(ops_per_graph) - 1)
-        result["ops_per_graph"] = ops_per_graph
-        result["compile_times"] = compile_times
+        result["ops_per_graph"] = list(ops_per_graph)
+        result["compile_times"] = list(compile_times)
         result["break_reasons"] = collector.get_break_reasons()
         result["status"] = "ok"
+
+        _record_recompiles(result, _call)
 
     except Exception as e:
         result["status"] = "explain_error"

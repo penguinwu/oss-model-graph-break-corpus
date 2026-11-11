@@ -11,6 +11,7 @@ Used by:
 """
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -71,10 +72,11 @@ def kill_gpu_zombies():
 class WorkerHandle:
     """Tracks a running worker subprocess."""
     __slots__ = ("proc", "spec", "mode", "pass_num", "timeout_s",
-                 "start_time", "kill_stage", "stdout_path", "stderr_path")
+                 "start_time", "kill_stage", "stdout_path", "stderr_path",
+                 "cache_dir")
 
     def __init__(self, proc, spec, mode, pass_num, timeout_s, start_time,
-                 stdout_path, stderr_path):
+                 stdout_path, stderr_path, cache_dir=None):
         self.proc = proc
         self.spec = spec
         self.mode = mode
@@ -84,6 +86,18 @@ class WorkerHandle:
         self.kill_stage = 0   # 0=running, 1=TERM sent, 2=KILL sent, 3=abandoned
         self.stdout_path = stdout_path
         self.stderr_path = stderr_path
+        self.cache_dir = cache_dir  # per-worker TORCHINDUCTOR_CACHE_DIR
+
+
+def _cleanup_handle_files(handle):
+    """Remove a worker's stdout/stderr temp files and its per-worker cache dir."""
+    for p in (handle.stdout_path, handle.stderr_path):
+        try:
+            os.unlink(p)
+        except OSError:
+            pass
+    if handle.cache_dir:
+        shutil.rmtree(handle.cache_dir, ignore_errors=True)
 
 
 def _wait_for_cuda_ready(pid: int, timeout_s: float = 60.0) -> bool:
@@ -162,6 +176,12 @@ def spawn_worker(python_bin, spec, pass_num, device, mode, timeout_s,
     if extra_args:
         cmd.extend(extra_args)
 
+    # Fresh on-disk compiler cache per worker: Dynamo PGO code_state_*.pkl and
+    # inductor caches live under TORCHINDUCTOR_CACHE_DIR, so no earlier model
+    # or run can affect this model's graph-break / recompile counts.
+    cache_dir = tempfile.mkdtemp(prefix="sweep_tic_")
+    env["TORCHINDUCTOR_CACHE_DIR"] = cache_dir
+
     # Use temp files instead of PIPE to avoid buffer deadlocks
     stdout_fd, stdout_path = tempfile.mkstemp(prefix=f"sweep_out_{spec['name']}_", suffix=".json")
     stderr_fd, stderr_path = tempfile.mkstemp(prefix=f"sweep_err_{spec['name']}_", suffix=".log")
@@ -176,7 +196,7 @@ def spawn_worker(python_bin, spec, pass_num, device, mode, timeout_s,
     os.close(stderr_fd)
 
     return WorkerHandle(proc, spec, mode, pass_num, timeout_s, time.time(),
-                        stdout_path, stderr_path)
+                        stdout_path, stderr_path, cache_dir=cache_dir)
 
 
 def harvest_worker(handle):
@@ -195,12 +215,8 @@ def harvest_worker(handle):
     except Exception:
         pass
 
-    # Cleanup temp files
-    for p in (handle.stdout_path, handle.stderr_path):
-        try:
-            os.unlink(p)
-        except OSError:
-            pass
+    # Cleanup temp files + per-worker cache dir
+    _cleanup_handle_files(handle)
 
     if handle.proc.returncode == 0 and stdout.strip():
         try:
@@ -269,12 +285,8 @@ def timeout_result(handle):
     except Exception:
         pass
 
-    # Cleanup temp files
-    for p in (handle.stdout_path, handle.stderr_path):
-        try:
-            os.unlink(p)
-        except OSError:
-            pass
+    # Cleanup temp files + per-worker cache dir
+    _cleanup_handle_files(handle)
 
     return {
         "name": handle.spec["name"],
@@ -605,11 +617,7 @@ def run_pass(python_bin, specs, pass_num, device, modes, workers, timeout_s,
                 handle.proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 pass
-            for p in (handle.stdout_path, handle.stderr_path):
-                try:
-                    os.unlink(p)
-                except OSError:
-                    pass
+            _cleanup_handle_files(handle)
         if ckpt_fh:
             ckpt_fh.close()
 

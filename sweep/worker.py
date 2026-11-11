@@ -176,7 +176,19 @@ import torch._inductor  # hoisted to module scope so worker.main()'s
                         # a function-local name (which would UnboundLocalError
                         # the earlier `torch._dynamo.config` access in main()).
 
-from explain import run_graph_break_analysis
+from explain import run_graph_break_analysis, clear_dynamo_state
+
+# Recompile fields copied from run_graph_break_analysis() into explain results.
+RECOMPILE_FIELDS = (
+    "frame_compile_count", "recompile_count", "recompile_count_steady",
+    "recompile_reasons", "recompile_reasons_truncated", "recompile_limit",
+    "recompile_metrics_source", "recompile_steady_error",
+)
+
+
+def _clear_dynamo_caches():
+    """Start every model run with empty Dynamo caches/metrics/counters."""
+    clear_dynamo_state()
 
 
 def _warm_cudnn_with_retry(max_attempts: int = 3) -> None:
@@ -4143,6 +4155,7 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
     Skipped only when comparison is impossible (no eager/compiled output, or
     the model is in the non-deterministic opt-out set).
     """
+    _clear_dynamo_caches()
     t_start = time.perf_counter()
     result = {
         "name": spec["name"],
@@ -4672,6 +4685,7 @@ def run_correctness(spec, device, mode):
     Phase 3 base case: same input, same seed, same shape — only diff is torch.compile wrapper.
     Surfaces every numerical divergence introduced by the compiler. No pass/fail target.
     """
+    _clear_dynamo_caches()
     t_start = time.perf_counter()
     result = {
         "name": spec["name"],
@@ -4942,6 +4956,7 @@ def run_explain(spec, device, mode, dynamic=False, compile_kwargs=None):
         "pass": "explain",
     }
 
+    _clear_dynamo_caches()
     try:
         model, inputs_dict, inputs_tuple = create_model(spec, device)
     except Exception as e:
@@ -4970,6 +4985,9 @@ def run_explain(spec, device, mode, dynamic=False, compile_kwargs=None):
         result["ops_per_graph"] = analysis["ops_per_graph"]
         result["compile_times"] = analysis["compile_times"]
         result["break_reasons"] = analysis["break_reasons"]
+        for key in RECOMPILE_FIELDS:
+            if key in analysis:
+                result[key] = analysis[key]
     else:
         result["status"] = "explain_error"
         result["error"] = analysis.get("error", "unknown")

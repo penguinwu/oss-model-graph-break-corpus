@@ -1985,7 +1985,8 @@ def run_test_mode(args):
 
     required_keys = {"status", "name", "source", "mode"}
     explain_keys = {"graph_count", "graph_break_count", "ops_per_graph", "compile_times",
-                    "break_reasons", "explain_time_s"}
+                    "break_reasons", "explain_time_s",
+                    "recompile_count", "recompile_count_steady"}
 
     print("=" * 60)
     print("Integration test: 1 model per source through worker pipeline")

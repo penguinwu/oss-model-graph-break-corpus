@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import torch
 import torch.nn as nn
 
+import explain
 from explain import run_graph_break_analysis
 
 
@@ -131,6 +132,110 @@ class TestErrorHandling(unittest.TestCase):
         model = ErrorModel()
         result = run_graph_break_analysis(model, torch.randn(2, 16), mode="eval")
         json.dumps(result)  # must not raise
+
+
+class UnstableGuardModel(nn.Module):
+    """Reads a Python int attribute it bumps every call -> recompile on call 2."""
+    def __init__(self):
+        super().__init__()
+        self.linear = nn.Linear(16, 16)
+        self.calls = 0
+
+    def forward(self, x):
+        self.calls += 1
+        return self.linear(x) * self.calls
+
+
+class TestRecompileCounts(unittest.TestCase):
+    """Recompile fields from the 2-call explain measurement."""
+
+    def test_fullgraph_has_no_recompiles(self):
+        model = SimpleLinear().eval()
+        result = run_graph_break_analysis(model, torch.randn(2, 16), mode="eval")
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["graph_count"], 1)
+        self.assertEqual(result["graph_break_count"], 0)
+        self.assertEqual(result["recompile_metrics_source"], "compilation_metrics")
+        self.assertEqual(result["recompile_count"], 0)
+        self.assertEqual(result["recompile_count_steady"], 0)
+        self.assertGreaterEqual(result["frame_compile_count"], 1)
+        self.assertEqual(result["recompile_reasons"], [])
+        self.assertEqual(result["recompile_limit"],
+                         torch._dynamo.config.recompile_limit)
+        json.dumps(result)
+
+    def test_unstable_guard_recompiles_on_call_2(self):
+        model = UnstableGuardModel().eval()
+        result = run_graph_break_analysis(model, torch.randn(2, 16), mode="eval")
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["recompile_count"], 0)
+        self.assertGreaterEqual(result["recompile_count_steady"], 1)
+        call2 = [r for r in result["recompile_reasons"] if r["call"] == 2]
+        self.assertTrue(call2, result["recompile_reasons"])
+        self.assertEqual(call2[0]["co_name"], "forward")
+        self.assertLessEqual(len(call2[0]["reason"]), 300)
+        json.dumps(result)
+
+    def test_snapshot_survives_call_2_recompile(self):
+        # Call 2 recompiles here, which appends to the backend's lists; the
+        # call-1 snapshot must be unaffected.
+        model = UnstableGuardModel().eval()
+        result = run_graph_break_analysis(model, torch.randn(2, 16), mode="eval")
+        self.assertEqual(result["graph_count"], 1)
+        self.assertEqual(result["graph_count"], len(result["ops_per_graph"]))
+        self.assertEqual(result["graph_count"], len(result["compile_times"]))
+
+    def test_snapshot_with_graph_break(self):
+        model = ItemBreakModel().eval()
+        result = run_graph_break_analysis(model, torch.randn(2, 16), mode="eval")
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["graph_count"], len(result["ops_per_graph"]))
+        self.assertEqual(result["graph_count"], len(result["compile_times"]))
+        self.assertIn("recompile_count", result)
+
+    def test_metrics_api_unavailable(self):
+        orig = explain._metrics_api
+        explain._metrics_api = lambda: None
+        try:
+            model = SimpleLinear().eval()
+            result = run_graph_break_analysis(model, torch.randn(2, 16), mode="eval")
+        finally:
+            explain._metrics_api = orig
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["recompile_metrics_source"], "unavailable")
+        for key in ("recompile_count", "recompile_count_steady",
+                    "frame_compile_count", "recompile_reasons"):
+            self.assertIsNone(result[key], key)
+        self.assertEqual(result["graph_break_count"], 0)
+
+    def test_call_2_error_keeps_call_1_results(self):
+        class FailSecond(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = nn.Linear(16, 16)
+                self.n = 0
+
+            def forward(self, x):
+                self.n += 1
+                if self.n > 1:
+                    raise RuntimeError("second call fails")
+                return self.linear(x)
+
+        result = run_graph_break_analysis(FailSecond().eval(), torch.randn(2, 16), mode="eval")
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["graph_count"], 1)
+        self.assertEqual(result["recompile_count"], 0)
+        self.assertIsNone(result["recompile_count_steady"])
+        self.assertIn("second call fails", result["recompile_steady_error"])
+
+    def test_cache_cleared_between_runs(self):
+        # Same model object analysed twice: the second run must not see the
+        # first run's cache entries or metrics.
+        model = UnstableGuardModel().eval()
+        r1 = run_graph_break_analysis(model, torch.randn(2, 16), mode="eval")
+        r2 = run_graph_break_analysis(model, torch.randn(2, 16), mode="eval")
+        self.assertEqual(r1["recompile_count"], r2["recompile_count"])
+        self.assertEqual(r1["frame_compile_count"], r2["frame_compile_count"])
 
 
 class TestWorkerImports(unittest.TestCase):

@@ -439,6 +439,12 @@ def run_test(spec, proxy_url=None, mode="eval", compile_kwargs=None):
                 result["ops_per_graph"] = analysis["ops_per_graph"]
                 result["compile_times"] = analysis["compile_times"]
                 result["explain_time_s"] = analysis["explain_time_s"]
+                for key in ("frame_compile_count", "recompile_count",
+                            "recompile_count_steady", "recompile_reasons",
+                            "recompile_reasons_truncated", "recompile_limit",
+                            "recompile_metrics_source", "recompile_steady_error"):
+                    if key in analysis:
+                        result[key] = analysis[key]
             else:
                 result["status"] = "explain_error"
                 result["error"] = analysis.get("error", "unknown")
