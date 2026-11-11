@@ -30,3 +30,6 @@ myclaw.db
 # Outcome artifacts (agent_diff.patch, prompt.txt, result.json, summary.json)
 # stay in git; full streams are archived to Drive.
 discovery/runs/**/stream.jsonl
+# pixi environments
+.pixi/*
+!.pixi/config.toml

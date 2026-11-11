@@ -94,6 +94,11 @@ def enumerate_hf():
             "Qwen3OmniMoeCode2WavTransformerModel",         # Internal: does not accept input_ids
             "Qwen2_5OmniTalkerForConditionalGeneration",    # Internal: needs inputs_embeds from parent Thinker
             "Qwen2_5OmniToken2WavModel",                    # Requires batch_size=1, internal component
+            # Speculative-decoding drafters: forward() requires inputs_embeds +
+            # shared_kv_states from a target Gemma4 run, and the config forces
+            # every layer to be a KV consumer (can't build or run standalone).
+            "Gemma4AssistantForCausalLM",
+            "Gemma4UnifiedAssistantForCausalLM",
             "Sam2VideoModel",       # Stateful: forward() requires inference_session with frame tracking state
             "Sam3VideoModel",       # Stateful: forward() requires inference_session with frame tracking state
             "Sam3TrackerVideoModel",# Stateful: forward() requires inference_session with frame tracking state
@@ -393,6 +398,32 @@ def enumerate_diffusers():
               file=sys.stderr)
 
     return models
+
+
+def diffusers_param_count(spec):
+    """Parameter count of a diffusers spec's model, built on the meta device.
+
+    Uses the same constructor args the worker uses (`constructor_args`, or the
+    class defaults for auto-constructed specs). Meta construction allocates no
+    memory, so this is safe to call on 50B-param defaults. Returns None if the
+    class can't be built on meta (caller should treat the size as unknown).
+
+    Why: auto-constructed diffusers models are full production size (up to
+    ~48B params). The worker builds them in fp32 on CPU before .to(device), so
+    a few concurrent ones exhaust host RAM and take the whole session down
+    (py212 sweep, 2026-11-10). run_sweep uses this to skip/serialize them.
+    """
+    if spec.get("source") != "diffusers":
+        return None
+    try:
+        import diffusers
+        import torch
+        cls = getattr(diffusers, spec.get("hf_class") or spec["name"])
+        with torch.device("meta"):
+            model = cls(**spec.get("constructor_args", {}))
+        return sum(p.numel() for p in model.parameters())
+    except Exception:
+        return None
 
 
 def enumerate_custom():
