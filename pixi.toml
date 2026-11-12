@@ -14,6 +14,7 @@ transformers = { git = "https://github.com/huggingface/transformers.git" }
 diffusers = { git = "https://github.com/huggingface/diffusers.git" }
 timm = { git = "https://github.com/huggingface/pytorch-image-models.git" }
 scipy = ">=1.18.1, <2"
+playwright = ">=1.65.1, <2"
 
 
 [feature.py212.pypi-dependencies]
