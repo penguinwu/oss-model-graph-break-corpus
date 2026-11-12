@@ -176,7 +176,19 @@ import torch._inductor  # hoisted to module scope so worker.main()'s
                         # a function-local name (which would UnboundLocalError
                         # the earlier `torch._dynamo.config` access in main()).
 
-from explain import run_graph_break_analysis
+from explain import run_graph_break_analysis, clear_dynamo_state
+
+# Recompile fields copied from run_graph_break_analysis() into explain results.
+RECOMPILE_FIELDS = (
+    "frame_compile_count", "recompile_count", "recompile_count_steady",
+    "recompile_reasons", "recompile_reasons_truncated", "recompile_limit",
+    "recompile_metrics_source", "recompile_steady_error",
+)
+
+
+def _clear_dynamo_caches():
+    """Start every model run with empty Dynamo caches/metrics/counters."""
+    clear_dynamo_state()
 
 
 def _warm_cudnn_with_retry(max_attempts: int = 3) -> None:
@@ -458,6 +470,17 @@ def _fix_config(model_name, config):
     for attr, default in defaults.items():
         if getattr(config, attr, None) is None:
             setattr(config, attr, default)
+
+    # --- Step3p7: forward always builds the sliding-window mask ---
+    # (modeling_step3p7 builds "sliding_attention" masks unconditionally), but
+    # the default config has sliding_window=None, so even the unmodified
+    # default model can't run a forward. Any positive window works; with our
+    # 32-token inputs 512 is equivalent to full attention.
+    if "step3p7" in name_lower:
+        for cfg_obj in (config, getattr(config, "text_config", None)):
+            if cfg_obj is not None and hasattr(cfg_obj, "sliding_window") \
+                    and getattr(cfg_obj, "sliding_window", None) is None:
+                cfg_obj.sliding_window = 512
 
     # num_key_value_heads defaults to num_attention_heads for several models
     if name_lower in ("nemotronmodel", "moonshinestreamingmodel"):
@@ -1073,6 +1096,147 @@ def _fix_config(model_name, config):
             # Use __dict__ to bypass @strict decorator that blocks setattr
             config.__dict__["initializer_range"] = 0.02
 
+    # --- Qwen3ASR: default config is internally inconsistent ---
+    # Qwen3ASRConfig() has audio_config.output_dim=3584 but
+    # text_config.hidden_size=2048 (transformers 5.23.0.dev0). The projector
+    # emits output_dim-wide features that get masked_scatter'd into the text
+    # embeddings, so the default model can never run (numel check fails).
+    if name_lower == "qwen3asrmodel":
+        audio_cfg = getattr(config, "audio_config", None)
+        text_cfg = getattr(config, "text_config", None)
+        if audio_cfg is not None and text_cfg is not None:
+            audio_cfg.output_dim = text_cfg.hidden_size
+
+    # --- Upstream default-config holes (transformers 5.23.0.dev0) ---
+    # Each of these default configs cannot build its own model (None in a
+    # required field, or a missing per-layer-type entry). Values come from
+    # the reference checkpoint's config.json where public (cited inline);
+    # "harness-chosen" means the checkpoint is gated and we pick values that
+    # satisfy the config's own validator. Runs after _reduce_model_size, so
+    # layer-indexed fields are sized for the reduced model.
+    def _text_cfgs():
+        # composite → its text_config; text-only class → the config itself
+        tc = getattr(config, "text_config", None)
+        return [tc] if tc is not None else [config]
+
+    if "coherecompass" in name_lower:
+        # CohereLabs/North-Micro-Vision-Instruct: rope only on sliding layers,
+        # full-attention layers are NoPE (None). Default has rope_parameters={}
+        # and all-full layer_types → KeyError 'full_attention' in rotary init.
+        for tc in _text_cfgs():
+            if getattr(tc, "rope_parameters", None) is not None and "full_attention" not in tc.rope_parameters:
+                tc.rope_parameters = {
+                    "sliding_attention": {"rope_type": "default", "rope_theta": 50000,
+                                          "mrope_section": [24, 20, 20], "mrope_interleaved": True},
+                    "full_attention": None,
+                }
+                n = tc.num_hidden_layers
+                tc.layer_types = (["sliding_attention", "full_attention"] * n)[:n]
+
+    if "diffusiongemma" in name_lower:
+        # google/diffusiongemma-26B-A4B-it: 128 experts, top-8, moe_intermediate 704.
+        # Scaled to our 4-expert reduction; top-2 keeps routing sparse.
+        for tc in _text_cfgs():
+            if getattr(tc, "num_experts", 0) is None:
+                tc.num_experts = 4
+                tc.top_k_experts = 2
+                tc.moe_intermediate_size = 704
+
+    if "deepseekocr2" in name_lower:
+        # deepseek-community/DeepSeek-OCR-2: n_group=1, topk_group=1,
+        # num_experts_per_tok=6, mlp_layer_types = ["dense"] + ["sparse"]*11.
+        for tc in _text_cfgs():
+            if hasattr(tc, "mlp_layer_types") and tc.mlp_layer_types is None:
+                n = tc.num_hidden_layers
+                tc.mlp_layer_types = ["dense"] + ["sparse"] * (n - 1)
+                tc.n_group = 1
+                tc.topk_group = 1
+                n_exp = getattr(tc, "n_routed_experts", None) or 4
+                tc.num_experts_per_tok = min(6, n_exp)
+
+    if "granite4vision" in name_lower and getattr(config, "deepstack_layer_map", 0) is None:
+        # ibm-granite/granite-4.0-3b-vision: [[-19, 9], [-13, 6], [-7, 3], [-1, 0]]
+        # (vision layer → LLM layer injection). Same idea, valid indices for
+        # the reduced 2-layer vision tower and LLM.
+        config.deepstack_layer_map = [[-2, 1], [-1, 0]]
+
+    if "hunyuanvl" in name_lower:
+        # head_dim=None → `self.head_dim**-0.5` crashes. Use the same fallback
+        # the config itself applies elsewhere (hidden // heads).
+        for tc in _text_cfgs():
+            if getattr(tc, "head_dim", 0) is None:
+                tc.head_dim = tc.hidden_size // tc.num_attention_heads
+
+    if "moshi" in name_lower and getattr(config, "audio_vocab_size", 0) is None:
+        # kmhf/hf-moshika: audio_vocab_size=2048 (default regressed to None
+        # between transformers 5.5 and 5.23).
+        config.audio_vocab_size = 2048
+
+    if name_lower == "ppocrv6mediumdetmodel":
+        # PaddlePaddle/PP-OCRv6_medium_det_safetensors config.json, verbatim.
+        if getattr(config, "intraclass_block_config", 0) is None:
+            config.intraclass_block_config = {
+                "reduce_channel": [1, 1, 0], "return_channel": [1, 1, 0],
+                "vertical_long_to_small_conv_longratio": [[7, 1], [1, 1], [3, 0]],
+                "vertical_long_to_small_conv_midratio": [[5, 1], [1, 1], [2, 0]],
+                "vertical_long_to_small_conv_shortratio": [[3, 1], [1, 1], [1, 0]],
+                "horizontal_small_to_long_conv_longratio": [[1, 7], [1, 1], [0, 3]],
+                "horizontal_small_to_long_conv_midratio": [[1, 5], [1, 1], [0, 2]],
+                "horizontal_small_to_long_conv_shortratio": [[1, 3], [1, 1], [0, 1]],
+                "symmetric_conv_long_longratio": [[7, 7], [1, 1], [3, 3]],
+                "symmetric_conv_long_midratio": [[5, 5], [1, 1], [2, 2]],
+                "symmetric_conv_long_shortratio": [[3, 3], [1, 1], [1, 1]],
+            }
+        if getattr(config, "scale_factor_list", 0) is None:
+            config.scale_factor_list = [1, 2, 4, 8]
+        if getattr(config, "kernel_list", 0) is None:
+            config.kernel_list = [3, 2, 2]
+
+    if "qwen4exp" in name_lower:
+        # Every "indexed_attention" layer builds a QSA indexer, but the default
+        # config leaves all indexer_* fields None. Harness-chosen (Qwen/Qwen4-Exp
+        # is gated), satisfying the config validator: kv_heads=1,
+        # budget % compress_ratio == 0, indexer_head_dim >= rotary dim.
+        for tc in _text_cfgs():
+            if hasattr(tc, "indexer_budget") and tc.indexer_budget is None:
+                prf = (getattr(tc, "rope_parameters", None) or {}).get("partial_rotary_factor", 1.0)
+                tc.indexer_n_heads = 4
+                tc.indexer_kv_heads = 1
+                tc.indexer_head_dim = max(64, int(tc.head_dim * prf))
+                tc.indexer_budget = 64
+                tc.indexer_compress_ratio = 4
+
+    # --- MiniMaxM3VL: merged_hidden_size is derived once in __init__ ---
+    # (= text hidden * merge^2). _reduce_model_size shrinks text hidden after
+    # that, leaving the projector's merge_linear_1 sized for the full model.
+    if "minimaxm3" in name_lower and hasattr(config, "merged_hidden_size"):
+        text_cfg = getattr(config, "text_config", None)
+        vision_cfg = getattr(config, "vision_config", None)
+        if text_cfg is not None and vision_cfg is not None:
+            config.merged_hidden_size = text_cfg.hidden_size * (vision_cfg.spatial_merge_size ** 2)
+
+    # --- Molmo2: adapter reads ViT layers [24, 18] (absolute indices) ---
+    # After _reduce_model_size the ViT has 2 layers, so hidden_states[25] is
+    # out of range. Remap to the last N layers; N (and so the adapter's input
+    # width hidden*N) is unchanged.
+    if "molmo2" in name_lower:
+        adapter_cfg = getattr(config, "adapter_config", None)
+        vision_cfg = getattr(config, "vision_config", None)
+        vfl = getattr(adapter_cfg, "vision_feature_layer", None)
+        if adapter_cfg is not None and vision_cfg is not None and vfl:
+            n_layers = vision_cfg.num_hidden_layers
+            if any(l >= n_layers for l in vfl if l >= 0):
+                adapter_cfg.vision_feature_layer = [
+                    max(n_layers - 1 - i, 0) for i in range(len(vfl))]
+        # Default Molmo2Config() is internally inconsistent (transformers
+        # 5.23.0.dev0): adapter_config.text_hidden_size=3584 but
+        # text_config.hidden_size=4096, so pooled image features can never be
+        # added onto the text embeddings. Align them.
+        text_cfg = getattr(config, "text_config", None)
+        if adapter_cfg is not None and text_cfg is not None \
+                and hasattr(adapter_cfg, "text_hidden_size"):
+            adapter_cfg.text_hidden_size = text_cfg.hidden_size
+
     # --- ZambaModel: use_mamba_kernels=False (no causal-conv1d), layers_block_type ---
     if "zamba" in name_lower and "zamba2" not in name_lower:
         if getattr(config, "use_mamba_kernels", True):
@@ -1204,46 +1368,65 @@ def _reduce_model_size(config):
             except (ValueError, AttributeError, NotImplementedError):
                 pass
 
+    # Heterogeneous (per-layer) configs (EmbeddingGemma2, ...) raise
+    # AmbiguousGlobalPerLayerAttributeError — a RuntimeError, so getattr's
+    # default doesn't catch it — when a per-layer attribute is read globally.
+    # Leave those attributes alone: they live in config.per_layer_config.
+    def _get(cfg, attr, default=None):
+        try:
+            return getattr(cfg, attr, default)
+        except Exception:
+            return default
+
     # Reduce hidden size for very large models (> 4096)
     # Skip if hidden_size is a tuple/list (Swin-family uses per-stage sizes)
-    _hs = getattr(config, "hidden_size", 0)
+    _hs = _get(config, "hidden_size", 0)
     if isinstance(_hs, int) and _hs > 4096:
         scale = config.hidden_size / 1024
         config.hidden_size = 1024
         # Scale down dependent dimensions proportionally
-        if getattr(config, "intermediate_size", None):
+        if _get(config, "intermediate_size"):
             config.intermediate_size = max(config.intermediate_size // int(scale), 2048)
-        if getattr(config, "num_attention_heads", None):
+        if _get(config, "num_attention_heads"):
             config.num_attention_heads = max(config.num_attention_heads // int(scale), 4)
-        if getattr(config, "num_key_value_heads", None):
+        if _get(config, "num_key_value_heads"):
             config.num_key_value_heads = min(
-                getattr(config, "num_key_value_heads", 4),
+                _get(config, "num_key_value_heads", 4),
                 config.num_attention_heads
             )
 
     # Ensure hidden_size is divisible by num_attention_heads after reduction
     # Skip if either is a tuple/list (Swin-family models use per-stage tuples)
-    hs = getattr(config, "hidden_size", None)
-    nh = getattr(config, "num_attention_heads", None)
+    hs = _get(config, "hidden_size")
+    nh = _get(config, "num_attention_heads")
     if hs and nh and isinstance(hs, int) and isinstance(nh, int) and hs % nh != 0:
         # Find largest power-of-2 divisor of hs that's >= 4
         for heads in (16, 8, 4):
             if hs % heads == 0:
                 config.num_attention_heads = heads
-                nkv = getattr(config, "num_key_value_heads", None)
+                nkv = _get(config, "num_key_value_heads")
                 if nkv is not None and nkv > heads:
                     config.num_key_value_heads = heads
                 break
 
     # Ensure num_attention_heads is divisible by num_key_value_heads
-    nh = getattr(config, "num_attention_heads", None)
-    nkv = getattr(config, "num_key_value_heads", None)
+    nh = _get(config, "num_attention_heads")
+    nkv = _get(config, "num_key_value_heads")
     if nh and nkv and isinstance(nh, int) and isinstance(nkv, int) and nkv > 0 and nh % nkv != 0:
         # Find largest divisor of nh that's <= nkv
         for k in range(nkv, 0, -1):
             if nh % k == 0:
                 config.num_key_value_heads = k
                 break
+
+    # MLA (DeepSeek-style latent attention: kv_lora_rank set) expands the
+    # latent KV to one head per query head — no GQA. Reductions above can
+    # leave num_key_value_heads < num_attention_heads (AXK1, MistralLarge4:
+    # 16 query vs 8 KV heads → SDPA shape mismatch). Keep them equal.
+    if _get(config, "kv_lora_rank") is not None:
+        nh = _get(config, "num_attention_heads")
+        if isinstance(nh, int) and _get(config, "num_key_value_heads") not in (None, nh):
+            config.num_key_value_heads = nh
 
     # Reduce MoE expert count (each expert is a full FFN layer)
     for attr in ("num_local_experts", "num_experts", "n_routed_experts"):
@@ -1259,6 +1442,14 @@ def _reduce_model_size(config):
                 topk_val = getattr(config, topk_attr, None)
                 if topk_val is not None and isinstance(topk_val, int) and topk_val > expert_count:
                     setattr(config, topk_attr, expert_count)
+            # Group-limited routing (DeepSeek-V3-style: AXK1, ...) views
+            # experts as (n_group, experts // n_group); n_group must divide
+            # the reduced expert count, and topk_group can't exceed n_group.
+            n_group = _get(config, "n_group")
+            if isinstance(n_group, int) and n_group > 1 and expert_count % n_group != 0:
+                config.n_group = 1
+                if isinstance(_get(config, "topk_group"), int):
+                    config.topk_group = 1
 
     # Reduce sub-configs (vision, text, etc.)
     for sub_attr in ("text_config", "decoder", "encoder",
@@ -1273,6 +1464,279 @@ def _reduce_model_size(config):
             val = getattr(vision_sub, attr, None)
             if val is not None and isinstance(val, int) and val > 4:
                 setattr(vision_sub, attr, 2)
+
+
+def _audio_lm_inputs_by_probe(model, config, B, device):
+    """Inputs for an audio-LM (audio encoder + projector + text decoder).
+
+    These models scatter `get_audio_features(...).pooler_output` into the
+    positions of `audio_token_id` in `input_ids` and assert the counts match.
+    The per-sample feature count depends on each encoder's downsampling, so
+    run `get_audio_features` once on the synthetic features and size the
+    placeholder run from its output instead of guessing.
+
+    Candidate feature inputs, tried in order until one probes cleanly:
+      - mel features in both (B, F, T) and (B, T, F) layouts — encoders
+        disagree — for each plausible F in the audio config (num_mel_bins,
+        input_size [stacked-frame encoders, e.g. FunAsrNano 80*7], ...);
+      - a raw waveform when get_audio_features takes `input_values`
+        (acoustic-tokenizer front ends, e.g. VibeVoice).
+    Every mask-style argument the probe/forward accepts gets an all-ones
+    mask; `sample=False` is passed where supported so stochastic encoders
+    (VibeVoice's σ-VAE) stay deterministic between eager and compiled runs.
+    Returns None if nothing probes cleanly (caller falls back).
+    """
+    import torch
+
+    audio_cfg, text_cfg = config.audio_config, config.text_config
+    text_voc = min(getattr(text_cfg, "vocab_size", 32000) or 32000, 1000)
+    audio_token_id = config.audio_token_id
+    if audio_token_id >= model.get_input_embeddings().num_embeddings:
+        model.resize_token_embeddings(audio_token_id + 1)
+
+    fwd_params = set(inspect.signature(model.forward).parameters)
+    probe_sig = inspect.signature(model.get_audio_features).parameters
+    probe_params = set(probe_sig)
+    mask_keys = ("input_features_mask", "feature_attention_mask", "padding_mask")
+    # FCG wrappers often forward **kwargs to the inner model's
+    # get_audio_features; pass the masks the full forward accepts through it.
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in probe_sig.values()):
+        probe_params |= {k for k in mask_keys if k in fwd_params}
+
+    candidates = []  # (feature kwargs, time length for masks)
+    if "input_values" in probe_params and "input_features" not in probe_params:
+        n = (getattr(audio_cfg, "hop_length", None) or 320) * 16
+        for shape in ((B, 1, n), (B, n)):
+            candidates.append(({"input_values": torch.randn(*shape, device=device)}, n))
+    else:
+        # Whisper-style encoders insist on exactly 2*max_source_positions
+        # frames; others (positional tables, e.g. FunAsrNano's 2049) can't
+        # take that many — fall back to a short clip.
+        t_lens = [(getattr(audio_cfg, "max_source_positions", None) or 1500) * 2, 200]
+        sizes = []
+        for attr in ("num_mel_bins", "input_size", "feature_size", "input_feat_size"):
+            v = getattr(audio_cfg, attr, None)
+            if isinstance(v, int) and v > 0 and v not in sizes:
+                sizes.append(v)
+        for t_len in t_lens:
+            for f in sizes or [128]:
+                candidates.append(({"input_features": torch.randn(B, f, t_len, device=device)}, t_len))
+                candidates.append(({"input_features": torch.randn(B, t_len, f, device=device)}, t_len))
+
+    def _ids(n_tok):
+        ids = torch.randint(0, text_voc, (B, 8 + n_tok), device=device)
+        ids[ids == audio_token_id] = 0  # keep text ids clear of the placeholder
+        ids[:, :n_tok] = audio_token_id
+        return ids
+
+    tower = getattr(model, "audio_tower", None) or getattr(
+        getattr(model, "model", None), "audio_tower", None)
+
+    for feat_kwargs, t_len in candidates:
+        mask = torch.ones(B, t_len, dtype=torch.long, device=device)
+        kw = dict(feat_kwargs)
+        kw.update({k: mask for k in mask_keys if k in probe_params})
+        if "sample" in probe_params:
+            kw["sample"] = False
+        try:
+            if "input_ids" in probe_params:
+                # get_audio_features reads the placeholder positions itself
+                # (MusicFlamingo timestamps), so size them from the tower's
+                # own output-length formula first.
+                lens = tower._get_feat_extract_output_lengths(mask.sum(-1))
+                lens = lens[-1] if isinstance(lens, tuple) else lens
+                kw["input_ids"] = _ids(int(lens[0]))
+            with torch.no_grad():
+                out = model.get_audio_features(**kw)
+        except Exception:
+            continue
+        emb = getattr(out, "pooler_output", None)
+        if emb is None:
+            emb = out[0] if isinstance(out, (tuple, list)) else out
+        if not torch.is_tensor(emb):
+            continue
+        # pooler_output is flattened (total_tokens, D); some return (B, T, D).
+        n_tok = emb.shape[1] if emb.dim() == 3 else emb.shape[0] // B
+        if n_tok <= 0:
+            continue
+
+        ids = _ids(n_tok)
+        inputs = dict(feat_kwargs)
+        inputs["input_ids"] = ids
+        inputs["attention_mask"] = torch.ones_like(ids)
+        inputs.update({k: mask for k in mask_keys if k in fwd_params})
+        if "sample" in fwd_params:
+            inputs["sample"] = False
+        return inputs
+    return None
+
+
+def _grid_patch_shape_candidates(model, vision_cfg, N):
+    """Plausible shapes for N pre-patchified vision patches (see callers)."""
+    import torch
+
+    ps = getattr(vision_cfg, "patch_size", None)
+    if isinstance(ps, (list, tuple)):
+        ps = ps[0]
+    if not isinstance(ps, int):
+        return []
+    C = getattr(vision_cfg, "in_channels", None) or getattr(vision_cfg, "num_channels", None) or 3
+    tps = getattr(vision_cfg, "temporal_patch_size", None)
+    shapes = []
+    if isinstance(tps, int) and tps > 1:
+        shapes.append((N, C * tps * ps * ps))
+    shapes += [(N, C * ps * ps), (N, C, ps, ps)]
+    # Some configs don't expose the temporal factor (MuseSpark/MuseGlimmer:
+    # Linear(3*2*14*14) with no temporal_patch_size); read the width off the
+    # model's own patch-embedding Linear instead.
+    for mod_name, mod in model.named_modules():
+        if "patch" in mod_name.lower() and isinstance(mod, torch.nn.Linear):
+            if (N, mod.in_features) not in shapes:
+                shapes.append((N, mod.in_features))
+            break
+    return shapes
+
+
+def _image_token_id(config):
+    for attr in ("image_token_id", "image_token_index"):
+        v = getattr(config, attr, None)
+        if isinstance(v, int):
+            return v
+    return None
+
+
+def _count_feature_tokens(out):
+    """Total visual tokens in a get_image_features() result (any of the
+    shapes HF returns: ModelOutput.pooler_output, tensor, or per-image list)."""
+    import torch
+
+    emb = getattr(out, "pooler_output", None)
+    if emb is None and not hasattr(out, "last_hidden_state"):
+        emb = out
+    if isinstance(emb, (list, tuple)):
+        if emb and all(torch.is_tensor(e) for e in emb):
+            return sum(e.shape[0] if e.dim() <= 2 else e.shape[0] * e.shape[1] for e in emb)
+        return None
+    if torch.is_tensor(emb):
+        return emb.shape[0] if emb.dim() <= 2 else emb.shape[0] * emb.shape[1]
+    return None
+
+
+def _vlm_inputs_by_probe(model, config, B, device):
+    """Image + text inputs for a vision-language model whose generic inputs
+    (raw (B,C,H,W) pixel_values, no image placeholders) can't run.
+
+    Builds candidate pixel inputs in the form get_image_features() accepts
+    (Qwen-VL-style pre-patchified patches + image_grid_thw, or a moderate
+    (B,C,S,S) image + image_sizes), counts the visual tokens it returns,
+    lays out that many image_token_id placeholders, and keeps the first
+    candidate whose full eager forward runs. Returns None if none do.
+    """
+    import torch
+
+    gif = getattr(model, "get_image_features", None)
+    vision_cfg = getattr(config, "vision_config", None) or getattr(config, "image_config", None)
+    tok = _image_token_id(config)
+    if gif is None or vision_cfg is None or tok is None:
+        return None
+    gparams = set(inspect.signature(gif).parameters)
+    fwd_sig = inspect.signature(model.forward).parameters
+    fwd_params = set(fwd_sig)
+    # FCG wrappers often take image args via **kwargs (Cosmos3Edge FCG).
+    fwd_takes_kwargs = any(p.kind is inspect.Parameter.VAR_KEYWORD for p in fwd_sig.values())
+    text_cfg = getattr(config, "text_config", None) or config
+    voc = min(getattr(text_cfg, "vocab_size", 32000) or 32000, 1000)
+
+    candidates = []
+    if "image_grid_thw" in gparams and ("image_grid_thw" in fwd_params or fwd_takes_kwargs):
+        merge = getattr(vision_cfg, "spatial_merge_size", None) or getattr(config, "spatial_merge_size", None)
+        if merge is None:
+            mk = getattr(vision_cfg, "merge_kernel_size", None)
+            merge = mk[0] if isinstance(mk, (list, tuple)) else (mk or 2)
+        grid = torch.tensor([[1, 2 * merge, 4 * merge]] * B, dtype=torch.long, device=device)
+        N = int(grid.prod(-1).sum().item())
+        for shape in _grid_patch_shape_candidates(model, vision_cfg, N):
+            candidates.append({"pixel_values": torch.randn(*shape, device=device),
+                               "image_grid_thw": grid})
+    else:
+        ps = getattr(vision_cfg, "patch_size", 14)
+        ps = ps[0] if isinstance(ps, (list, tuple)) else (ps or 14)
+        S = getattr(vision_cfg, "image_size", None)
+        S = S[0] if isinstance(S, (list, tuple)) else S
+        if not isinstance(S, int) or S > 448:
+            # Production sizes (1540, 2016, ...) are pointless for tracing.
+            S = ps * 16
+        C = getattr(vision_cfg, "num_channels", None) or 3
+        pix_key = ("pixel_values_images"
+                   if "pixel_values_images" in gparams and "pixel_values_images" in fwd_params
+                   else "pixel_values")
+        kw = {pix_key: torch.randn(B, C, S, S, device=device)}
+        if "image_sizes" in gparams:
+            kw["image_sizes"] = torch.tensor([[S, S]] * B, dtype=torch.long, device=device)
+        candidates.append(kw)
+
+    if tok >= model.get_input_embeddings().num_embeddings:
+        model.resize_token_embeddings(tok + 1)
+
+    for kw in candidates:
+        try:
+            with torch.no_grad():
+                n = _count_feature_tokens(gif(**kw))
+        except Exception:
+            continue
+        if not n or n % B:
+            continue
+        n_per = n // B
+        ids = torch.randint(0, voc, (B, 8 + n_per), device=device)
+        ids[ids == tok] = 0  # keep text ids clear of the placeholder
+        ids[:, :n_per] = tok
+        inputs = dict(kw)
+        inputs["input_ids"] = ids
+        inputs["attention_mask"] = torch.ones_like(ids)
+        if "mm_token_type_ids" in fwd_params:
+            mm = torch.zeros_like(ids)
+            mm[:, :n_per] = 1
+            inputs["mm_token_type_ids"] = mm
+        try:
+            with torch.no_grad():
+                model(**inputs)
+        except Exception:
+            continue
+        return inputs
+    return None
+
+
+def _grid_thw_vision_inputs_by_probe(model, config, B, device):
+    """Inputs for a standalone `forward(pixel_values|hidden_states, grid_thw)`
+    vision encoder (Qwen-VL-style tower exposed as its own *VisionModel).
+
+    These take pre-patchified patches for all images concatenated on dim 0,
+    plus grid_thw (num_images, 3). Patch layout differs per family:
+      - flattened with temporal patching: (N, C*tps*ps*ps)   [Qwen-VL / GLM-V]
+      - flattened, no temporal axis:      (N, C*ps*ps)       [Cosmos3Edge]
+      - unflattened conv patches:         (N, C, ps, ps)     [Kimi-K2.5, MuseSpark]
+    Try each with one no-grad forward and keep the first that runs.
+    Returns None if the class doesn't have this signature or nothing fits.
+    """
+    import torch
+
+    params = list(inspect.signature(model.forward).parameters)
+    if "grid_thw" not in params or not params or params[0] not in ("pixel_values", "hidden_states"):
+        return None
+    key = params[0]
+
+    grid_thw = torch.tensor([[1, 4, 8]] * B, dtype=torch.long, device=device)
+    N = int(grid_thw.prod(-1).sum().item())
+    shapes = _grid_patch_shape_candidates(model, config, N)
+    for shape in shapes:
+        inputs = {key: torch.randn(*shape, device=device), "grid_thw": grid_thw}
+        try:
+            with torch.no_grad():
+                model(**inputs)
+        except Exception:
+            continue
+        return inputs
+    return None
 
 
 def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
@@ -1293,6 +1757,9 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
             variant = "causal_lm"
         elif model_name.endswith("ForConditionalGeneration"):
             variant = "conditional_generation"
+        else:
+            # enumerate_hf omits "variant" for base *Model classes.
+            variant = "base"
     if variant == "causal_lm":
         base_model_name = model_name.replace("ForCausalLM", "Model")
     elif variant == "conditional_generation":
@@ -2173,11 +2640,66 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
             grid_thw_tensor[:, 1] * grid_thw_tensor[:, 2], grid_thw_tensor[:, 0]
         ).cumsum(dim=0, dtype=torch.int32)
         cu_seqlens = torch.nn.functional.pad(cu_seqlens, (1, 0), value=0)
+        if "grid_thw" in inspect.signature(model.forward).parameters:
+            # transformers 5.2x: forward(pixel_values, grid_thw) builds
+            # cu_seqlens itself from a grid_thw tensor.
+            inputs = {"pixel_values": pixel_values, "grid_thw": grid_thw_tensor}
+        else:
+            inputs = {
+                "pixel_values": pixel_values,
+                "cu_seqlens": cu_seqlens,
+                "image_grid_thw": image_grid_thw,
+            }
+
+    # MiniCPM-V vision towers (MiniCPMOcrVisionModel, MiniCPMV4_7VisionModel):
+    # packed layout — all images' patches side by side in one row,
+    # pixel_values (1, C, ps, N*ps), plus target_sizes = per-image (h, w)
+    # patch grid. forward crashes on target_sizes=None.
+    if name_lower.startswith("minicpm") and name_lower.endswith("visionmodel") \
+            and "target_sizes" in inspect.signature(model.forward).parameters:
+        ps = getattr(config, "patch_size", 14)
+        C = getattr(config, "num_channels", 3)
+        target_sizes = torch.tensor([[4, 8]] * B, dtype=torch.int32, device=device)
+        n_patches = int((target_sizes[:, 0] * target_sizes[:, 1]).sum().item())
         inputs = {
-            "pixel_values": pixel_values,
-            "cu_seqlens": cu_seqlens,
-            "image_grid_thw": image_grid_thw,
+            "pixel_values": torch.randn(1, C, ps, n_patches * ps, device=device),
+            "target_sizes": target_sizes,
         }
+
+    # Molmo2: pre-patchified crops + explicit patch pooling.
+    #   VisionModel: pixel_values (n_crops, num_position_embeddings, C*ps*ps)
+    #   Model/FCG:   pixel_values (num_images, n_crops, P, C*ps*ps), plus
+    #     image_token_pooling (num_tokens, pool) — indices into the flattened
+    #       patches each output token pools over;
+    #     image_grids (num_images, 4) — tokens per image = g0*g1 + g2*g3;
+    #     mm_token_type_ids (1 at image positions) — required in train mode.
+    if name_lower in ("molmo2visionmodel", "molmo2model"):
+        vision_cfg = getattr(config, "vision_config", config)
+        P = vision_cfg.num_position_embeddings
+        patch_dim = vision_cfg.num_channels * vision_cfg.patch_size ** 2
+        if name_lower == "molmo2visionmodel":
+            inputs = {"pixel_values": torch.randn(B, P, patch_dim, device=device)}
+        else:
+            K, pool = 4, 4  # 4 tokens per image, each pooling 4 patches
+            pooling = torch.tensor(
+                [[b * P + k * pool + j for j in range(pool)] for b in range(B) for k in range(K)],
+                dtype=torch.long, device=device)
+            tok = config.image_token_id
+            if tok >= model.get_input_embeddings().num_embeddings:
+                model.resize_token_embeddings(tok + 1)
+            text_voc = min(getattr(config.text_config, "vocab_size", 32000) or 32000, 1000)
+            ids = torch.randint(0, text_voc, (B, 8 + K), device=device)
+            ids[:, :K] = tok
+            mm = torch.zeros_like(ids)
+            mm[:, :K] = 1
+            inputs = {
+                "input_ids": ids,
+                "attention_mask": torch.ones_like(ids),
+                "pixel_values": torch.randn(B, 1, P, patch_dim, device=device),
+                "image_token_pooling": pooling,
+                "image_grids": torch.tensor([[2, 2, 0, 0]] * B, dtype=torch.long, device=device),
+                "mm_token_type_ids": mm,
+            }
 
     # UVDocModel: needs proper image size for backbone
     if name_lower == "uvdocmodel":
@@ -2309,7 +2831,9 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
     # CohereAsrModel: encoder-decoder ASR model, needs input_features (mel spectrogram) + decoder_input_ids
     # Encoder is ParakeetEncoder which expects (B, time, num_mel_bins) audio features.
     # The subsampling layer calls input_features.unsqueeze(1), so input_features must not be None.
-    if name_lower == "cohereasrmodel":
+    # CanaryModel (transformers 5.2x) has the same encoder_config + decoder
+    # layout; its forward also crashes on input_features=None.
+    if name_lower in ("cohereasrmodel", "canarymodel"):
         encoder_cfg = getattr(config, "encoder_config", None)
         num_mel_bins = getattr(encoder_cfg, "num_mel_bins", 128) if encoder_cfg else 128
         decoder_start = getattr(config, "decoder_start_token_id", None) or getattr(config, "bos_token_id", 1) or 1
@@ -3012,7 +3536,9 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
     # Qwen2Audio: audio token count must match encoder output exactly.
     # The encoder pipeline has multiple downsampling stages; use
     # _get_feat_extract_output_lengths to compute the final audio feature count.
-    if name_lower == "qwen2audiomodel" and variant == "conditional_generation":
+    # Applies to the base Qwen2AudioModel too (exposed as its own class in
+    # transformers >= 5.2x; previously only the FCG existed).
+    if name_lower == "qwen2audiomodel" and variant in ("conditional_generation", "base"):
         audio_cfg = getattr(config, "audio_config", config)
         text_cfg = getattr(config, "text_config", config)
         text_voc = min(getattr(text_cfg, "vocab_size", 32000) or 32000, 1000)
@@ -3047,7 +3573,7 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
         }
 
     # Voxtral: text-only avoids broken audio path
-    if name_lower == "voxtralmodel" and variant == "conditional_generation":
+    if name_lower == "voxtralmodel" and variant in ("conditional_generation", "base"):
         text_cfg = getattr(config, "text_config", config)
         text_voc = min(getattr(text_cfg, "vocab_size", 32000) or 32000, 1000)
         inputs = {
@@ -3078,6 +3604,51 @@ def create_hf_model(spec, device, batch_size=DEFAULT_BATCH):
     # Audio FCG models are classified as "audio" by _detect_hf_input_type and get
     # audio-only inputs. But as FCG they need both audio AND text (input_ids with
     # audio token placeholders + input_features mel spectrogram).
+    # ── Fallback: standalone grid_thw vision encoders with no recipe above ──
+    # (CohereCompass/Exaone4_5/Glm5Next/Kimi_K25/Qwen4Exp/... *VisionModel)
+    if "grid_thw" not in inputs:
+        probed = _grid_thw_vision_inputs_by_probe(model, config, B, device)
+        if probed is not None:
+            inputs = probed
+
+    # ── Fallback: VLMs left with the generic raw image + no placeholders ──
+    # New VLM families (Cosmos3Omni, Exaone4_5, Glm5Next, Kimi_K25, MiniMaxM3VL,
+    # MuseSpark, MistralLarge4, ...) fall through to the generic multimodal
+    # inputs, which never carry image_grid_thw / image_sizes / image tokens.
+    # Only replace them if that exact input fails in eager, so models that
+    # already run on the generic inputs are untouched.
+    _pv = inputs.get("pixel_values")
+    _tok = _image_token_id(config)
+    if (torch.is_tensor(_pv) and _pv.dim() == 4 and torch.is_tensor(inputs.get("input_ids"))
+            and _tok is not None and not bool((inputs["input_ids"] == _tok).any())
+            and hasattr(model, "get_image_features")):
+        try:
+            with torch.no_grad():
+                model(**inputs)
+            _generic_ok = True
+        except Exception:
+            _generic_ok = False
+        if not _generic_ok:
+            # The failed attempt can leave large activations cached (generic
+            # images are production-sized, e.g. 1540^2 for MistralLarge4);
+            # release them so the probe's own forward doesn't OOM when the
+            # GPU is shared with other sweep workers.
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            probed = _vlm_inputs_by_probe(model, config, B, device)
+            if probed is not None:
+                inputs = probed
+
+    # Base `*Model` audio LMs (AudioFlamingo3Model, GlmAsrModel, ...) need the
+    # same inputs as their FCG, so this is not gated on variant.
+    if (variant in ("conditional_generation", "base") and "input_ids" not in inputs
+            and getattr(config, "audio_config", None) is not None
+            and getattr(config, "text_config", None) is not None
+            and hasattr(model, "get_audio_features")
+            and getattr(config, "audio_token_id", None) is not None):
+        probed = _audio_lm_inputs_by_probe(model, config, B, device)
+        if probed is not None:
+            inputs = probed
     if variant == "conditional_generation" and "input_ids" not in inputs:
         audio_cfg = getattr(config, "audio_config", None)
         text_cfg = getattr(config, "text_config", None)
@@ -3118,8 +3689,12 @@ def _detect_hf_input_type(model_name, config):
     """Detect input modality from model name and config attributes."""
     name_lower = model_name.lower()
 
-    # Check config for multimodal (vision + text sub-configs)
-    has_vision_config = hasattr(config, "vision_config") or hasattr(config, "image_config")
+    # Check config for multimodal (vision + text sub-configs).
+    # A vision_config attribute that is None means "no vision tower"
+    # (EmbeddingGemma2, Gemma4Unified defaults) — feeding those pixel_values
+    # just crashes, so require it to be set.
+    has_vision_config = (getattr(config, "vision_config", None) is not None
+                         or getattr(config, "image_config", None) is not None)
     has_text_config = hasattr(config, "text_config")
     if has_vision_config and has_text_config:
         return "multimodal"
@@ -3141,7 +3716,9 @@ def _detect_hf_input_type(model_name, config):
         return "vision"
 
     # Check config for audio sub-configs
-    has_audio_config = hasattr(config, "audio_config") or hasattr(config, "speech_config")
+    # Same as vision: None means no audio tower (EmbeddingGemma2, Gemma4Unified).
+    has_audio_config = (getattr(config, "audio_config", None) is not None
+                        or getattr(config, "speech_config", None) is not None)
     if has_audio_config:
         return "audio"
 
@@ -3578,6 +4155,7 @@ def run_identify(spec, device, mode, dynamic=False, compile_kwargs=None):
     Skipped only when comparison is impossible (no eager/compiled output, or
     the model is in the non-deterministic opt-out set).
     """
+    _clear_dynamo_caches()
     t_start = time.perf_counter()
     result = {
         "name": spec["name"],
@@ -4107,6 +4685,7 @@ def run_correctness(spec, device, mode):
     Phase 3 base case: same input, same seed, same shape — only diff is torch.compile wrapper.
     Surfaces every numerical divergence introduced by the compiler. No pass/fail target.
     """
+    _clear_dynamo_caches()
     t_start = time.perf_counter()
     result = {
         "name": spec["name"],
@@ -4377,6 +4956,7 @@ def run_explain(spec, device, mode, dynamic=False, compile_kwargs=None):
         "pass": "explain",
     }
 
+    _clear_dynamo_caches()
     try:
         model, inputs_dict, inputs_tuple = create_model(spec, device)
     except Exception as e:
@@ -4405,6 +4985,9 @@ def run_explain(spec, device, mode, dynamic=False, compile_kwargs=None):
         result["ops_per_graph"] = analysis["ops_per_graph"]
         result["compile_times"] = analysis["compile_times"]
         result["break_reasons"] = analysis["break_reasons"]
+        for key in RECOMPILE_FIELDS:
+            if key in analysis:
+                result[key] = analysis[key]
     else:
         result["status"] = "explain_error"
         result["error"] = analysis.get("error", "unknown")

@@ -134,7 +134,7 @@ def check_compat(torch_version: str, transformers_version: str) -> Optional[str]
     """Return None if the torch/transformers pair is compatible, else a
     human-readable warning string. Caller decides fail-vs-warn policy."""
     tx_mm = ".".join(transformers_version.split(".")[:2])
-    min_torch = TRANSFORMERS_MIN_TORCH.get(tx_mm)
+    min_torch = TRANSFORMERS_MIN_TORCH.get(tx_mm, "2.12")
     if min_torch is None:
         return (
             f"unknown transformers minor {tx_mm}; "

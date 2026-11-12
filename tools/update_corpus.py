@@ -66,6 +66,10 @@ IDENTIFY_FIELDS = [
 # Fields copied from explain results into corpus model.{mode}
 EXPLAIN_FIELDS = [
     "graph_break_count", "graph_count", "break_reasons",
+    # Dynamo recompile counts (explain pass, call 1 + same-shape call 2).
+    # Comparable across runs only at the same recompile_limit.
+    "recompile_count", "recompile_count_steady", "frame_compile_count",
+    "recompile_reasons", "recompile_limit",
 ]
 
 

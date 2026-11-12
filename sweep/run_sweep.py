@@ -270,8 +270,11 @@ def _resolve_run_output_dir(args):
 
 def _execute_explain_pass(python_bin, specs, device, workers, timeout_s,
                           output_dir, version_info, resume=False,
-                          extra_worker_args=None, run_name=None):
+                          extra_worker_args=None, run_name=None,
+                          serial_names=None):
     """Run the explain pass and save results. Shared by sweep and standalone explain.
+
+    serial_names: model names to run with workers=1 (see _route_specs_by_size).
 
     Returns (explain_results, explain_time).
     """
@@ -288,9 +291,10 @@ def _execute_explain_pass(python_bin, specs, device, workers, timeout_s,
     print(f"{'=' * 70}")
 
     explain_start = time.perf_counter()
-    explain_results = run_pass(
-        python_bin, specs, pass_num=2, device=device, modes=modes,
-        workers=workers, timeout_s=timeout_s * 2,  # 2x for explain
+    explain_results = _run_pass_split(
+        specs, serial_names or set(), workers, "EXPLAIN",
+        python_bin=python_bin, pass_num=2, device=device, modes=modes,
+        timeout_s=timeout_s * 2,  # 2x for explain
         checkpoint_file=explain_ckpt, resume_from=resume_from,
         extra_worker_args=extra_worker_args,
     )
@@ -337,6 +341,95 @@ def _specs_for_graph_break_models(identify_results, all_specs):
         if r.get("status") == "graph_break":
             graph_break_names.add(r["name"])
     return [s for s in all_specs if s["name"] in graph_break_names]
+
+
+# ── Size-aware routing (diffusers full-size defaults) ──────────────────────
+# Above this many params a model runs in the serial (workers=1) pass: a few
+# 14B fp32 models (~53 GiB each, built on CPU) side by side OOM'd the host on
+# 2026-11-10 and took down the whole session.
+_SERIAL_PARAM_THRESHOLD = 2_000_000_000
+_HOST_RAM_RESERVE = 10 * 2**30   # python + torch/CUDA runtime in the worker
+_GPU_MEM_RESERVE = 5 * 2**30     # CUDA context + minimum activations
+
+
+def _machine_mem_limits(device):
+    """Return (host_ram_bytes, gpu_mem_bytes_or_None) for this machine."""
+    host = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    gpu = None
+    if device == "cuda":
+        try:
+            out = subprocess.run(
+                ["nvidia-smi", "--query-gpu=memory.total",
+                 "--format=csv,noheader,nounits"],
+                capture_output=True, text=True, timeout=30,
+            ).stdout
+            mibs = [int(x) for x in out.split() if x.strip().isdigit()]
+            if mibs:
+                gpu = min(mibs) * 2**20
+        except Exception:
+            pass
+    return host, gpu
+
+
+def _route_specs_by_size(specs, device):
+    """Classify diffusers specs by fp32 weight size.
+
+    Returns (too_big, serial):
+      too_big: {name: reason} — can't run even alone (host OOM risk, or the
+               weights alone exceed GPU memory → guaranteed CUDA OOM before
+               Dynamo runs). These get skipped.
+      serial:  set of names to run with workers=1 (> threshold params, or
+               size unknown).
+    Non-diffusers specs are untouched (HF has _reduce_model_size; timm/custom
+    are small).
+    """
+    try:
+        from models import diffusers_param_count
+    except ImportError:
+        from sweep.models import diffusers_param_count
+
+    host, gpu = _machine_mem_limits(device)
+    host_cap = host - _HOST_RAM_RESERVE
+    gpu_cap = (gpu - _GPU_MEM_RESERVE) if gpu else None
+
+    too_big, serial = {}, set()
+    for s in specs:
+        if s.get("source") != "diffusers":
+            continue
+        n = s.get("param_count")
+        if n is None:
+            n = diffusers_param_count(s)
+            s["param_count"] = n
+        if n is None:
+            serial.add(s["name"])
+            continue
+        weight_bytes = n * 4  # worker builds in fp32
+        if weight_bytes > host_cap:
+            too_big[s["name"]] = (
+                f"{n/1e9:.1f}B params = {weight_bytes/2**30:.0f} GiB fp32 > host "
+                f"RAM budget {host_cap/2**30:.0f} GiB (would OOM the host)")
+        elif gpu_cap is not None and weight_bytes > gpu_cap:
+            too_big[s["name"]] = (
+                f"{n/1e9:.1f}B params = {weight_bytes/2**30:.0f} GiB fp32 > GPU "
+                f"budget {gpu_cap/2**30:.0f} GiB (guaranteed CUDA OOM)")
+        elif n > _SERIAL_PARAM_THRESHOLD:
+            serial.add(s["name"])
+    return too_big, serial
+
+
+def _run_pass_split(specs, serial_names, workers, label, **kwargs):
+    """run_pass, but specs in serial_names run afterwards with workers=1.
+
+    Both halves share kwargs (checkpoint_file, resume_from, ...), mirroring
+    the identify pass's multi/single split.
+    """
+    multi = [s for s in specs if s["name"] not in serial_names]
+    single = [s for s in specs if s["name"] in serial_names]
+    results = run_pass(specs=multi, workers=workers, **kwargs) if multi else []
+    if single:
+        print(f"\n  {label}: {len(single)} large models serially (workers=1)")
+        results = results + run_pass(specs=single, workers=1, **kwargs)
+    return results
 
 
 def load_large_models(path=None):
@@ -940,6 +1033,23 @@ def run_sweep(args):
     known_error_models, known_error_map = _load_known_errors(python_bin)
     skip_models = skip_models | known_error_models
 
+    # ── Size routing: skip models that can't run even alone; serialize big ones ──
+    too_big_models, serial_models = _route_specs_by_size(specs, args.device)
+    if too_big_models or serial_models:
+        print(f"Size routing: {len(too_big_models)} skipped (can't fit even with "
+              f"--workers 1), {len(serial_models)} run serially (> "
+              f"{_SERIAL_PARAM_THRESHOLD/1e9:.0f}B params or size unknown)")
+        for name, reason in sorted(too_big_models.items()):
+            print(f"  SKIP {name}: {reason}")
+        with open(output_dir / "size_routing.json", "w") as f:
+            json.dump({
+                "skipped": too_big_models,
+                "serial": sorted(serial_models),
+                "param_counts": {s["name"]: s.get("param_count") for s in specs
+                                 if s.get("source") == "diffusers"},
+            }, f, indent=2, sort_keys=True)
+    skip_models = skip_models | set(too_big_models)
+
     print()
 
     # ── Update watchdog state file with full details ──
@@ -996,7 +1106,7 @@ def run_sweep(args):
         "Qwen3_5MoeForConditionalGeneration",
         "Qwen3NextModel", "Qwen3NextForCausalLM",
         "OlmoHybridModel", "OlmoHybridForCausalLM",
-    }
+    } | serial_models
 
     multi_specs = [s for s in specs if s["name"] not in _SINGLE_WORKER_MODELS]
     single_specs = [s for s in specs if s["name"] in _SINGLE_WORKER_MODELS]
@@ -1004,7 +1114,7 @@ def run_sweep(args):
     print(f"{'=' * 70}")
     print(f"IDENTIFY: Graph breaks (fullgraph=True) — {len(specs)} models × {len(modes)} modes ({modes})")
     if single_specs:
-        print(f"  {len(multi_specs)} multi-worker, {len(single_specs)} single-worker (flaky under contention)")
+        print(f"  {len(multi_specs)} multi-worker, {len(single_specs)} single-worker (flaky under contention or too large to run concurrently)")
     print(f"{'=' * 70}")
 
     _update_phase(state_file, "identify", phase_total=total_work_items)
@@ -1042,7 +1152,7 @@ def run_sweep(args):
     # Run single-worker models serially to avoid GPU contention flakiness
     if single_specs:
         print(f"\n{'─' * 70}")
-        print(f"SINGLE-WORKER: {len(single_specs)} models (flaky under multiworker)")
+        print(f"SINGLE-WORKER: {len(single_specs)} models (flaky or too large under multiworker)")
         print(f"{'─' * 70}")
         single_results = run_pass(
             python_bin, single_specs, pass_num=1, device=args.device, modes=modes,
@@ -1136,9 +1246,11 @@ def run_sweep(args):
                       phase_total=len(retry_specs) * len(modes))
 
         retry_start = time.perf_counter()
-        retry_results = run_pass(
-            python_bin, retry_specs, pass_num=1, device=args.device, modes=modes,
-            workers=max(1, args.workers // 2),  # fewer workers for large models
+        retry_results = _run_pass_split(
+            retry_specs, serial_models,
+            max(1, args.workers // 2),  # fewer workers for large models
+            "AUTO-RETRY",
+            python_bin=python_bin, pass_num=1, device=args.device, modes=modes,
             timeout_s=timeout_large,
             checkpoint_file=auto_retry_to_ckpt, resume_from=auto_retry_to_resume,
             dynamic=dynamic, timeout_overrides=retry_overrides,
@@ -1354,6 +1466,7 @@ def run_sweep(args):
             resume=args.resume,
             extra_worker_args=extra_worker_args,
             run_name=args.run_name,
+            serial_names=serial_models,
         )
     else:
         explain_results = []
@@ -1482,6 +1595,7 @@ def run_explain(args):
         resume=args.resume,
         extra_worker_args=_build_extra_worker_args(args),
         run_name=getattr(args, "run_name", None),
+        serial_names=_route_specs_by_size(explain_specs, args.device)[1],
     )
 
     # INDEX.json append — file-issue Phase 3 v1.0 (Peng directive 2026-05-09 07:55 ET).
@@ -1871,7 +1985,8 @@ def run_test_mode(args):
 
     required_keys = {"status", "name", "source", "mode"}
     explain_keys = {"graph_count", "graph_break_count", "ops_per_graph", "compile_times",
-                    "break_reasons", "explain_time_s"}
+                    "break_reasons", "explain_time_s",
+                    "recompile_count", "recompile_count_steady"}
 
     print("=" * 60)
     print("Integration test: 1 model per source through worker pipeline")

@@ -35,6 +35,7 @@ violations = new_ce & baseline_healthy
 | Dynamic shapes | trace with `dynamic=True` or `mark_dynamic` | Static-shape statuses must match a default sweep |
 | Inductor backend | `backend="inductor"` | Eager-backend statuses must match default sweep |
 | Train-mode correctness | eager-train vs compiled-train output + grad | Phase 3 V2 — needs forward-grad comparison rules |
+| Recompile counts (explain pass) | `recompile_count` (call 1) + `recompile_count_steady` (same-shape call 2) from `torch._dynamo.utils.get_compilation_metrics()` | Fields shipped 2026-11-11; no canonical full-sweep result yet. Invariant: `graph_count` / `graph_break_count` / `break_reasons` per (model, mode) must equal a pre-recompile-field explain run on the same PT + model set. Counts comparable only at equal `recompile_limit` (recorded per row). Explain pass runs only on `graph_break` models, so full_graph models get no recompile fields. |
 
 ## Out of scope
 

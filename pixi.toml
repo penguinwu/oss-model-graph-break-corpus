@@ -1,0 +1,40 @@
+[workspace]
+channels = ['conda-forge']
+name = "oss-model-graph-break-corpus"
+platforms = ['linux-64']
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
+python = "3.13.*"
+
+[pypi-dependencies]
+transformers = { git = "https://github.com/huggingface/transformers.git" }
+diffusers = { git = "https://github.com/huggingface/diffusers.git" }
+timm = { git = "https://github.com/huggingface/pytorch-image-models.git" }
+scipy = ">=1.18.1, <2"
+playwright = ">=1.65.1, <2"
+
+
+[feature.py212.pypi-dependencies]
+torch = "==2.12.*"
+torchvision = "*"
+
+[feature.py213.pypi-dependencies]
+torch = "==2.13.*"
+torchvision = "*"
+
+[feature.py214.pypi-dependencies]
+torch = "==2.14.*"
+torchvision = "*"
+
+[feature.py215.pypi-dependencies]
+torch = "==2.15.*"
+torchvision = "*"
+
+[environments]
+py212 = ["py212"]
+py213 = ["py213"]
+py214 = ["py214"]
+py215 = ["py215"]

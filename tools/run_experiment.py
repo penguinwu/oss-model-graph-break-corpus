@@ -779,7 +779,13 @@ def run_experiment(config, args):
                      "numeric_status", "numeric_max_diff",
                      "numeric_bitwise_equal", "numeric_severity_ratio",
                      "numeric_first_divergence", "numeric_skip_reason",
-                     "numeric_error", "numeric_noise_floor_dominant"):
+                     "numeric_error", "numeric_noise_floor_dominant",
+                     # Dynamo recompile fields from the explain pass
+                     # (sweep/explain.py::_record_recompiles).
+                     "frame_compile_count", "recompile_count",
+                     "recompile_count_steady", "recompile_reasons",
+                     "recompile_reasons_truncated", "recompile_limit",
+                     "recompile_metrics_source", "recompile_steady_error"):
             if key in r:
                 experiment_result[key] = r[key]
         if dynamo_flags:
